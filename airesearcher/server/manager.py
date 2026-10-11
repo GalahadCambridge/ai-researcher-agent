@@ -112,20 +112,21 @@ class ProjectManager:
 
     # ---------------------------------------------------------------- 状态页
     def summary(self, pid: str) -> ProjectSummary:
-        p, eng = self.get(pid), self.engine(pid)
+        p = self.get(pid)
         st = self.status(pid)
         return ProjectSummary(
-            project_id=pid, title=p.config.title, state=eng.ck.state, stage_label=st.stage_label,
+            project_id=pid, title=p.config.title, state=st.state, stage_label=st.stage_label,
             pending_approvals=len(st.pending_approvals), has_question=st.pending_question is not None,
-            created_at=p.config.created_at, updated_at=eng.ck.saved_at, root=str(p.root),
+            created_at=p.config.created_at, updated_at=st.updated_at, root=str(p.root),
         )
 
     def status(self, pid: str) -> ProjectStatus:
         p, eng = self.get(pid), self.engine(pid)
-        ck = eng.ck
-        state = ck.state
-        pending = p.approvals.pending()
-        question = p.questions.pending()
+        with eng.state_lock:  # 状态、待审批、问题一起读，避免读到引擎改到一半的样子
+            ck = eng.ck.model_copy(deep=True)
+            state = ck.state
+            pending = p.approvals.pending()
+            question = p.questions.pending()
         if state in ACTIVE_STATES:
             stage = STAGE_FOR_STATE[state]
         elif state in KIND_FOR_PENDING:

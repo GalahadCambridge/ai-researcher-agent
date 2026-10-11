@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 
 import pytest
@@ -142,3 +143,24 @@ def test_budget_patch_and_errors(client):
     assert c.get("/api/projects/p-nope").json()["error"]["code"] == "NOT_FOUND"
     assert c.get(f"/api/projects/{pid}/files", params={"path": "../../etc/passwd"}).status_code == 403
     assert c.get("/api/tasks").json()[0]["name"] == "smoke"
+
+
+def test_status_is_a_consistent_snapshot(client):
+    """有待审批时状态一定是“等待审批”——状态接口不能读到引擎改到一半的样子（CI 上出现过）。"""
+    c = client
+    pid = create(c)
+    seen = 0
+    t0 = time.time()
+    approved = set()
+    while time.time() - t0 < 60:
+        st = c.get(f"/api/projects/{pid}").json()
+        if st["pending_approvals"]:
+            assert st["state"].endswith("Pending"), st
+            seen += 1
+            aid = st["pending_approvals"][0]["approval_id"]
+            if aid not in approved and len(approved) < 2:
+                approved.add(aid)
+                decide(c, pid)
+        if st["state"] == "LogPending":
+            break
+    assert seen and len(approved) == 2
