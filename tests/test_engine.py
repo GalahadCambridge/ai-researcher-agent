@@ -200,3 +200,50 @@ def test_checkpoint_history_and_atomic(project):
     assert hist[0] == "ck-000001" and ckpt.briefs(project.root)[-1].milestone  # 第一个（状态切换）作为里程碑保留
     assert ckpt.load(project.root).checkpoint_id == hist[-1]
     assert not list((project.root / ".state").glob("*.tmp"))
+
+
+def test_human_edits_committed_separately(project):
+    import shutil
+    import subprocess
+
+    import pytest
+
+    if shutil.which("git") is None:
+        pytest.skip("没有 git")
+
+    def write_src(ctx):
+        (ctx.root / "src" / "agent.py").write_text("print('agent')\n", encoding="utf-8")
+        return Continue()
+
+    eng = engine(project, idea=Scripted("idea", [write_src]))
+    (project.root / "src" / "mine.py").write_text("print('mine')\n", encoding="utf-8")  # 用户手工改
+    eng.tick()
+    log = subprocess.run(["git", "log", "--format=@@%an", "--name-only"], cwd=project.root, capture_output=True,
+                         text=True, encoding="utf-8").stdout
+    by_author = {}
+    for chunk in log.split("@@")[1:]:
+        author, *files = [x for x in chunk.splitlines() if x.strip()]
+        by_author[author] = files
+    assert "src/mine.py" in by_author["human-edited"] and "src/agent.py" not in by_author["human-edited"]
+    assert "src/agent.py" in by_author["agent:idea"]
+    ev = [e for e in project.events.all() if e.type == "workspace.human_edited"]
+    assert ev and ev[0].data["files"] == ["src/mine.py"]
+    assert not project.workspace.dirty()
+
+
+def test_storage_accounting(project):
+    from airesearcher.core.models.project import Limit
+
+    eng = ProjectEngine(project, stages={"idea": Scripted("idea", [Continue()])}, retry_delay=0, storage_interval=0)
+    eng.tick()
+    base = project.budget.used().get("storage_gb", 0.0)
+    (project.root / "artifacts" / "big.bin").write_bytes(b"\0" * (3 * 1024 * 1024))  # 3 MB
+    eng.tick()
+    used = project.budget.used()["storage_gb"]
+    assert abs((used - base) * 1024 - 3) < 0.1  # 记的是差值，总数等于当前大小
+    eng.tick()
+    assert project.budget.used()["storage_gb"] == used  # 没变化不再记
+
+    project.save_config(project.config.model_copy(update={"budget": {"storage_gb": Limit(hard=used / 2)}}))
+    eng.tick()
+    assert eng.state == S.BudgetExhausted

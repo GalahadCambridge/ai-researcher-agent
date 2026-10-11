@@ -189,6 +189,7 @@ air answer skip
 | `air template upload <zip>` / `air template list` | 上传论文模板 / 查看已上传的模板 |
 | `air export [--what paper\|archive] [-o 文件]` | 导出论文交付包或整个研究档案（zip，含 `ARCHIVE_INDEX.md`） |
 | `air checkpoints` / `air rollback <检查点>` | 查看可回滚的检查点 / 回滚（项目正在工作时先 `air pause`） |
+| `air eval run <配置>` | 批量运行评价轨迹，输出 `summary.csv`（见 [eval/README.md](eval/README.md)） |
 | `air models` / `air models test <名字>` / `air models init` | 查看已配置的大模型 / 试调用一次 / 生成配置模板（见第 9 节） |
 | `air dev new-workspace <目录>` / `air dev run-stage <阶段> --workspace <目录>` | 开发调试用（不经过后台，见第 5 节）；`new-workspace --from fixtures/sample_project --register` 让后台显示样例项目 |
 | `air dev check <目录>` | 检查项目里的交接文件是否符合约定格式 |

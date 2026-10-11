@@ -1,0 +1,3 @@
+id: smoke_b
+idea_text: 比较两种正则化方法在小数据集上的稳定性，看多个随机种子下结果的方差。
+task: tasks/smoke

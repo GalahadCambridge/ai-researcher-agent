@@ -12,12 +12,15 @@
 
 from __future__ import annotations
 
+import os
 import queue
+import stat
 import threading
 import time
 import traceback
 from concurrent.futures import Future
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from airesearcher.core.errors import InvalidState, NotFound, ValidationFailed
@@ -67,6 +70,20 @@ MAX_CONSECUTIVE_ERRORS = 3
 WALL_FLUSH_SECONDS = 60.0
 
 
+def dir_bytes(root: Path) -> int:
+    """目录下所有普通文件的大小之和（不跟随符号链接）。"""
+    total = 0
+    for dirpath, _dirnames, filenames in os.walk(root, followlinks=False):
+        for name in filenames:
+            try:
+                st = os.lstat(os.path.join(dirpath, name))
+            except OSError:
+                continue
+            if not stat.S_ISLNK(st.st_mode):
+                total += st.st_size
+    return total
+
+
 @dataclass
 class Tick:
     kind: str  # "step" | "idle" | "transition"
@@ -85,11 +102,14 @@ class ProjectEngine:
         stages: dict[str, Any] | None = None,
         retry_delay: float = 30.0,
         background_interval: float = 10.0,
+        storage_interval: float = 600.0,
     ):
         self.project = project
         self.root = project.root
         self.retry_delay = retry_delay
         self.background_interval = background_interval
+        self.storage_interval = storage_interval  # 多久统计一次工作区大小（storage_gb，4.3）
+        self._last_storage: float | None = None
         self._llm = llm
         self._executor = executor
         self._skills = skills
@@ -98,7 +118,6 @@ class ProjectEngine:
         self.stage_override: str | None = None  # air dev run-stage 用
         self._wake = threading.Event()
         self._actions: queue.Queue[tuple[str, str, Future]] = queue.Queue()
-        self._done_requests: dict[str, S] = {}
         self._thread: threading.Thread | None = None
         self._stopping = threading.Event()
         self._lock = ProjectLock(self.root)
@@ -178,8 +197,9 @@ class ProjectEngine:
     # ------------------------------------------------------------------ 用户操作
     def request_action(self, action: str, request_id: str = "", timeout: float = 30.0, **kw: Any) -> S:
         """pause / resume / cancel / reopen / rollback(checkpoint_id=...)。后台运行时交给引擎线程在两步之间执行。"""
-        if request_id and request_id in self._done_requests:
-            return self._done_requests[request_id]
+        done = self.project.requests.get(request_id)
+        if done is not None:  # 同一 request_id 已处理过（后台重启后也有效）：返回第一次的结果
+            return S(done["state"])
         if self.running and threading.current_thread() is not self._thread:
             fut: Future = Future()
             self._actions.put((action, request_id, kw, fut))
@@ -237,6 +257,9 @@ class ProjectEngine:
         )
 
     def _do_action(self, action: str, request_id: str, **kw: Any) -> S:
+        done = self.project.requests.get(request_id)
+        if done is not None:  # 两个相同的请求同时排队：第二个直接返回第一个的结果
+            return S(done["state"])
         ck = self.ck
         st = ck.state
         if action == "pause":
@@ -272,8 +295,7 @@ class ProjectEngine:
         else:
             raise ValidationFailed(f"未知操作 {action}（可用：pause、resume、cancel、reopen、rollback）")
         self._save()
-        if request_id:
-            self._done_requests[request_id] = self.ck.state
+        self.project.requests.record(request_id, f"action:{action}", {"state": self.ck.state.value})
         self.wake()
         return self.ck.state
 
@@ -281,6 +303,7 @@ class ProjectEngine:
     def tick(self) -> Tick:
         self.project.maybe_reload_config()
         self._process_actions()
+        self._account_storage()
         changed = self._reconcile_files()
         st = self.ck.state
         if st not in ACTIVE_STATES:
@@ -308,6 +331,7 @@ class ProjectEngine:
             self._apply(Error(str(e), retryable=False), STAGE_FOR_STATE[st])
             self._save()
             return Tick("transition", 0.0)
+        self._commit_workspace("human-edited", "用户手工修改（引擎在下一步之前自动提交）")
         ctx = self.build_context()
         delivered_answer = ctx.answer is not None
         try:
@@ -315,6 +339,7 @@ class ProjectEngine:
         except Exception as e:
             self._stage_log(f"[{stage.name}] step 抛出异常:\n" + traceback.format_exc())
             result = Error(f"{type(e).__name__}: {e}", retryable=True)
+        self._commit_workspace(f"agent:{stage.name}", f"{stage.name} 阶段的改动（阶段没有自己提交）")
         if not isinstance(result, Continue | Wait | NeedsApproval | Advance | Stop | Error):
             result = Error(f"step() 返回了无法识别的结果：{result!r}", retryable=False)
         self.ck.scratch = ctx.scratch
@@ -557,6 +582,21 @@ class ProjectEngine:
         except Exception:
             self._stage_log("background 出错:\n" + traceback.format_exc())
 
+    # ------------------------------------------------------------------ 存储记账（4.3：每 10 分钟统计一次，记差值）
+    def _account_storage(self) -> None:
+        t = time.monotonic()
+        if self._last_storage is not None and t - self._last_storage < self.storage_interval:
+            return
+        self._last_storage = t
+        try:
+            gb = dir_bytes(self.root) / 1024**3
+            delta = gb - self.project.budget.used().get("storage_gb", 0.0)
+            if abs(delta) >= 1 / 1024:  # 变化不到 1 MB 不记
+                self.project.budget.charge("storage_gb", round(delta, 6), "engine:storage",
+                                           data={"total_gb": round(gb, 6)})
+        except OSError:
+            self._stage_log("统计工作区大小失败:\n" + traceback.format_exc())
+
     # ------------------------------------------------------------------ 墙钟时间记账（等待状态不计）
     def _account_wall(self) -> None:
         t = time.monotonic()
@@ -564,6 +604,10 @@ class ProjectEngine:
             self._wall_accum += t - self._last_active
         self._last_active = t
         self._flush_wall()
+
+    def flush_accounting(self) -> None:
+        """把还没记账的墙钟时间写进预算（不经过 start/stop 直接 tick 引擎的调用方，结束时调用）。"""
+        self._flush_wall(force=True)
 
     def _flush_wall(self, force: bool = False) -> None:
         if self._wall_accum > 0 and (force or self._wall_accum >= WALL_FLUSH_SECONDS):
@@ -574,6 +618,24 @@ class ProjectEngine:
     def _save(self) -> None:
         self.ck.last_event_seq = self.project.events.last_seq
         ckpt.save(self.root, self.ck)
+
+    def _commit_workspace(self, author: str, message: str) -> None:
+        """工作区 git（详细设计 1 第 3.8 节）：每一步之前把用户手工改动单独以 human-edited 提交，
+        每一步之后把阶段没提交的改动以阶段的名义提交。这样每次运行都对应一个确定的 commit，且作者分得清。"""
+        ws = self.project.workspace
+        try:
+            files = ws.changed_files()
+            if not files:
+                return
+            sha = ws.commit(message, author=author)
+        except Exception:  # git 出问题不影响流程，记日志即可
+            self._stage_log("workspace commit failed:\n" + traceback.format_exc())
+            return
+        if author == "human-edited":
+            self.project.events.append(
+                "workspace.human_edited", f"用户修改了 {len(files)} 个文件，已自动提交（{sha[:8]}）",
+                actor="user", data={"commit": sha, "files": files[:50]},
+            )
 
     def _stage_log(self, msg: str) -> None:
         p = self.root / ".state" / "stage.log"

@@ -76,6 +76,16 @@ def artifact_lineage(pid: str, artifact_id: str, version: int | None = None,
 @router.put("/artifacts/content")
 def edit_artifact(pid: str, body: EditRequest, m: ProjectManager = Depends(manager)) -> dict:
     p = m.get(pid)
+    done = p.requests.get(body.request_id)
+    if done is not None:  # 同一次编辑重复提交：返回第一次的结果，不再报“文件已被修改”
+        return done
+    out = _edit(p, body)
+    p.requests.record(body.request_id, "edit_artifact", out)
+    m.engine(pid).wake()
+    return out
+
+
+def _edit(p, body: EditRequest) -> dict:
     aid = body.artifact_id.strip("/")
     if not any(fnmatch.fnmatchcase(aid, pat) for pat in EDITABLE):
         raise PermissionDenied(f"{aid} 不允许在线编辑（可编辑：{', '.join(EDITABLE)}）")
@@ -93,7 +103,6 @@ def edit_artifact(pid: str, body: EditRequest, m: ProjectManager = Depends(manag
         p.workspace.commit(f"用户编辑 {aid}", author="human-edited")
     else:
         p.archive.sync(["paper"])
-    m.engine(pid).wake()
     return {"artifact_id": aid, "sha256": sha256_file(path)}
 
 

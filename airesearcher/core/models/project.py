@@ -97,6 +97,7 @@ class ProjectConfig(BaseModel):
     limits: Limits = Field(default_factory=Limits)
     permissions: Permissions = Field(default_factory=Permissions)
     llm_cache: Literal["off", "record", "replay"] = "off"
+    prompt_pins: dict[str, int] = Field(default_factory=dict)  # 固定提示版本 {prompt_id: version}，评价实验用
     template: dict | None = None
     literature: dict[str, Any] = Field(default_factory=lambda: {"year_from": 2021, "replay_snapshots": None})
     experiment: dict[str, Any] = Field(

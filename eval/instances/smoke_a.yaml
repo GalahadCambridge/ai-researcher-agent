@@ -1,0 +1,3 @@
+id: smoke_a
+idea_text: 在每类只有几百条训练样本时，比较基线方法、主方法和一个消融版本在分类得分上的差异。
+task: tasks/smoke

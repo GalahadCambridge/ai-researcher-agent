@@ -275,6 +275,12 @@ class LLMGateway:
     def registry(self) -> ModelRegistry:
         return ModelRegistry(self.project.config.models)
 
+    def _pinned(self, prompt_id: str) -> int | None:
+        """project.yaml 的 prompt_pins 固定了某个提示的版本时用它（评价实验各组用同一版提示，12.1）。"""
+        pins = getattr(self.project.config, "prompt_pins", None) or {}
+        v = pins.get(prompt_id)
+        return int(v) if v is not None else None
+
     def resolve(self, role: str, prompt_id: str, tier: str | None, prompt_tier: str | None) -> list[ResolvedModel]:
         """返回 [主模型, 备用模型...]。阶段名取自 prompt_id 的前缀（提示文件放在 stages/<stage>/prompts/）。"""
         reg = self.registry()
@@ -301,7 +307,7 @@ class LLMGateway:
         response_schema: type[BaseModel] | None = None,
         max_retries: int = 2,
     ) -> LLMResponse:
-        prompt = self.prompts.load(prompt_id, prompt_version)
+        prompt = self.prompts.load(prompt_id, prompt_version or self._pinned(prompt_id))
         candidates = self.resolve(role, prompt_id, tier, prompt.tier)
         system, user = prompt.render(variables or {})
         messages = [{"role": "system", "content": system + UNTRUSTED_NOTICE}, {"role": "user", "content": user}]
@@ -426,7 +432,7 @@ class LLMGateway:
         - 单个工具结果超过 8,000 字符时截断并注明；
         - 每一轮模型调用都单独记账、写调用日志。
         """
-        prompt = self.prompts.load(prompt_id, prompt_version)
+        prompt = self.prompts.load(prompt_id, prompt_version or self._pinned(prompt_id))
         candidates = self.resolve(role, prompt_id, tier, prompt.tier)
         system, user = prompt.render(variables or {})
         by_name = {fn.__name__: fn for fn in tools}

@@ -118,15 +118,20 @@ class Workspace:
         return r.stdout.strip() if r.returncode == 0 else None
 
     def dirty(self) -> bool:
-        if not self.has_git:
-            return False
-        r = self._git("status", "--porcelain", check=False)
-        return bool(r.stdout.strip())
+        return bool(self.changed_files())
+
+    def changed_files(self) -> list[str]:
+        """还没提交的改动（只看 src/、configs/，其他目录不进 git）。"""
+        if not self.has_git or not (self.root / ".git").exists():
+            return []
+        r = self._git("status", "--porcelain", "--untracked-files=all", check=False)
+        return [line[3:].strip().strip('"') for line in r.stdout.splitlines() if len(line) > 3]
 
     def commit(self, message: str, author: str = "agent:experiment") -> str:
         """仅当有变化时提交，返回 commit sha。
 
-        TODO（简化）：文档 3.8 要求把用户手工改动单独以 human-edited 提交；目前与阶段的改动合并提交。
+        用户手工改动由引擎在每一步之前单独以 human-edited 提交（engine._commit_workspace），
+        所以阶段调用这里时，提交里只有阶段自己的改动。
         """
         if not self.has_git:
             return "nogit"
