@@ -117,6 +117,9 @@ class ProjectEngine:
         self._stage_objects = dict(stages or {})  # 测试用：直接注入阶段对象 {name: stage}
         self.stage_override: str | None = None  # air dev run-stage 用
         self._wake = threading.Event()
+        # 状态与审批 / 问题文件一起变化时持有这把锁；API 读状态时也拿它，保证读到一致的快照
+        # （否则可能读到“已有新审批、状态却还是起草中”）
+        self.state_lock = threading.RLock()
         self._actions: queue.Queue[tuple[str, str, Future]] = queue.Queue()
         self._thread: threading.Thread | None = None
         self._stopping = threading.Event()
@@ -257,6 +260,10 @@ class ProjectEngine:
         )
 
     def _do_action(self, action: str, request_id: str, **kw: Any) -> S:
+        with self.state_lock:
+            return self._do_action_locked(action, request_id, **kw)
+
+    def _do_action_locked(self, action: str, request_id: str, **kw: Any) -> S:
         done = self.project.requests.get(request_id)
         if done is not None:  # 两个相同的请求同时排队：第二个直接返回第一个的结果
             return S(done["state"])
@@ -304,7 +311,8 @@ class ProjectEngine:
         self.project.maybe_reload_config()
         self._process_actions()
         self._account_storage()
-        changed = self._reconcile_files()
+        with self.state_lock:
+            changed = self._reconcile_files()
         st = self.ck.state
         if st not in ACTIVE_STATES:
             self._flush_wall(force=True)
@@ -345,7 +353,8 @@ class ProjectEngine:
         self.ck.scratch = ctx.scratch
         if delivered_answer:
             self.ck.answer = None
-        seconds = self._apply(result, stage.name)
+        with self.state_lock:
+            seconds = self._apply(result, stage.name)
         self._account_wall()
         self._save()
         return Tick("step", seconds, result)
