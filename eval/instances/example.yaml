@@ -1,0 +1,6 @@
+# 一个研究问题实例。正式评价的实例放在这个目录下，每个实例一个文件。
+id: example
+idea_text: 在每类只有几百条训练样本时，LoRA 是否比全量微调得到更高的分类准确率，结果是否稳定？
+task: tasks/smoke                       # 正式实例用 tasks/text_cls_lowres
+constraints: {}
+# literature_snapshots: snapshots/example/   # 检索快照目录（相对本文件）；设置后文献阶段回放，不联网

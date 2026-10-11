@@ -33,6 +33,8 @@ models_app = typer.Typer(help="查看、测试已配置的大模型。不带子�
 app.add_typer(models_app, name="models")
 template_app = typer.Typer(help="论文模板：上传 zip、查看已上传的版本。", no_args_is_help=True)
 app.add_typer(template_app, name="template")
+eval_app = typer.Typer(help="评价工具（不经过后台，在本进程里跑）。", no_args_is_help=True)
+app.add_typer(eval_app, name="eval")
 skills_app = typer.Typer(help="查看、验证 skill（不经过后台）。", no_args_is_help=True)
 app.add_typer(skills_app, name="skills")
 console = Console()
@@ -625,6 +627,31 @@ def models_init():
 
 
 # ====================================================================== air dev
+@eval_app.command("run")
+def eval_run(config: Path = typer.Argument(..., help="批量配置，如 eval/configs/smoke_batch.yaml"),
+             arm: list[str] = typer.Option(None, "--arm", help="只跑某几组（可写多次）"),
+             out: Path = typer.Option(None, "--out", help="结果目录（默认用配置里的 results_dir）")):
+    """批量运行评价轨迹，结果写到 <结果目录>/<名字>/summary.csv（详细设计 1 第 12.1 节）。中断后再运行会接着跑。"""
+    from airesearcher.eval.batch import run_batch
+
+    if not config.is_file():
+        fail(f"找不到配置文件 {config}")
+    try:
+        summary = run_batch(config, only_arms=arm or None, results_dir=out,
+                            log=lambda msg: console.print(escape(msg)))
+    except ValueError as e:
+        fail(str(e))
+    import csv
+
+    rows = list(csv.DictReader(summary.open(encoding="utf-8")))
+    t = Table("组", "实例", "次", "结果", "最终状态", "LLM 费用", "运行（成功/失败）", "提问", "秒")
+    for r in rows:
+        t.add_row(r["arm"], r["instance"], r["rep"], r["outcome"], L.label(L.STATE, r["final_state"] or None),
+                  f"${float(r['llm_usd'] or 0):.4f}", f"{r['runs_succeeded']}/{r['runs_failed']}",
+                  r["questions_asked"], r["seconds"])
+    console.print(t)
+
+
 @skills_app.command("list")
 def skills_list():
     """列出所有 skill：当前版本、已启用的版本。"""

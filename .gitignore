@@ -32,3 +32,6 @@ dist/
 build/
 .pytest_cache/
 .ruff_cache/
+
+# 评价轨迹的结果（每条轨迹一个项目目录，很大）
+eval/results/

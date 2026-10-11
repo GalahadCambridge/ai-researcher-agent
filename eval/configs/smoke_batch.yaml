@@ -1,0 +1,16 @@
+# 批量运行的冒烟配置：用假实现跑 2 组 × 2 个实例，不需要 API Key，约 1 分钟。
+# 运行：air eval run eval/configs/smoke_batch.yaml
+name: smoke_batch
+instances: [../instances/smoke_a.yaml, ../instances/smoke_b.yaml]   # 相对本文件
+repeats: 1
+arms:                                   # 每组覆盖的 project.yaml 字段
+  full:     {evidence_check: true}
+  ablation: {evidence_check: false}
+fixed:                                  # 所有组共用的 project.yaml 字段
+  dev: {smoke_seconds: 0.3, poll_seconds: 1, compile: false}   # 不写 stage_impl：全部用假实现
+approval_policy: auto_approve           # auto_approve | stop
+question_policy: auto_default           # auto_default | stop
+approval_delay_s: 0                     # 冒烟测试不等；正式评价用 30
+question_delay_s: 0
+max_parallel: 1
+timeout_hours: 0.5

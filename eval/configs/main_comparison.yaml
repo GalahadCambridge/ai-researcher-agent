@@ -1,0 +1,20 @@
+# 主对照实验（详细设计 1 第 12.1 节、详细设计 4 第 13 节）：证据检查开 vs 关。
+# 需要真实的阶段实现和 API Key；实例由各支柱负责人在 eval/instances/ 下补齐（每个实例一个文件）。
+# 运行：air eval run eval/configs/main_comparison.yaml
+name: main_comparison
+instances: [../instances/example.yaml]   # TODO：换成 3 个正式实例
+repeats: 3                               # 每个实例每组重复 3 条轨迹（按成本试点结果调整）
+arms:
+  full:     {evidence_check: true}
+  ablation: {evidence_check: false}
+fixed:
+  models: {tiers: {fast: claude-fast, strong: claude-strong}}   # 用 ~/air/models.yaml 中登记的模型别名
+  budget: {llm_usd: {hard: 5}, wall_hours: {hard: 4}}
+  dev: {stage_impl: {idea: real, plan: real, experiment: real, writing: real}}
+prompt_pins: ../prompt_pins.yaml         # 固定提示版本，两组完全一致
+approval_policy: auto_approve
+question_policy: auto_default
+approval_delay_s: 30
+question_delay_s: 30
+max_parallel: 1                          # GPU 串行；CPU 任务可设 2
+timeout_hours: 4

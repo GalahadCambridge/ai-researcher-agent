@@ -605,6 +605,10 @@ class ProjectEngine:
         self._last_active = t
         self._flush_wall()
 
+    def flush_accounting(self) -> None:
+        """把还没记账的墙钟时间写进预算（不经过 start/stop 直接 tick 引擎的调用方，结束时调用）。"""
+        self._flush_wall(force=True)
+
     def _flush_wall(self, force: bool = False) -> None:
         if self._wall_accum > 0 and (force or self._wall_accum >= WALL_FLUSH_SECONDS):
             self.project.budget.charge("wall_hours", self._wall_accum / 3600.0, "engine")
