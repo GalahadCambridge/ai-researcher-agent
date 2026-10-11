@@ -310,6 +310,7 @@ class ProjectEngine:
             self._apply(Error(str(e), retryable=False), STAGE_FOR_STATE[st])
             self._save()
             return Tick("transition", 0.0)
+        self._commit_workspace("human-edited", "用户手工修改（引擎在下一步之前自动提交）")
         ctx = self.build_context()
         delivered_answer = ctx.answer is not None
         try:
@@ -317,6 +318,7 @@ class ProjectEngine:
         except Exception as e:
             self._stage_log(f"[{stage.name}] step 抛出异常:\n" + traceback.format_exc())
             result = Error(f"{type(e).__name__}: {e}", retryable=True)
+        self._commit_workspace(f"agent:{stage.name}", f"{stage.name} 阶段的改动（阶段没有自己提交）")
         if not isinstance(result, Continue | Wait | NeedsApproval | Advance | Stop | Error):
             result = Error(f"step() 返回了无法识别的结果：{result!r}", retryable=False)
         self.ck.scratch = ctx.scratch
@@ -576,6 +578,24 @@ class ProjectEngine:
     def _save(self) -> None:
         self.ck.last_event_seq = self.project.events.last_seq
         ckpt.save(self.root, self.ck)
+
+    def _commit_workspace(self, author: str, message: str) -> None:
+        """工作区 git（详细设计 1 第 3.8 节）：每一步之前把用户手工改动单独以 human-edited 提交，
+        每一步之后把阶段没提交的改动以阶段的名义提交。这样每次运行都对应一个确定的 commit，且作者分得清。"""
+        ws = self.project.workspace
+        try:
+            files = ws.changed_files()
+            if not files:
+                return
+            sha = ws.commit(message, author=author)
+        except Exception:  # git 出问题不影响流程，记日志即可
+            self._stage_log("workspace commit failed:\n" + traceback.format_exc())
+            return
+        if author == "human-edited":
+            self.project.events.append(
+                "workspace.human_edited", f"用户修改了 {len(files)} 个文件，已自动提交（{sha[:8]}）",
+                actor="user", data={"commit": sha, "files": files[:50]},
+            )
 
     def _stage_log(self, msg: str) -> None:
         p = self.root / ".state" / "stage.log"

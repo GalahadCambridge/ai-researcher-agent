@@ -200,3 +200,32 @@ def test_checkpoint_history_and_atomic(project):
     assert hist[0] == "ck-000001" and ckpt.briefs(project.root)[-1].milestone  # 第一个（状态切换）作为里程碑保留
     assert ckpt.load(project.root).checkpoint_id == hist[-1]
     assert not list((project.root / ".state").glob("*.tmp"))
+
+
+def test_human_edits_committed_separately(project):
+    import shutil
+    import subprocess
+
+    import pytest
+
+    if shutil.which("git") is None:
+        pytest.skip("没有 git")
+
+    def write_src(ctx):
+        (ctx.root / "src" / "agent.py").write_text("print('agent')\n", encoding="utf-8")
+        return Continue()
+
+    eng = engine(project, idea=Scripted("idea", [write_src]))
+    (project.root / "src" / "mine.py").write_text("print('mine')\n", encoding="utf-8")  # 用户手工改
+    eng.tick()
+    log = subprocess.run(["git", "log", "--format=@@%an", "--name-only"], cwd=project.root, capture_output=True,
+                         text=True, encoding="utf-8").stdout
+    by_author = {}
+    for chunk in log.split("@@")[1:]:
+        author, *files = [x for x in chunk.splitlines() if x.strip()]
+        by_author[author] = files
+    assert "src/mine.py" in by_author["human-edited"] and "src/agent.py" not in by_author["human-edited"]
+    assert "src/agent.py" in by_author["agent:idea"]
+    ev = [e for e in project.events.all() if e.type == "workspace.human_edited"]
+    assert ev and ev[0].data["files"] == ["src/mine.py"]
+    assert not project.workspace.dirty()
