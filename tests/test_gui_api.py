@@ -56,12 +56,44 @@ def test_sse_message_types(client):
             run_status.setdefault(d["run_id"], []).append(d["status"])
     assert len(run_status) == 9
     assert all(s[-1] == "succeeded" for s in run_status.values())
-    assert any("running" in s for s in run_status.values())  # 包装器写的状态变化也会推送
     # 断线重连：带上次的事件 seq，只补发之后的事件
     last = max(json.loads(m.split("data: ", 1)[1])["seq"] for m in ProjectStream(c.app.state.manager, pid).poll()
                if m.startswith("id:"))
     again = parse(ProjectStream(c.app.state.manager, pid, last_seq=last).poll())
     assert not [d for e, d in again if e == "event"]
+
+
+def test_sse_pushes_status_changes_without_events(monkeypatch):
+    """包装器直接改 status.json（如 queued → running）没有事件：靠比对活动运行补推 run 消息。不依赖运行快慢。"""
+    from types import SimpleNamespace
+
+    from airesearcher.core.models.budget import BudgetStatus
+
+    active: list = []
+    final = {}
+    project = SimpleNamespace(root="unused", events=SimpleNamespace(query=lambda after_seq, limit: []))
+    status = lambda: SimpleNamespace(  # noqa: E731
+        state=SimpleNamespace(value="Executing"), stage_label="x", blocking_reason=None,
+        budget=BudgetStatus(categories={}), active_runs=list(active))
+    m = SimpleNamespace(get=lambda pid: project, status=lambda pid: status())
+    ps = ProjectStream(m, "p")
+    run = lambda rid, state: SimpleNamespace(run_id=rid, state=SimpleNamespace(value=state))  # noqa: E731
+
+    def runs_of(msgs):
+        return [d for e, d in parse(msgs) if e == "run"]
+
+    active[:] = [run("r1", "queued")]
+    assert runs_of(ps.poll()) == [{"run_id": "r1", "status": "queued"}]
+    assert runs_of(ps.poll()) == []  # 没变化不推
+    active[:] = [run("r1", "running")]
+    assert runs_of(ps.poll()) == [{"run_id": "r1", "status": "running"}]
+    active[:] = []  # 结束了：从活动列表消失，读 status.json 得到最终状态
+    final["r1"] = "succeeded"
+    import airesearcher.server.sse as sse_mod
+
+    monkeypatch.setattr(sse_mod.run_service, "load_run", lambda root, rid, with_metrics=False: SimpleNamespace(
+        status=SimpleNamespace(state=SimpleNamespace(value=final[rid]))))
+    assert runs_of(ps.poll()) == [{"run_id": "r1", "status": "succeeded"}]
 
 
 def test_sse_derived_messages():
