@@ -98,7 +98,6 @@ class ProjectEngine:
         self.stage_override: str | None = None  # air dev run-stage 用
         self._wake = threading.Event()
         self._actions: queue.Queue[tuple[str, str, Future]] = queue.Queue()
-        self._done_requests: dict[str, S] = {}
         self._thread: threading.Thread | None = None
         self._stopping = threading.Event()
         self._lock = ProjectLock(self.root)
@@ -178,8 +177,9 @@ class ProjectEngine:
     # ------------------------------------------------------------------ 用户操作
     def request_action(self, action: str, request_id: str = "", timeout: float = 30.0, **kw: Any) -> S:
         """pause / resume / cancel / reopen / rollback(checkpoint_id=...)。后台运行时交给引擎线程在两步之间执行。"""
-        if request_id and request_id in self._done_requests:
-            return self._done_requests[request_id]
+        done = self.project.requests.get(request_id)
+        if done is not None:  # 同一 request_id 已处理过（后台重启后也有效）：返回第一次的结果
+            return S(done["state"])
         if self.running and threading.current_thread() is not self._thread:
             fut: Future = Future()
             self._actions.put((action, request_id, kw, fut))
@@ -237,6 +237,9 @@ class ProjectEngine:
         )
 
     def _do_action(self, action: str, request_id: str, **kw: Any) -> S:
+        done = self.project.requests.get(request_id)
+        if done is not None:  # 两个相同的请求同时排队：第二个直接返回第一个的结果
+            return S(done["state"])
         ck = self.ck
         st = ck.state
         if action == "pause":
@@ -272,8 +275,7 @@ class ProjectEngine:
         else:
             raise ValidationFailed(f"未知操作 {action}（可用：pause、resume、cancel、reopen、rollback）")
         self._save()
-        if request_id:
-            self._done_requests[request_id] = self.ck.state
+        self.project.requests.record(request_id, f"action:{action}", {"state": self.ck.state.value})
         self.wake()
         return self.ck.state
 

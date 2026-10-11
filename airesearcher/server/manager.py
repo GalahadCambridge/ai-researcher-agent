@@ -14,6 +14,7 @@ from airesearcher.core.models.approval import ApprovalBrief
 from airesearcher.core.models.run import RunLabel
 from airesearcher.core.models.template import TemplateInfo
 from airesearcher.core.project import Project
+from airesearcher.core.requests import RequestLog
 from airesearcher.core.workspace import air_home, load_registry
 from airesearcher.engine.engine import ProjectEngine
 from airesearcher.engine.recovery import reconcile_runs
@@ -40,10 +41,9 @@ class ProjectManager:
         self.engine_kwargs = engine_kwargs or {}
         self.projects: dict[str, Project] = {}
         self.engines: dict[str, ProjectEngine] = {}
-        self._create_requests: dict[str, str] = {}
+        self.requests = RequestLog(self.home / "requests.jsonl")
         self._lock = threading.RLock()
         self.startup_report: dict[str, list] = {}
-        self._template_requests: dict[str, TemplateInfo] = {}
 
     # ---------------------------------------------------------------- 生命周期
     def startup(self) -> None:
@@ -85,8 +85,9 @@ class ProjectManager:
 
     def create(self, body: CreateProject) -> Project:
         with self._lock:
-            if body.request_id and body.request_id in self._create_requests:
-                return self.get(self._create_requests[body.request_id])
+            done = self.requests.get(body.request_id)
+            if done is not None:  # 同一 request_id 已创建过（后台重启后也有效）
+                return self.get(done["project_id"])
             fields: dict[str, Any] = {"constraints": body.constraints, "evidence_check": body.evidence_check}
             if body.budget:
                 fields["budget"] = body.budget
@@ -95,8 +96,7 @@ class ProjectManager:
             project = Project.create(goal=body.idea_text, task=body.task, title=body.title, home=self.home,
                                      **fields)
             self._open(project.project_id, project.root)
-            if body.request_id:
-                self._create_requests[body.request_id] = project.project_id
+            self.requests.record(body.request_id, "create_project", {"project_id": project.project_id})
             return self.projects[project.project_id]
 
     def wait_settled(self, pid: str, predicate: Any, timeout: float = 3.0) -> None:
@@ -188,10 +188,11 @@ class ProjectManager:
                         request_id: str = "") -> TemplateInfo:
         p = self.get(pid)
         with self._lock:
-            if request_id and request_id in self._template_requests:
-                return self._template_requests[request_id]
+            done = p.requests.get(request_id)
+            if done is not None:
+                return templates.template_info(p, done["template_id"], done["version"])
             info = templates.import_zip(p, data, filename, template_id, actor="user")
-            if request_id:
-                self._template_requests[request_id] = info
+            p.requests.record(request_id, "upload_template", {"template_id": info.template_id,
+                                                              "version": info.version})
         self.engine(pid).wake()
         return info

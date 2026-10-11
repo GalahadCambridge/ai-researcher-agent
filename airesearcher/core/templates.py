@@ -118,10 +118,10 @@ def import_zip(project: Project, data: bytes, filename: str = "template.zip", te
     project.save_config(cfg, summary=f"改用上传的模板 {template_id} v{version}", actor=actor)
     project.events.append("template.uploaded", f"上传模板 {filename} → {template_id} v{version}",
                           actor=actor, refs=[ref], data={"template_id": template_id, "version": version})
-    return _info(project, template_id, version)
+    return template_info(project, template_id, version)
 
 
-def _info(project: Project, template_id: str, version: int) -> TemplateInfo:
+def template_info(project: Project, template_id: str, version: int) -> TemplateInfo:
     vdir = _dir(project.root) / template_id / f"v{version}"
     meta: dict[str, Any] = read_json(vdir / "upload.json") if (vdir / "upload.json").exists() else {}
     check = read_json(vdir / "check.json") if (vdir / "check.json").exists() else None
@@ -141,7 +141,7 @@ def list_templates(project: Project) -> TemplateList:
     items = []
     if _dir(root).exists():
         for d in sorted(p for p in _dir(root).iterdir() if _TPL_ID.match(p.name)):
-            items += [_info(project, d.name, v) for v in _versions(root, d.name)]
+            items += [template_info(project, d.name, v) for v in _versions(root, d.name)]
     default_check = root / "paper" / ".template_check_default.json"
     return TemplateList(
         current=project.config.template, templates=items,

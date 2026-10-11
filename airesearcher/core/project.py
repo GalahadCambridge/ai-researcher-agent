@@ -22,6 +22,7 @@ from .fsutil import now
 from .models.project import ProjectConfig
 from .permissions import Permissions
 from .questions import Questions
+from .requests import RequestLog
 from .workspace import Workspace, air_home, init_project_dirs, new_project_id, register_project
 
 
@@ -42,6 +43,7 @@ class Project:
         self.budget = Budget(self.root, self.events, lambda: self.config.budget)
         self.permissions = Permissions(self.root, self.events, lambda: self.config.permissions)
         self.workspace = Workspace(self.root)
+        self.requests = RequestLog(self.root / ".state" / "requests.jsonl")
 
     @property
     def project_id(self) -> str:
