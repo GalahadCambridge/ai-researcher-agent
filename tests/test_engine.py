@@ -229,3 +229,21 @@ def test_human_edits_committed_separately(project):
     ev = [e for e in project.events.all() if e.type == "workspace.human_edited"]
     assert ev and ev[0].data["files"] == ["src/mine.py"]
     assert not project.workspace.dirty()
+
+
+def test_storage_accounting(project):
+    from airesearcher.core.models.project import Limit
+
+    eng = ProjectEngine(project, stages={"idea": Scripted("idea", [Continue()])}, retry_delay=0, storage_interval=0)
+    eng.tick()
+    base = project.budget.used().get("storage_gb", 0.0)
+    (project.root / "artifacts" / "big.bin").write_bytes(b"\0" * (3 * 1024 * 1024))  # 3 MB
+    eng.tick()
+    used = project.budget.used()["storage_gb"]
+    assert abs((used - base) * 1024 - 3) < 0.1  # 记的是差值，总数等于当前大小
+    eng.tick()
+    assert project.budget.used()["storage_gb"] == used  # 没变化不再记
+
+    project.save_config(project.config.model_copy(update={"budget": {"storage_gb": Limit(hard=used / 2)}}))
+    eng.tick()
+    assert eng.state == S.BudgetExhausted

@@ -12,12 +12,15 @@
 
 from __future__ import annotations
 
+import os
 import queue
+import stat
 import threading
 import time
 import traceback
 from concurrent.futures import Future
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from airesearcher.core.errors import InvalidState, NotFound, ValidationFailed
@@ -67,6 +70,20 @@ MAX_CONSECUTIVE_ERRORS = 3
 WALL_FLUSH_SECONDS = 60.0
 
 
+def dir_bytes(root: Path) -> int:
+    """目录下所有普通文件的大小之和（不跟随符号链接）。"""
+    total = 0
+    for dirpath, _dirnames, filenames in os.walk(root, followlinks=False):
+        for name in filenames:
+            try:
+                st = os.lstat(os.path.join(dirpath, name))
+            except OSError:
+                continue
+            if not stat.S_ISLNK(st.st_mode):
+                total += st.st_size
+    return total
+
+
 @dataclass
 class Tick:
     kind: str  # "step" | "idle" | "transition"
@@ -85,11 +102,14 @@ class ProjectEngine:
         stages: dict[str, Any] | None = None,
         retry_delay: float = 30.0,
         background_interval: float = 10.0,
+        storage_interval: float = 600.0,
     ):
         self.project = project
         self.root = project.root
         self.retry_delay = retry_delay
         self.background_interval = background_interval
+        self.storage_interval = storage_interval  # 多久统计一次工作区大小（storage_gb，4.3）
+        self._last_storage: float | None = None
         self._llm = llm
         self._executor = executor
         self._skills = skills
@@ -283,6 +303,7 @@ class ProjectEngine:
     def tick(self) -> Tick:
         self.project.maybe_reload_config()
         self._process_actions()
+        self._account_storage()
         changed = self._reconcile_files()
         st = self.ck.state
         if st not in ACTIVE_STATES:
@@ -560,6 +581,21 @@ class ProjectEngine:
             call_background(stage, self.build_context())
         except Exception:
             self._stage_log("background 出错:\n" + traceback.format_exc())
+
+    # ------------------------------------------------------------------ 存储记账（4.3：每 10 分钟统计一次，记差值）
+    def _account_storage(self) -> None:
+        t = time.monotonic()
+        if self._last_storage is not None and t - self._last_storage < self.storage_interval:
+            return
+        self._last_storage = t
+        try:
+            gb = dir_bytes(self.root) / 1024**3
+            delta = gb - self.project.budget.used().get("storage_gb", 0.0)
+            if abs(delta) >= 1 / 1024:  # 变化不到 1 MB 不记
+                self.project.budget.charge("storage_gb", round(delta, 6), "engine:storage",
+                                           data={"total_gb": round(gb, 6)})
+        except OSError:
+            self._stage_log("统计工作区大小失败:\n" + traceback.format_exc())
 
     # ------------------------------------------------------------------ 墙钟时间记账（等待状态不计）
     def _account_wall(self) -> None:
