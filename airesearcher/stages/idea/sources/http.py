@@ -1,4 +1,4 @@
-"""受权限和速率约束的单次 HTTP 请求；等待由引擎调度。"""
+"""Permission-checked, rate-limited HTTP requests; waiting is scheduled by the engine."""
 
 from __future__ import annotations
 
@@ -51,11 +51,11 @@ class GuardedHTTP:
         self.guard("network", host)
         lock = self._locks.setdefault(host, threading.Lock())
         if not lock.acquire(blocking=False):
-            raise SourceWait(0.25, f"等待 {host} 的上一个请求结束")
+            raise SourceWait(0.25, f"Waiting for the previous request to {host} to finish")
         try:
             deadline = max(self.state.get(host, 0), self._next.get(host, 0))
             if self.clock() < deadline:
-                raise SourceWait(deadline - self.clock(), f"{host} 请求节流")
+                raise SourceWait(deadline - self.clock(), f"Rate limit for {host}")
             self.state[host] = self._next[host] = self.clock() + interval
             try:
                 if self.client is not None:
@@ -80,7 +80,7 @@ class GuardedHTTP:
             for chunk in response.iter_bytes():
                 size += len(chunk)
                 if size > maximum:
-                    raise SourceFailure("响应文件超过允许大小")
+                    raise SourceFailure("Response exceeds the allowed size")
                 chunks.append(chunk)
             # iter_bytes already decoded Content-Encoding; avoid decoding the reconstructed body twice.
             kept = {k: v for k, v in response.headers.items() if k not in {"content-encoding", "content-length"}}

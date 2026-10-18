@@ -1,4 +1,4 @@
-"""检索源的确定性 HTTP 测试；默认不访问网络，不使用任何真实 Key。"""
+"""Deterministic retrieval-source HTTP tests without network access or real API keys."""
 
 import json
 from types import SimpleNamespace
@@ -147,7 +147,7 @@ def test_both_sources_fail():
         with pytest.raises(SourceWait) as exc:
             router.search("LoRA")
         clock[0] += exc.value.seconds
-    with pytest.raises(SourceFailure, match="所有文献源均失败"):
+    with pytest.raises(SourceFailure, match="All literature sources failed"):
         router.search("LoRA")
 
 
@@ -159,7 +159,7 @@ def test_replay_real_raw_snapshot_and_missing(tmp_path):
     assert restored == snap and result[0].paper_id == papers[0].paper_id
     assert result[0].snapshot_id == snap.snapshot_id
     assert replay.get(result[0].paper_id) == result[0]
-    with pytest.raises(SourceFailure, match="未联网"):
+    with pytest.raises(SourceFailure, match="no network request was made"):
         replay.search("different", limit=2)
     with pytest.raises(SourceFailure):
         replay.search("LoRA", year_from=2021, limit=2)

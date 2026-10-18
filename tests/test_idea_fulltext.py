@@ -1,4 +1,4 @@
-"""全文准备测试：使用仓库现有 PDF，HTTP 为模拟，不联网。"""
+"""Test full-text preparation using an existing repository PDF and mocked HTTP without network access."""
 
 import json
 from pathlib import Path
@@ -42,7 +42,7 @@ def paper():
 
 
 def make_engine(air_home, rows, handler, *, download=True, clock=None):
-    project = Project.create(goal="全文提取测试", task="tasks/smoke", home=air_home,
+    project = Project.create(goal="Full-text extraction test", task="tasks/smoke", home=air_home,
                              dev={"stage_impl": {"idea": "real"}})
     ticks = iter(range(1000, 100000, 10))
     wire = GuardedHTTP(project.permissions.guard, client=httpx.Client(transport=httpx.MockTransport(handler)),
@@ -169,7 +169,7 @@ def test_missing_cached_text_is_rebuilt_without_download(air_home, existing_pdf)
 def test_bounded_download_and_permission(air_home):
     _, engine, stage = make_engine(air_home, [], lambda r: httpx.Response(200, content=b"x" * 100))
     wire = stage.fulltext_http
-    with pytest.raises(SourceFailure, match="超过"):
+    with pytest.raises(SourceFailure, match="exceeds"):
         wire.get("https://arxiv.org/pdf/2106.09685", {}, interval=3, max_bytes=10)
     with pytest.raises(PermissionDenied):
         wire.get("https://example.com/private", {}, interval=3, max_bytes=10)
@@ -199,13 +199,13 @@ def test_section_excerpt_and_word_limit():
 def test_blank_pdf_is_not_full_text(monkeypatch):
     blank = SimpleNamespace(get_contents=lambda: None, extract_text=lambda: "")
     monkeypatch.setattr(pdf_text, "PdfReader", lambda *a: SimpleNamespace(is_encrypted=False, pages=[blank]))
-    with pytest.raises(ValueError, match="扫描件"):
+    with pytest.raises(ValueError, match="scanned"):
         extract_pdf(b"%PDF-1.7")
 
 
 def test_encrypted_pdf_is_not_readable(monkeypatch):
     monkeypatch.setattr(pdf_text, "PdfReader", lambda *a: SimpleNamespace(is_encrypted=True, decrypt=lambda p: 0))
-    with pytest.raises(ValueError, match="加密"):
+    with pytest.raises(ValueError, match="encrypted"):
         extract_pdf(b"%PDF-1.7")
 
 

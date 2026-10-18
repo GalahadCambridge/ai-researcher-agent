@@ -1,4 +1,4 @@
-"""批量相关性评分与精读选择，不修改已经冻结的文献交接结构。"""
+"""Batch relevance scoring and reading selection using the frozen literature handoff schemas."""
 
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def select_reading(papers, scores: dict, plan: dict, limit: int):
 def screen_step(ctx, state):
     limit = ctx.project.limits.read_papers
     if limit < 0:
-        return Error("limits.read_papers 不能小于 0", retryable=False)
+        return Error("limits.read_papers must not be negative", retryable=False)
     manifest_path = "idea/screen_input.json"
     if not ctx.archive.latest(manifest_path):
         data = {
@@ -83,17 +83,20 @@ def screen_step(ctx, state):
             result = out.parsed
             ids = [p.paper_id for p in result.papers]
             if len(ids) != len(set(ids)) or set(ids) != {p.paper_id for p in batch}:
-                return Error("筛选结果必须对当前批次的每篇论文评分一次，不能重复、遗漏或添加 ID", retryable=True)
+                return Error((
+                    "Screening must score each paper in the current batch exactly once, without "
+                    "duplicate, missing, or extra IDs"
+                ), retryable=True)
             save_json(ctx, path, {"result": result.model_dump(mode="json"), "model": out.model,
                                   "prompt_id": out.prompt_id, "prompt_version": out.prompt_version,
                                   "call_id": out.call_id})
             state["screened_papers"] = start + len(batch)
-            return Continue(f"已评分 {start + len(batch)}/{len(papers)} 篇，评分批次已保存")
+            return Continue(f"Scored {start + len(batch)}/{len(papers)} papers; screening batch saved")
         receipt = json.loads((ctx.root / path).read_text(encoding="utf-8"))
         result = ScreenBatch.model_validate(receipt["result"])
         ids = [p.paper_id for p in result.papers]
         if len(ids) != len(set(ids)) or set(ids) != {p.paper_id for p in batch}:
-            return Error("已保存的评分批次与输入文献不匹配", retryable=False)
+            return Error("Saved screening batches do not match the input papers", retryable=False)
         scores.update({p.paper_id: p for p in result.papers})
     selected, missing, adjusted = select_reading(papers, scores, data["plan"], limit)
     selected_ids = {p.paper_id for p in selected}
@@ -114,8 +117,11 @@ def screen_step(ctx, state):
         "coverage_adjusted": adjusted, "uncovered_subquestions": missing,
         "excluded_without_readable_text": metadata_only,
         "low_relevance_selected": [p.paper_id for p in selected if scores[p.paper_id].score <= 2],
-        "note": "仅根据标题与摘要判断相关性；评分不代表论文结论已核验。",
+        "note": "Relevance is assessed using titles and abstracts only; scores do not verify paper conclusions.",
     }
     save_json(ctx, "idea/screening.json", report)
     state.update(phase="fulltext", screened_papers=len(papers), selected_count=len(selected))
-    return Continue(f"筛选完成：{len(papers)} 篇候选，选择 {len(selected)} 篇待精读；尚未获取全文或阅读")
+    return Continue(
+        f"Screening complete: {len(papers)} candidates, {len(selected)} selected for "
+        f"reading; full-text retrieval and reading have not started"
+    )

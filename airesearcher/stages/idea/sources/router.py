@@ -1,4 +1,4 @@
-"""主源失败重试三次后换源；所有等待均通过 SourceWait 交还引擎。"""
+"""Switch sources after three retries; return all waiting to the engine through SourceWait."""
 
 import hashlib
 import json
@@ -17,7 +17,7 @@ class FallbackSource:
         key = hashlib.sha256(json.dumps([query, year_from, limit]).encode()).hexdigest()
         pending = self.state.setdefault(key, {"source": 0, "failures": 0, "next_at": 0})
         if pending["next_at"] > self.clock():
-            raise SourceWait(pending["next_at"] - self.clock(), "等待检索重试")
+            raise SourceWait(pending["next_at"] - self.clock(), "Waiting to retry retrieval")
         source = self.sources[pending["source"]]
         try:
             result = source.search(query, year_from=year_from, limit=limit)
@@ -28,15 +28,20 @@ class FallbackSource:
             if pending["failures"] < 4:  # initial attempt + three retries
                 delay = max(2 ** (pending["failures"] - 1), exc.retry_after)
                 pending["next_at"] = self.clock() + delay
-                raise SourceWait(delay, f"{source.name} 失败，准备第 {pending['failures']} 次重试") from exc
+                raise SourceWait(delay, f"{source.name} failed; preparing retry {pending['failures']}") from exc
             if pending["source"] + 1 < len(self.sources):
                 pending.update(source=pending["source"] + 1, failures=0, next_at=0)
-                self.events.append("literature.source_switched", "主文献源重试后失败，切换备用源", actor="agent:idea",
+                self.events.append("literature.source_switched", (
+                    "Primary literature source failed after retries; switching to the backup source"
+                ), actor="agent:idea",
                                    data={"query": query, "from": source.name,
                                          "to": self.sources[pending["source"]].name})
-                raise SourceWait(0.05, "已切换文献源") from exc
+                raise SourceWait(0.05, "Literature source switched") from exc
             self.state.pop(key)
-            raise SourceFailure("所有文献源均失败，已保留失败快照，请稍后重试") from exc
+            raise SourceFailure(
+                "All literature sources failed; failure snapshots were retained. Please retry "
+                "later"
+            ) from exc
         self.state.pop(key)
         return result
 

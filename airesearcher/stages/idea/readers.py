@@ -1,4 +1,4 @@
-"""可恢复的多角色阅读；每步最多六个任务，并发数由项目配置控制。"""
+"""Resumable multi-role reading; at most six tasks per step, with project-configured concurrency."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def _source(ctx, paper):
                 return text, "full_text", paper.fulltext_path, warning
         except Exception:
             pass
-        warning = "全文文本缺失或不可读，阅读输入降为摘要"
+        warning = "Full-text content is missing or unreadable; reading input falls back to the abstract"
     return paper.abstract or "", "abstract_only", None, warning
 
 
@@ -64,14 +64,17 @@ def _manifest(ctx):
 def _validate_items(items, role, source):
     fields = [item.field for item in items]
     if len(fields) != len(set(fields)) or set(fields) != set(ROLE_FIELDS[role]):
-        raise ValueError("阅读结果必须覆盖角色全部字段一次，不能重复或添加字段")
+        raise ValueError(
+            "Reading output must cover each required role field exactly once, without "
+            "duplicates or extra fields"
+        )
     checker = QuoteVerifier(source["text"])
     return [checker.check(item, source["based_on"]) for item in items]
 
 
 def _read_one(ctx, source, task, goal):
     if not source["text"].strip():
-        raise ValueError("论文没有可读全文或摘要")
+        raise ValueError("The paper has no readable full text or abstract")
     role = task["role"]
     prompt = f"idea/{role}_reader"
     out = ctx.llm.complete(
@@ -81,7 +84,7 @@ def _read_one(ctx, source, task, goal):
                    "paper_block": ctx.llm.wrap_untrusted(source["text"], source=source["paper_id"])},
     )
     if not out.parsed.relevance_to_question.strip():
-        raise ValueError("与研究问题的关系不能为空")
+        raise ValueError("Relevance to the research question must not be empty")
     return ReadingCard(card_id=task["card_id"], paper_id=source["paper_id"], role=role,
                        based_on=source["based_on"], items=_validate_items(out.parsed.items, role, source),
                        relevance_to_question=out.parsed.relevance_to_question, model=out.model,
@@ -102,7 +105,7 @@ def _save_card(ctx, card):
 def read_step(ctx, state):
     concurrency = ctx.project.limits.reader_concurrency
     if concurrency < 1:
-        return Error("reader_concurrency 必须大于 0", retryable=False)
+        return Error("reader_concurrency must be greater than 0", retryable=False)
     manifest = _manifest(ctx)
     sources = {p["paper_id"]: p for p in manifest["papers"]}
     roles = ["single"] if manifest["reading_mode"] == "single" else ["methods", "feasibility"]
@@ -117,12 +120,15 @@ def read_step(ctx, state):
         saved = json.loads((ctx.root / path).read_text(encoding="utf-8"))
         source = sources[task["paper_id"]]
         if saved["input_sha256"] != source["input_sha256"]:
-            return Error("阅读缓存与本次输入不一致，请使用独立项目或重新生成输入", retryable=False)
+            return Error((
+                "Cached reading input does not match; use a separate project or regenerate the "
+                "input"
+            ), retryable=False)
         if saved["status"] == "done":
             card = ReadingCard.model_validate(saved["card"])
             if (card.card_id, card.paper_id, card.role, card.based_on) != (
                     task["card_id"], task["paper_id"], task["role"], source["based_on"]):
-                return Error("阅读卡身份与任务不匹配", retryable=False)
+                return Error("Reading-card identity does not match the task", retryable=False)
             card.items = _validate_items(card.items, task["role"], source)
             _save_card(ctx, card)
         task.update(status=saved["status"], attempts=saved["attempts"], last_error=saved.get("last_error", ""))
@@ -147,7 +153,7 @@ def read_step(ctx, state):
                 save_json(ctx, f"idea/reading_receipts/{task['card_id']}.json", saved)
                 if task["status"] == "done":
                     _save_card(ctx, card)
-        return Continue(f"阅读任务进度：{sum(t['status'] == 'done' for t in tasks)}/{len(tasks)} 完成")
+        return Continue(f"Reading task progress: {sum(t['status'] == 'done' for t in tasks)}/{len(tasks)} completed")
     cards = [ReadingCard.model_validate_json((ctx.root / f"idea/reading_cards/{t['card_id']}.json").read_text(
         encoding="utf-8")) for t in tasks if t["status"] == "done"]
     items = [item for card in cards for item in card.items]
@@ -158,10 +164,16 @@ def read_step(ctx, state):
               "without_quote_count": sum(i.quote_verified is None for i in items),
               "source_warnings": [{"paper_id": p["paper_id"], "warning": p["warning"]}
                                   for p in manifest["papers"] if p["warning"]],
-              "note": "文字核对不等于语义和结论核验；失败任务和缺少证据的条目必须保留。"}
+              "note": (
+                  "Text matching does not verify semantics or conclusions; failed tasks and items "
+                  "without evidence must be retained."
+              )}
     save_json(ctx, "idea/reading_status.json", report)
     state["phase"] = "gap"
-    return Continue(f"阅读卡准备完成：{len(cards)} 张，{len(report['failed'])} 项失败；下一步生成差距候选")
+    return Continue(
+        f"Reading cards ready: {len(cards)} cards, {len(report['failed'])} failed tasks; "
+        f"gap candidates will be generated next"
+    )
 
 
 def gap_step(ctx, state):
@@ -184,7 +196,9 @@ def gap_step(ctx, state):
             )
             gaps = out.parsed.gaps
             if len({g.gap_id for g in gaps}) != len(gaps) or any(ref not in refs for g in gaps for ref in g.evidence):
-                return Error("差距候选含重复 ID 或不存在的阅读卡条目引用", retryable=True)
+                return Error((
+                    "Gap candidates contain duplicate IDs or nonexistent reading-card item references"
+                ), retryable=True)
             for gap in gaps:
                 if not any(refs[r][0].based_on == "full_text" and refs[r][1].kind == "author_claim"
                            and refs[r][1].quote_verified is True for r in gap.evidence):
@@ -195,6 +209,9 @@ def gap_step(ctx, state):
             gaps = []
         save_json(ctx, path, {"gaps": [g.model_dump(mode="json") for g in gaps], **trace,
                               "incomplete_reading": [t["card_id"] for t in report["failed"]],
-                              "note": "仅为检索范围内的差距候选，尚未协调合并，不证明全球研究空白或新颖性。"})
+                              "note": (
+                                  "These are gap candidates within the retrieval scope, pending coordinator "
+                                  "review; they do not establish a global research gap or novelty."
+                              )})
     state["phase"] = "merge"
-    return Continue("差距候选已保存，下一步由协调者合并与检查冲突")
+    return Continue("Gap candidates saved; coordinator merging and conflict checks come next")

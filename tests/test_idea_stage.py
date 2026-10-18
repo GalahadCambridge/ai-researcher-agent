@@ -1,4 +1,4 @@
-"""文献阶段的离线集成测试：解析、检索、去重、恢复、失败与边界。"""
+"""Offline literature-stage integration tests for parsing, retrieval, deduplication, recovery, failures, and limits."""
 
 import json
 
@@ -17,7 +17,9 @@ from .helpers import drive
 
 
 def make_project(air_home, **kwargs):
-    return Project.create(goal="比较低资源文本分类中的 LoRA 和全量微调", task="tasks/smoke", home=air_home,
+    return Project.create(goal=(
+        "Compare LoRA and full fine-tuning for low-resource text classification"
+    ), task="tasks/smoke", home=air_home,
                           dev={"stage_impl": {"idea": "real"}}, literature={"year_from": 2018}, **kwargs)
 
 
@@ -119,5 +121,5 @@ def test_replay_missing_snapshot_is_explicit(air_home, monkeypatch):
     engine.tick()
     engine.tick()
     result = engine.tick().result
-    assert isinstance(result, Error) and "回放缺少查询快照" in result.message
+    assert isinstance(result, Error) and "Replay snapshot missing for query" in result.message
     assert not (project.root / "idea/literature.jsonl").exists()

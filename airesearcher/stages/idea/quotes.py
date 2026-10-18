@@ -1,4 +1,4 @@
-"""引文文字核对；文字匹配不能证明论断正确或研究空白成立。"""
+"""Verify quote text; textual matching does not establish claim accuracy or a research gap."""
 
 import math
 import re
@@ -22,7 +22,7 @@ class QuoteVerifier:
         if not words:
             return False
         if len(words) > 40:
-            raise ValueError("引文超过 40 词")
+            raise ValueError("The quote exceeds 40 words")
         if " " + " ".join(words) + " " in self.normalized:
             return True
         # Require a >=90% contiguous span. Short snippets require exact normalized matching.
@@ -35,9 +35,9 @@ class QuoteVerifier:
     def check(self, item, based_on):
         item = item.model_copy(deep=True)
         if not item.content.strip() or not item.source_loc.strip():
-            raise ValueError("阅读条目的内容与来源位置不能为空")
+            raise ValueError("Reading-item content and source location must not be empty")
         if based_on == "abstract_only" and item.source_loc != "abstract":
-            raise ValueError("只读摘要时 source_loc 必须为 abstract")
+            raise ValueError("source_loc must be abstract when only the abstract was read")
         item.quote_verified = self.verify(item.quote) if item.quote else None
         page = re.fullmatch(r"p\.?\s*(\d+)", item.source_loc, re.I)
         if page and page.group(1) not in self.pages:

@@ -1,4 +1,4 @@
-"""阅读卡、引文核对、并发、恢复和差距引用；全部使用假模型。"""
+"""Test reading cards, quote checks, concurrency, recovery, and gap references using simulated models."""
 
 import json
 import threading
@@ -211,7 +211,7 @@ def test_gap_unknown_evidence_is_rejected(air_home):
     engine.tick()  # one reading batch
     engine.tick()  # finalize reading
     result = engine.tick().result
-    assert isinstance(result, Error) and "不存在" in result.message
+    assert isinstance(result, Error) and "nonexistent" in result.message
     assert not (project.root / "idea/gaps.json").exists()
 
 

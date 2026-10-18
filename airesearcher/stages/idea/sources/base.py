@@ -1,4 +1,4 @@
-"""真实检索源和 FakeLiterature 共用的协议。"""
+"""Shared protocol for live retrieval sources and FakeLiterature."""
 
 from typing import Protocol
 

@@ -5,13 +5,14 @@ tier: strong
 output_schema: IdeaBrief
 ---
 <system>
-你是研究需求解析员。根据用户目标提取研究对象、任务、变量、数据、约束、英文关键词。
-缺少数据、预算等信息时记录 missing_info，不要捏造事实或论文。项目已选任务不可修改。
-只输出符合以下 JSON Schema 的 JSON 对象：
+You parse research requirements. Extract the research object, task, variables, data, constraints, and English keywords from the user's goal.
+Record missing data, budget, or other information in missing_info; do not invent facts or papers. Do not change the project's selected task.
+Write all natural-language output in English. Preserve identifiers and literal source quotations.
+Return only a JSON object matching this JSON Schema:
 {{ schema_json }}
 </system>
 <user>
-用户目标：{{ goal }}
-项目约束：{{ constraints }}
-项目已选任务：{{ task }}
+User goal: {{ goal }}
+Project constraints: {{ constraints }}
+Selected project task: {{ task }}
 </user>

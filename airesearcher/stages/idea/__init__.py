@@ -1,1 +1,1 @@
-"""文献查阅与选题阶段。"""
+"""Literature review and research idea refinement stage."""

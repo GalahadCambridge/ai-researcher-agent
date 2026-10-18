@@ -1,4 +1,4 @@
-"""固定快照回放：只读本地文件，缺少匹配时明确报错，不回退联网。"""
+"""Replay fixed snapshots from local files; fail explicitly on missing matches without network fallback."""
 
 from __future__ import annotations
 
@@ -57,7 +57,10 @@ class ReplaySource:
                     p.snapshot_id, p.retrieved_at = snap.snapshot_id, snap.requested_at
             self.last_papers.update({p.paper_id: p for p in papers})
             return snap, papers
-        raise SourceFailure(f"回放缺少查询快照：{query}（年份和数量也必须匹配）；未联网")
+        raise SourceFailure(
+            f"Replay snapshot missing for query: {query} (year and limit must also match); no "
+            f"network request was made"
+        )
 
     def get(self, paper_id):
         return self.last_papers.get(paper_id)

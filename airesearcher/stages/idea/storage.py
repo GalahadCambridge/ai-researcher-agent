@@ -1,4 +1,4 @@
-"""阶段产物写入：使用主干归档，文献 JSONL 保持只追加。"""
+"""Save stage artifacts through the shared archive; literature JSONL remains append-only."""
 
 import json
 

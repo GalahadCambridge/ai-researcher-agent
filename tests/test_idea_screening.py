@@ -1,4 +1,4 @@
-"""筛选流程验证：批次、ID 约束、覆盖面、可读性与恢复。"""
+"""Test screening batches, ID constraints, coverage, readability, and recovery."""
 
 import json
 
@@ -28,12 +28,12 @@ def records(count):
 
 
 def response(papers, score=lambda i: i % 5 + 1):
-    return {"papers": [{"paper_id": p.paper_id, "score": score(i), "reason": f"测试理由 {i}"}
+    return {"papers": [{"paper_id": p.paper_id, "score": score(i), "reason": f"Test rationale {i}"}
                        for i, p in enumerate(papers)]}
 
 
 def seed(air_home, papers, script=None, limit=8):
-    project = Project.create(goal="比较 LoRA 和全量微调", task="tasks/smoke", home=air_home,
+    project = Project.create(goal="Compare LoRA and full fine-tuning", task="tasks/smoke", home=air_home,
                              limits={"read_papers": limit}, dev={"stage_impl": {"idea": "real"}})
     if script is None:
         script = {"idea/screen": [response(papers[i:i + 10]) for i in range(0, len(papers), 10)]}

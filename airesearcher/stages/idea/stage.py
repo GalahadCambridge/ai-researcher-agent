@@ -1,4 +1,4 @@
-"""选题阶段：需求解析、查询规划、可恢复检索与相关性筛选。"""
+"""Idea stage: requirement parsing, query planning, resumable retrieval, and relevance screening."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ class IdeaStage:
     def step(self, ctx: StageContext) -> StepResult:
         state = ctx.scratch.setdefault("idea", {})
         phase = state.setdefault("phase", "parse")
-        ctx.progress(f"文献阶段：{phase}")
+        ctx.progress(f"Literature stage: {phase}")
         if phase == "parse":
             path = "idea/brief.json"
             if not ctx.archive.latest(path):
@@ -51,7 +51,7 @@ class IdeaStage:
                 brief.task = ctx.project.task
                 _save(ctx, path, brief.model_dump(mode="json"))
             state["phase"] = "plan_queries"
-            return Continue("研究需求已保存为 idea/brief.json")
+            return Continue("Research requirements saved to idea/brief.json")
         if phase == "plan_queries":
             path = "idea/queries.json"
             if not ctx.archive.latest(path):
@@ -63,7 +63,7 @@ class IdeaStage:
                 )
                 _save(ctx, path, out.parsed.model_dump(mode="json"))
             state["phase"] = "search"
-            return Continue("检索子问题与英文查询词已保存")
+            return Continue("Search subquestions and English queries saved")
         if phase == "search":
             return self._search(ctx, state)
         if phase == "screen":
@@ -75,8 +75,11 @@ class IdeaStage:
         if phase == "gap":
             return gap_step(ctx, state)
         if phase == "merge":
-            return Stop("阅读卡与差距候选已准备；下一步实现协调合并与冲突处理，尚未生成最终选题或审批。")
-        return Error(f"未知 idea phase：{phase}", retryable=False)
+            return Stop(
+                "Reading cards and gap candidates are ready; coordinator merging and conflict "
+                "handling are pending. No final idea or approval has been generated."
+            )
+        return Error(f"Unknown idea phase: {phase}", retryable=False)
 
     def _source(self, ctx: StageContext, state: dict) -> LiteratureSource:
         if self.source is not None:
@@ -101,7 +104,7 @@ class IdeaStage:
         queries = plan.queries()
         limit = ctx.project.limits.search_papers
         if limit <= 0:
-            return Error("limits.search_papers 必须大于 0", retryable=False)
+            return Error("limits.search_papers must be greater than 0", retryable=False)
         receipts = []
         for query in queries:
             # Saved receipts are the recovery boundary, independent of scratch/checkpoint timing.
@@ -116,12 +119,12 @@ class IdeaStage:
                 except SourceWait as exc:
                     return Wait(exc.reason, exc.seconds)
                 except (ConnectionError, TimeoutError, OSError) as exc:
-                    return Error(f"检索失败（{query}）：{exc}", retryable=True)
+                    return Error(f"Retrieval failed ({query}): {exc}", retryable=True)
                 # Store normalized results together with the raw response before acknowledging progress.
                 _save(ctx, path, {"snapshot": snapshot.model_dump(mode="json"),
                                   "papers": [p.model_dump(mode="json") for p in papers]}, "search_snapshot")
                 state["completed_queries"] = len(receipts) + 1
-                return Continue(f"已保存检索批次：{query}")
+                return Continue(f"Retrieval batch saved: {query}")
             receipts.append(json.loads((ctx.root / path).read_text(encoding="utf-8")))
         papers = []
         for receipt in receipts:
@@ -142,7 +145,10 @@ class IdeaStage:
                     paper.access_level, paper.fulltext_path = old.access_level, old.fulltext_path
         append_papers(ctx, unique)
         state.update(phase="screen", completed_queries=len(queries), paper_count=len(unique))
-        return Continue(f"检索完成：{len(queries)} 条查询，去重后保留 {len(unique)} 篇；尚未筛选或精读")
+        return Continue(
+            f"Retrieval complete: {len(queries)} queries, {len(unique)} papers retained after "
+            f"deduplication; screening and reading have not started"
+        )
 
 
 def create_stage() -> IdeaStage:

@@ -1,4 +1,4 @@
-"""Semantic Scholar Graph API 适配器，一次调用只发一个请求。"""
+"""Semantic Scholar Graph API adapter; sends one request per call."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ class SemanticScholarSource:
         if row.get("paperId"):
             ids["s2"] = row["paperId"]
         if not ids or not row.get("title"):
-            raise ValueError("文献缺少标题或标识")
+            raise ValueError("Paper is missing a title or identifier")
         identity = next(k for k in ("doi", "arxiv", "s2") if k in ids)
         authors = [a["name"] for a in row.get("authors", []) if a.get("name")]
         types = row.get("publicationTypes") or []
@@ -70,19 +70,19 @@ class SemanticScholarSource:
 
     def search(self, query, *, year_from=None, limit=20):
         if limit <= 0:
-            raise ValueError("limit 必须大于 0")
+            raise ValueError("limit must be greater than 0")
         params = {"query": query, "limit": min(limit, 100), "fields": FIELDS}
         if year_from is not None:
             params["year"] = f"{year_from}-"
         _, raw, snapshot = self._request(BASE + "/search", params, query)
         try:
             if not isinstance(raw, dict) or not isinstance(raw.get("data"), list):
-                raise ValueError("响应缺少 data 列表")
+                raise ValueError("Response is missing the data list")
             papers = [self._record(row, snapshot) for row in raw["data"][:limit]]
         except (ValueError, TypeError, KeyError, AttributeError) as exc:
             snapshot.status = "invalid_response"
             self.audit(snapshot)
-            raise SourceFailure("Semantic Scholar 返回无效元数据") from exc
+            raise SourceFailure("Semantic Scholar returned invalid metadata") from exc
         snapshot.status, snapshot.paper_ids = "ok", [p.paper_id for p in papers]
         return snapshot, papers
 
@@ -100,7 +100,7 @@ class SemanticScholarSource:
         try:
             paper = self._record(raw, snapshot)
         except (ValueError, TypeError, KeyError, AttributeError) as exc:
-            raise SourceFailure("Semantic Scholar 单篇元数据无效") from exc
+            raise SourceFailure("Invalid single-paper metadata from Semantic Scholar") from exc
         snapshot.status, snapshot.paper_ids = "ok", [paper.paper_id]
         self.audit(snapshot)
         return paper

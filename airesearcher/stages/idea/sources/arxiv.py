@@ -1,4 +1,4 @@
-"""arXiv Atom API 适配器；只取元数据，不将 PDF 链接当作已读全文。"""
+"""arXiv Atom API adapter; retrieves metadata without treating a PDF link as text already read."""
 
 from __future__ import annotations
 
@@ -33,21 +33,21 @@ class ArxivSource:
         try:
             root = ET.fromstring(response.content)
             if root.tag != "{" + NS["a"] + "}feed":
-                raise ValueError("响应不是 Atom feed")
+                raise ValueError("Response is not an Atom feed")
             papers = []
             for entry in root.findall("a:entry", NS):
                 def text(tag, entry=entry):
                     return " ".join(entry.findtext(tag, default="", namespaces=NS).split())
                 entry_id = text("a:id")
                 if "/abs/" not in entry_id:
-                    raise ValueError("arXiv 错误条目或缺少标识")
+                    raise ValueError("arXiv error entry or missing identifier")
                 axid = arxiv_id(entry_id)
                 ids = {"arxiv": axid}
                 if text("x:doi"):
                     ids["doi"] = doi_id(text("x:doi"))
                 title, abstract = text("a:title"), text("a:summary")
                 if not title:
-                    raise ValueError("缺少标题")
+                    raise ValueError("Missing title")
                 year = int(text("a:published")[:4])
                 authors = [" ".join(a.itertext()).strip() for a in entry.findall("a:author/a:name", NS)]
                 identity = "doi" if "doi" in ids else "arxiv"
@@ -63,13 +63,13 @@ class ArxivSource:
         except (ET.ParseError, ValueError, TypeError) as exc:
             snapshot.status = "invalid_response"
             self.audit(snapshot)
-            raise SourceFailure("arXiv 返回无效 Atom 元数据") from exc
+            raise SourceFailure("arXiv returned invalid Atom metadata") from exc
         snapshot.status, snapshot.paper_ids = "ok", [p.paper_id for p in papers]
         return snapshot, papers
 
     def search(self, query, *, year_from=None, limit=20):
         if limit <= 0:
-            raise ValueError("limit 必须大于 0")
+            raise ValueError("limit must be greater than 0")
         # QueryPlan emits plain English. Quote tokens so arXiv boolean operators stay controlled by code.
         terms = " AND ".join('all:"' + t.replace('"', '') + '"' for t in query.split())
         if year_from is not None:

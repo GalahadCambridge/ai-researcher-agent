@@ -1,4 +1,4 @@
-"""PDF 文本提取与阅读片段选择；不执行 OCR，不推断表格/公式结构。"""
+"""Extract PDF text and select reading excerpts; no OCR or reconstruction of tables and equations."""
 
 from __future__ import annotations
 
@@ -69,37 +69,44 @@ def reading_excerpt(text: str, maximum: int = READING_WORD_LIMIT):
             section["name"] in {"method", "experiment"} for section in sections):
         return _prefix_words(text, maximum), {
             "strategy": "leading_text_fallback", "excerpted": True,
-            "note": "章节识别不足，回退到限定词数的原始文本；完整 PDF 和提取文本仍保留。",
+            "note": (
+                "Insufficient section detection; using a word-limited prefix of the extracted "
+                "text. The complete PDF and extracted text are retained."
+            ),
         }
     return _prefix_words(joined, maximum), {
         "strategy": "section_headings_heuristic", "excerpted": True,
-        "note": "章节识别是启发式；引言取最后两段；保留原始 PDF 和全部提取文本供核对。",
+        "note": (
+            "Section detection is heuristic; the last two introduction paragraphs are "
+            "selected. The original PDF and complete extracted text are retained for "
+            "verification."
+        ),
     }
 
 
 def extract_pdf(data: bytes):
     if len(data) > MAX_PDF_BYTES or not data.lstrip().startswith(b"%PDF-"):
-        raise ValueError("不是有效 PDF 或文件超过大小限制")
+        raise ValueError("Invalid PDF or file size exceeds the limit")
     reader = PdfReader(io.BytesIO(data))
     if reader.is_encrypted and not reader.decrypt(""):
-        raise ValueError("PDF 已加密，不能提取")
+        raise ValueError("The PDF is encrypted and cannot be extracted")
     if not 0 < len(reader.pages) <= MAX_PAGES:
-        raise ValueError("PDF 页数为空或超过解析上限")
+        raise ValueError("The PDF has no pages or exceeds the page limit")
     chunks, empty_pages, total_chars = [], [], 0
     for number, page in enumerate(reader.pages, 1):
         content = page.get_contents()
         if content is not None and len(content.get_data()) > 10 * 1024 * 1024:
-            raise ValueError("PDF 单页内容过大")
+            raise ValueError("A PDF page content stream exceeds the size limit")
         text = page.extract_text() or ""
         if not text.strip():
             empty_pages.append(number)
         total_chars += len(text)
         if total_chars > 2_000_000:
-            raise ValueError("PDF 文本超过解析上限")
+            raise ValueError("Extracted PDF text exceeds the size limit")
         chunks.append(f"[p.{number}]\n{text}")
     raw = "\n\n".join(chunks)
     if sum(len(t.split()) for t in chunks) - len(chunks) < 30:
-        raise ValueError("PDF 缺少有效文本，可能是扫描件；本期不执行 OCR")
+        raise ValueError("The PDF has no usable text and may be scanned; OCR is not supported in this version")
     excerpt, details = reading_excerpt(raw)
     return raw, excerpt, {**details, "pages": len(reader.pages), "empty_text_pages": empty_pages,
                           "raw_words": len(raw.split()), "reading_words": len(excerpt.split())}

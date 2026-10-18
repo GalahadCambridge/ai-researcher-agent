@@ -1,4 +1,4 @@
-"""按外部标识和标题合并检索记录，优先保留正式发表版本。"""
+"""Merge retrieval records by external identifiers and title, preferring published versions."""
 
 import re
 import unicodedata

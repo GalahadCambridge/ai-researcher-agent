@@ -1,4 +1,4 @@
-"""检索元数据标准化和 BibTeX 生成，不由模型补写论文信息。"""
+"""Normalize retrieval metadata and generate BibTeX without model-invented paper information."""
 
 import re
 import unicodedata

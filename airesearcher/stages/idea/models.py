@@ -1,4 +1,4 @@
-"""选题阶段的内部输出结构，不修改已冻结的交接模型。"""
+"""Internal idea-stage output schemas; frozen handoff models remain unchanged."""
 
 from typing import Literal
 
@@ -26,7 +26,7 @@ class QueryGroup(BaseModel):
     @classmethod
     def nonempty_queries(cls, queries: list[str]) -> list[str]:
         if any(not q.strip() for q in queries):
-            raise ValueError("查询词不能为空或只有空白")
+            raise ValueError("Queries must not be empty or whitespace-only")
         return [q.strip() for q in queries]
 
 
@@ -46,7 +46,7 @@ class PaperRelevance(BaseModel):
     @classmethod
     def nonempty_reason(cls, reason: str) -> str:
         if not reason.strip():
-            raise ValueError("评分理由不能为空")
+            raise ValueError("The relevance rationale must not be empty")
         return reason.strip()
 
 
@@ -69,7 +69,7 @@ class ResearchGap(BaseModel):
     @classmethod
     def nonempty_description(cls, description: str) -> str:
         if not description.strip():
-            raise ValueError("差距描述不能为空")
+            raise ValueError("The gap description must not be empty")
         return description.strip()
 
 

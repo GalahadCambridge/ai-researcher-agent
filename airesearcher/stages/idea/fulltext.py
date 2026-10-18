@@ -1,4 +1,4 @@
-"""只获取入选 arXiv 文献；失败保留摘要，落盘结果可恢复。"""
+"""Fetch selected arXiv papers; retain abstracts on failure and resume from saved results."""
 
 from __future__ import annotations
 
@@ -60,11 +60,17 @@ def fulltext_step(ctx, state, *, download=True, http=None):
             "url": "https://arxiv.org/pdf/" + axid, "redirects": 0})
         try:
             if not axid:
-                outcome.update(status="skipped_no_arxiv", reason="非 arXiv 文献，本期只使用摘要或元数据")
+                outcome.update(status="skipped_no_arxiv", reason=(
+                    "Non-arXiv paper: only the abstract or metadata is used in this version"
+                ))
             elif not _AXID.fullmatch(axid):
-                outcome.update(status="invalid_arxiv_id", reason="arXiv 标识格式无效，未请求网络")
+                outcome.update(status="invalid_arxiv_id", reason=(
+                    "Invalid arXiv identifier; no network request was made"
+                ))
             elif not cached_pdf and not download:
-                outcome.update(status="download_disabled", reason="演示未启用 PDF 下载，保留现有摘要")
+                outcome.update(status="download_disabled", reason=(
+                    "PDF downloading is disabled for this demo; the existing abstract is retained"
+                ))
             else:
                 if cached_pdf:
                     data = (ctx.root / pdf_path).read_bytes()
@@ -74,19 +80,19 @@ def fulltext_step(ctx, state, *, download=True, http=None):
                     parts = urlsplit(url)
                     if (parts.scheme != "https" or parts.hostname not in {"arxiv.org", "export.arxiv.org"}
                             or parts.port not in (None, 443) or parts.username or parts.password):
-                        raise ValueError("PDF 重定向目标不是允许的 arXiv HTTPS 地址")
+                        raise ValueError("PDF redirect target is not an allowed arXiv HTTPS URL")
                     response = network.get(url, {}, interval=3, max_bytes=MAX_PDF_BYTES)
                     outcome["source_url"] = url
                     if response.is_redirect:
                         if pending["redirects"] >= 3 or not response.headers.get("location"):
-                            raise ValueError("PDF 重定向次数过多或缺少目标")
+                            raise ValueError("Too many PDF redirects or missing redirect target")
                         pending.update(url=urljoin(url, response.headers["location"]),
                                        redirects=pending["redirects"] + 1)
-                        return Continue("已记录 arXiv PDF 重定向，下一步检查目标权限")
+                        return Continue("Recorded arXiv PDF redirect; target permissions will be checked next")
                     require_success(response)
                     data = response.content
                     if not data.lstrip().startswith(b"%PDF-"):
-                        raise ValueError("响应不是 PDF")
+                        raise ValueError("Response is not a PDF")
                     ctx.permissions.guard("write", pdf_path)
                     ctx.archive.put(pdf_path, "literature", data, producer="agent:idea/fulltext")
                 outcome["pdf_path"] = pdf_path
@@ -96,7 +102,9 @@ def fulltext_step(ctx, state, *, download=True, http=None):
                     ctx.permissions.guard("write", path)
                     ctx.archive.put(path, "literature", text, parents=[pdf_ref] if pdf_ref else [],
                                     producer="agent:idea/fulltext")
-                outcome.update(status="full_text", reason="PDF 与可读文本已保存；尚未进行阅读分析",
+                outcome.update(status="full_text", reason=(
+                    "Saved the PDF and readable text; reading analysis has not started"
+                ),
                                raw_text_path=raw_path, fulltext_path=reading_path, extraction=details,
                                extraction_version=EXTRACTION_VERSION, pdf_sha256=sha256_bytes(data),
                                reading_sha256=sha256_bytes(reading.encode()))
@@ -108,7 +116,7 @@ def fulltext_step(ctx, state, *, download=True, http=None):
         save_json(ctx, receipt_path, outcome)
         state["fulltext_pending"].pop(key, None)
         state["fulltext_completed"] = len(completed) + 1
-        return Continue(f"全文处理：{paper.paper_id} → {outcome['status']}")
+        return Continue(f"Full-text processing: {paper.paper_id} → {outcome['status']}")
     by_id = {item["paper_id"]: item for item in completed}
     updates = []
     for paper in papers:
@@ -123,8 +131,14 @@ def fulltext_step(ctx, state, *, download=True, http=None):
     append_papers(ctx, updates)
     report = {"selected_count": len(papers), "full_text_count": sum(i["status"] == "full_text" for i in completed),
               "abstract_or_metadata_count": sum(i["status"] != "full_text" for i in completed), "papers": completed,
-              "note": "只记录获取与文本提取状态；尚未执行模型阅读。原始 PDF、全部提取文本与阅读片段分别保存。"}
+              "note": (
+                  "Records retrieval and text extraction only; model reading has not started. The "
+                  "original PDF, complete extracted text, and reading excerpt are saved separately."
+              )}
     save_json(ctx, "idea/fulltext_summary.json", report)
     state.update(phase="read", fulltext_completed=len(papers), fulltext_count=report["full_text_count"])
-    return Continue(f"全文准备完成：{len(papers)} 篇入选，{report['full_text_count']} 篇取得可读文本，"
-                    "其余保留摘要/元数据")
+    return Continue(
+        f"Full-text preparation complete: {len(papers)} papers selected, "
+        f"{report['full_text_count']} have readable full text; "
+        "the remaining papers retain abstracts or metadata"
+    )

@@ -1,1 +1,1 @@
-"""文献检索源接口。"""
+"""Literature retrieval source interfaces."""
