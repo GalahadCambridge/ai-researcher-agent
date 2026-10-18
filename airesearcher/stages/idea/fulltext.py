@@ -1,0 +1,130 @@
+"""只获取入选 arXiv 文献；失败保留摘要，落盘结果可恢复。"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from urllib.parse import urljoin, urlsplit
+
+from airesearcher.core.fsutil import now, sha256_bytes
+from airesearcher.engine.stage import Continue, Wait
+from airesearcher.services.literature import load_papers
+
+from .pdf_text import EXTRACTION_VERSION, MAX_PDF_BYTES, extract_pdf
+from .sources.http import GuardedHTTP, SourceWait, require_success
+from .sources.metadata import arxiv_id
+from .storage import append_papers, save_json
+
+_AXID = re.compile(r"^(?:\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?/\d{7})(?:v\d+)?$")
+
+
+def _paths(paper):
+    axid = arxiv_id(paper.ids.get("arxiv", ""))
+    key = hashlib.sha256(json.dumps([paper.paper_id, axid]).encode()).hexdigest()[:20]
+    return axid, key
+
+
+def fulltext_step(ctx, state, *, download=True, http=None):
+    papers = [p for p in load_papers(ctx.root).values() if p.selected_for_reading]
+    network = http or GuardedHTTP(ctx.permissions.guard, state.setdefault("network", {}))
+    completed = []
+    for paper in papers:
+        axid, key = _paths(paper)
+        receipt_path = f"idea/fulltext_records/{key}-{'fetch' if download else 'local'}.json"
+        pdf_path, raw_path, reading_path = (
+            f"idea/fulltext/{key}{suffix}" for suffix in (".pdf", ".txt", ".reading.txt"))
+        cached_pdf = False
+        pdf_ref = ctx.archive.latest(pdf_path)
+        if pdf_ref and (ctx.root / pdf_path).exists():
+            cached_pdf = sha256_bytes((ctx.root / pdf_path).read_bytes()) == pdf_ref.sha256
+        if ctx.archive.latest(receipt_path):
+            saved = json.loads((ctx.root / receipt_path).read_text(encoding="utf-8"))
+            valid = True
+            if saved["status"] == "full_text":
+                cached_pdf = cached_pdf and sha256_bytes((ctx.root / pdf_path).read_bytes()) == saved["pdf_sha256"]
+                try:
+                    valid = (saved.get("extraction_version") == EXTRACTION_VERSION and
+                             sha256_bytes(ctx.archive.path_of(saved["fulltext_path"]).read_bytes())
+                             == saved["reading_sha256"] and
+                             sha256_bytes(ctx.archive.path_of(saved["pdf_path"]).read_bytes()) == saved["pdf_sha256"])
+                except (OSError, KeyError, TypeError, ValueError):
+                    valid = False
+            if valid:
+                completed.append(saved)
+                continue
+        outcome = {"paper_id": paper.paper_id, "arxiv_id": axid or None, "checked_at": now().isoformat(),
+                   "status": "abstract_only", "reason": "", "pdf_path": None, "raw_text_path": None,
+                   "fulltext_path": None, "source_url": None, "extraction": None}
+        pending = state.setdefault("fulltext_pending", {}).setdefault(key, {
+            "url": "https://arxiv.org/pdf/" + axid, "redirects": 0})
+        try:
+            if not axid:
+                outcome.update(status="skipped_no_arxiv", reason="非 arXiv 文献，本期只使用摘要或元数据")
+            elif not _AXID.fullmatch(axid):
+                outcome.update(status="invalid_arxiv_id", reason="arXiv 标识格式无效，未请求网络")
+            elif not cached_pdf and not download:
+                outcome.update(status="download_disabled", reason="演示未启用 PDF 下载，保留现有摘要")
+            else:
+                if cached_pdf:
+                    data = (ctx.root / pdf_path).read_bytes()
+                    outcome["source_url"] = "https://arxiv.org/pdf/" + axid
+                else:
+                    url = pending["url"]
+                    parts = urlsplit(url)
+                    if (parts.scheme != "https" or parts.hostname not in {"arxiv.org", "export.arxiv.org"}
+                            or parts.port not in (None, 443) or parts.username or parts.password):
+                        raise ValueError("PDF 重定向目标不是允许的 arXiv HTTPS 地址")
+                    response = network.get(url, {}, interval=3, max_bytes=MAX_PDF_BYTES)
+                    outcome["source_url"] = url
+                    if response.is_redirect:
+                        if pending["redirects"] >= 3 or not response.headers.get("location"):
+                            raise ValueError("PDF 重定向次数过多或缺少目标")
+                        pending.update(url=urljoin(url, response.headers["location"]),
+                                       redirects=pending["redirects"] + 1)
+                        return Continue("已记录 arXiv PDF 重定向，下一步检查目标权限")
+                    require_success(response)
+                    data = response.content
+                    if not data.lstrip().startswith(b"%PDF-"):
+                        raise ValueError("响应不是 PDF")
+                    ctx.permissions.guard("write", pdf_path)
+                    ctx.archive.put(pdf_path, "literature", data, producer="agent:idea/fulltext")
+                outcome["pdf_path"] = pdf_path
+                raw, reading, details = extract_pdf(data)
+                pdf_ref = ctx.archive.latest(pdf_path)
+                for path, text in ((raw_path, raw), (reading_path, reading)):
+                    ctx.permissions.guard("write", path)
+                    ctx.archive.put(path, "literature", text, parents=[pdf_ref] if pdf_ref else [],
+                                    producer="agent:idea/fulltext")
+                outcome.update(status="full_text", reason="PDF 与可读文本已保存；尚未进行阅读分析",
+                               raw_text_path=raw_path, fulltext_path=reading_path, extraction=details,
+                               extraction_version=EXTRACTION_VERSION, pdf_sha256=sha256_bytes(data),
+                               reading_sha256=sha256_bytes(reading.encode()))
+        except SourceWait as exc:
+            return Wait(exc.reason, exc.seconds)
+        except Exception as exc:
+            # Parser/HTTP errors must not fabricate text or block other selected papers.
+            outcome.update(status="failed", reason=f"{type(exc).__name__}: {exc}")
+        save_json(ctx, receipt_path, outcome)
+        state["fulltext_pending"].pop(key, None)
+        state["fulltext_completed"] = len(completed) + 1
+        return Continue(f"全文处理：{paper.paper_id} → {outcome['status']}")
+    by_id = {item["paper_id"]: item for item in completed}
+    updates = []
+    for paper in papers:
+        item = by_id[paper.paper_id]
+        record = paper.model_copy(deep=True)
+        if item["status"] == "full_text":
+            record.access_level, record.fulltext_path = "full_text", item["fulltext_path"]
+        else:
+            record.access_level = "abstract_only" if record.abstract else "metadata_only"
+            record.fulltext_path = None
+        updates.append(record)
+    append_papers(ctx, updates)
+    report = {"selected_count": len(papers), "full_text_count": sum(i["status"] == "full_text" for i in completed),
+              "abstract_or_metadata_count": sum(i["status"] != "full_text" for i in completed), "papers": completed,
+              "note": "只记录获取与文本提取状态；尚未执行模型阅读。原始 PDF、全部提取文本与阅读片段分别保存。"}
+    save_json(ctx, "idea/fulltext_summary.json", report)
+    state.update(phase="read", fulltext_completed=len(papers), fulltext_count=report["full_text_count"])
+    return Continue(f"全文准备完成：{len(papers)} 篇入选，{report['full_text_count']} 篇取得可读文本，"
+                    "其余保留摘要/元数据")
