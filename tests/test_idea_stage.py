@@ -47,7 +47,7 @@ def test_parse_search_and_dedup(air_home):
     assert len(list((project.root / "idea/search_snapshots").glob("*.json"))) == 3
     for path in (project.root / "idea/search_snapshots").glob("*.json"):
         assert json.loads(path.read_text(encoding="utf-8"))["raw_response"]["fake"] is True
-    assert engine.ck.scratch["idea"]["phase"] == "merge"
+    assert engine.ck.scratch["idea"]["phase"] == "refine"
     assert sum(p.selected_for_reading for p in papers.values()) == 8
     assert all(p.relevance for p in papers.values())
     assert not project.approvals.pending() and not (project.root / "idea/selected.md").exists()

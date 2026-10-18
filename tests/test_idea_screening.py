@@ -63,7 +63,7 @@ def test_batches_append_only_and_untrusted_input(air_home):
     assert (project.root / "idea/literature.jsonl").read_text(encoding="utf-8").startswith(before)
     text = str(engine.llm.backend.calls[0].messages)
     assert "<untrusted_document" in text and "&lt;/untrusted_document&gt;" in text
-    assert engine.ck.scratch["idea"]["phase"] == "merge"
+    assert engine.ck.scratch["idea"]["phase"] == "refine"
     assert not (project.root / "idea/selected.md").exists()
 
 

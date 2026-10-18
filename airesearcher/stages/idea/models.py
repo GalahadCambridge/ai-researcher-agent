@@ -1,8 +1,8 @@
 """Internal idea-stage output schemas; frozen handoff models remain unchanged."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 from airesearcher.core.models.literature import CardItem
 
@@ -75,3 +75,62 @@ class ResearchGap(BaseModel):
 
 class GapAnalysis(BaseModel):
     gaps: list[ResearchGap]
+
+
+NonemptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+class EvidencePoint(BaseModel):
+    text: NonemptyText
+    evidence: list[str] = Field(min_length=1)
+    to_verify: bool = False
+
+
+class ReadingTheme(BaseModel):
+    theme: NonemptyText
+    points: list[EvidencePoint] = Field(min_length=1)
+
+
+class ConflictCandidate(BaseModel):
+    field: NonemptyText
+    evidence: list[str] = Field(min_length=2)
+    note: NonemptyText
+
+
+class CoordinatorOutput(BaseModel):
+    themes: list[ReadingTheme]
+    feasibility_notes: list[EvidencePoint]
+    gaps: list[ResearchGap]
+    conflicts: list[ConflictCandidate]
+
+
+class ReadingConflict(BaseModel):
+    conflict_id: str = Field(pattern=r"^K[1-9][0-9]*$")
+    paper_id: str | None
+    field: str
+    positions: list[dict] = Field(min_length=2)
+    detected_by: Literal["rule", "coordinator"]
+    resolution: Literal["unresolved", "resolved_by_reread", "needs_human"] = "unresolved"
+    note: str = ""
+    accepted_evidence: list[str] = Field(default_factory=list)
+
+
+class ReviewQuote(BaseModel):
+    ref: str
+    quote: NonemptyText
+
+
+class Adjudication(BaseModel):
+    resolution: Literal["resolved_by_reread", "needs_human"]
+    accepted_evidence: list[str]
+    quotes: list[ReviewQuote]
+    explanation: NonemptyText
+
+
+class ReadingSummary(BaseModel):
+    themes: list[ReadingTheme]
+    gaps: list[ResearchGap]
+    feasibility_notes: list[EvidencePoint]
+    abstract_only_papers: list[str]
+    incomplete_reading: list[str] = Field(default_factory=list)
+    unresolved_conflicts: list[str] = Field(default_factory=list)

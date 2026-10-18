@@ -78,7 +78,7 @@ def test_download_extract_and_resume(air_home, existing_pdf):
     report = json.loads((project.root / "idea/fulltext_summary.json").read_text(encoding="utf-8"))
     assert report["full_text_count"] == 1
     assert (project.root / report["papers"][0]["pdf_path"]).read_bytes() == existing_pdf
-    assert len(calls) == 1 and resumed.ck.scratch["idea"]["phase"] == "merge"
+    assert len(calls) == 1 and resumed.ck.scratch["idea"]["phase"] == "refine"
     before = (project.root / "idea/literature.jsonl").read_text(encoding="utf-8")
     resumed.ck.state, resumed.ck.scratch["idea"]["phase"] = S.IdeaDrafting, "fulltext"
     resumed._save()

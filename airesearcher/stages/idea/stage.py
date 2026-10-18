@@ -11,6 +11,7 @@ from airesearcher.services.literature import load_papers
 
 from .dedup import deduplicate
 from .fulltext import fulltext_step
+from .merge import merge_step
 from .models import IdeaBrief, QueryPlan
 from .readers import gap_step, read_step
 from .screening import screen_step
@@ -75,9 +76,11 @@ class IdeaStage:
         if phase == "gap":
             return gap_step(ctx, state)
         if phase == "merge":
+            return merge_step(ctx, state)
+        if phase == "refine":
             return Stop(
-                "Reading cards and gap candidates are ready; coordinator merging and conflict "
-                "handling are pending. No final idea or approval has been generated."
+                "The reading summary and conflict ledger are ready; research-question refinement is pending. "
+                "No final idea or approval has been generated."
             )
         return Error(f"Unknown idea phase: {phase}", retryable=False)
 

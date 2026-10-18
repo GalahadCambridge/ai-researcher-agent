@@ -85,6 +85,23 @@ class DemoLLM(FakeLLM):
                 )}]
             elif req.prompt_id == "idea/gap_analyst" and req.prompt_id not in self._fixed_prompts:
                 self.script[req.prompt_id] = [{"gaps": []}]
+            elif req.prompt_id == "idea/coordinator_merge" and req.prompt_id not in self._fixed_prompts:
+                block = re.search(
+                    r'<untrusted_document source="merge_input">\s*(.*?)\s*</untrusted_document>', text, re.S
+                ).group(1)
+                material = json.loads(block)
+                points = [{"text": "Simulated synthesis placeholder; no semantic literature analysis performed.",
+                           "evidence": [card["items"][0]["ref"]], "to_verify": True}
+                          for card in material["cards"]]
+                self.script[req.prompt_id] = [{
+                    "themes": [{"theme": "Simulated reading coverage", "points": points}] if points else [],
+                    "feasibility_notes": [], "gaps": material["gap_candidates"], "conflicts": [],
+                }]
+            elif req.prompt_id == "idea/adjudicate_conflict" and req.prompt_id not in self._fixed_prompts:
+                self.script[req.prompt_id] = [{
+                    "resolution": "needs_human", "accepted_evidence": [], "quotes": [],
+                    "explanation": "Simulated review placeholder; no semantic conflict resolution performed.",
+                }]
             return super().call(req)
 
 
@@ -139,8 +156,8 @@ def main() -> None:
             break
         if tick.seconds:
             time.sleep(min(tick.seconds, max(0, deadline - time.monotonic())))
-    if engine.state != S.Paused or engine.ck.scratch.get("idea", {}).get("phase") != "merge":
-        raise RuntimeError(f"The demo did not complete reading-card preparation: {engine.state} {engine.ck.reason}")
+    if engine.state != S.Paused or engine.ck.scratch.get("idea", {}).get("phase") != "refine":
+        raise RuntimeError(f"The demo did not complete literature merging: {engine.state} {engine.ck.reason}")
     print(json.dumps(engine.ck.scratch["idea"], ensure_ascii=False, indent=2))
     print(f"Artifact directory: {project.root / 'idea'}")
 

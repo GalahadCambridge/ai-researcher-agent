@@ -12,12 +12,12 @@ from airesearcher.core.project import Project
 from airesearcher.engine.engine import ProjectEngine
 from airesearcher.engine.stage import Error
 from airesearcher.llm.gateway import LLMGateway
+from airesearcher.stages.idea.demo import DemoLLM, demo_gateway
 from airesearcher.stages.idea.quotes import QuoteVerifier
 from airesearcher.stages.idea.readers import FEASIBILITY_FIELDS, METHOD_FIELDS, card_id
 from airesearcher.stages.idea.stage import IdeaStage
 from airesearcher.stages.idea.storage import append_papers
 from airesearcher.testing.fake_literature import FakeLiterature
-from airesearcher.testing.fake_llm import FakeLLM, fake_gateway
 
 from .helpers import drive
 
@@ -47,7 +47,7 @@ def seed(air_home, *, count=1, full=False, mode="multi", script=None, concurrenc
     base = FakeLiterature().get("arxiv:2106.09685")
     papers = [base.model_copy(update={"paper_id": f"s2:test{i}", "abstract": SOURCE,
                                       "selected_for_reading": True}, deep=True) for i in range(count)]
-    gateway = LLMGateway(project, backend=backend, backoff_base=0) if backend else fake_gateway(
+    gateway = LLMGateway(project, backend=backend, backoff_base=0) if backend else demo_gateway(
         project, script if script is not None else scripts(full, mode))
     engine = ProjectEngine(project, llm=gateway, stages={"idea": IdeaStage(fulltext_download=False)}, retry_delay=0)
     if full:
@@ -74,7 +74,7 @@ def test_two_roles_actual_source_and_trace(air_home):
     assert all(c.paper_id == papers[0].paper_id and c.based_on == "abstract_only" for c in result)
     assert all(c.call_id and c.model and c.prompt_version == 1 for c in result)
     assert all(i.quote_verified is True and i.kind == "author_claim" for c in result for i in c.items)
-    assert engine.ck.scratch["idea"]["phase"] == "merge"
+    assert engine.ck.scratch["idea"]["phase"] == "refine"
     assert not project.approvals.pending() and not (project.root / "idea/selected.md").exists()
     requests = [r for r in engine.llm.backend.calls if "_reader" in r.prompt_id]
     assert len(requests) == 2 and all("<untrusted_document" in str(r.messages) for r in requests)
@@ -151,15 +151,15 @@ def test_saved_receipt_restores_card_without_reading_again(air_home):
     missing.unlink()
     engine.ck.scratch["idea"] = {"phase": "read"}
     engine._save()
-    resumed = ProjectEngine(Project.open(project.root), llm=fake_gateway(project, {
+    resumed = ProjectEngine(Project.open(project.root), llm=demo_gateway(project, {
         "idea/gap_analyst": [{"gaps": []}]}), stages={"idea": IdeaStage(fulltext_download=False)}, retry_delay=0)
     drive(resumed, S.Paused)
     assert len(cards(project)) == 2 and missing.exists()
-    assert [r.prompt_id for r in resumed.llm.backend.calls] == ["idea/gap_analyst"]
+    assert [r.prompt_id for r in resumed.llm.backend.calls] == ["idea/gap_analyst", "idea/coordinator_merge"]
 
 
 def test_concurrency_and_max_six_tasks_per_step(air_home):
-    class Tracker(FakeLLM):
+    class Tracker(DemoLLM):
         def __init__(self):
             super().__init__(scripts())
             self.mutex = threading.Lock()
