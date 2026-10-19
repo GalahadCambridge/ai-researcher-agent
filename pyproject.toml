@@ -18,6 +18,7 @@ dependencies = [
     "rich>=13",
     "psutil>=5.9",
     "python-multipart>=0.0.9",  # 上传模板 zip（FastAPI 接收文件需要）
+    "matplotlib>=3.8",  # Deterministic scientific PDF/PNG figures
 ]
 
 [project.optional-dependencies]

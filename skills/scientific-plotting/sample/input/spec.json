@@ -1,0 +1,15 @@
+{
+  "fig_id": "fig_sample",
+  "kind": "line",
+  "aggregate_id": "SYNTHETIC",
+  "x": "size",
+  "hue": "method",
+  "metric": "latency",
+  "error": "ci95",
+  "title": "Synthetic latency example",
+  "xlabel": "size",
+  "ylabel": "Latency (ms)",
+  "scale": 1000.0,
+  "log_x": false,
+  "caption": "n=3 ({\"method\":\"B\",\"size\":10}), n=3 ({\"method\":\"A\",\"size\":10}), n=3 ({\"method\":\"B\",\"size\":2}), n=3 ({\"method\":\"A\",\"size\":2}). Error bars: 95% CI."
+}

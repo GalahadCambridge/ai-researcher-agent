@@ -18,7 +18,10 @@ runner = CliRunner()
 def skills_root(tmp_path, monkeypatch):
     """一个临时的仓库目录：skills/ 下只有 example-skill，可以随便改。"""
     root = tmp_path / "repo"
-    shutil.copytree(repo_root() / "skills", root / "skills", ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(repo_root() / "skills/example-skill", root / "skills/example-skill",
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    enabled = SkillLoader().registry()["example-skill"]
+    (root / "skills/registry.yaml").write_text(f"example-skill: {enabled}\n", encoding="utf-8")
     monkeypatch.setenv("AIR_REPO", str(root))
     monkeypatch.delenv("AIR_SKILLS_UNVERIFIED", raising=False)
     return root / "skills"
