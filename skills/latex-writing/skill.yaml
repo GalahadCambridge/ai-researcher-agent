@@ -1,0 +1,8 @@
+name: latex-writing
+version: 0.1.0
+description: Deterministic template inspection, preparation and restricted LaTeX compilation
+owner: 论文
+inputs: {template: "immutable directory", body: "already supplied LaTeX"}
+outputs: {paper: "prepared working directory", report: "CompileReport"}
+validators: [check_output]
+requires: []
