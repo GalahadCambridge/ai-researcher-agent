@@ -17,7 +17,16 @@ from airesearcher.core.fsutil import atomic_write_bytes, atomic_write_text
 from airesearcher.core.models.claim import CompileReport
 from airesearcher.skills.loader import Skill, SkillLoader
 
-from ._latex import TemplateError, active_text, commands, document_region, relative_name, safe_path, safe_tree
+from ._latex import (
+    TemplateError,
+    _inactive_spans,
+    active_text,
+    commands,
+    document_region,
+    relative_name,
+    safe_path,
+    safe_tree,
+)
 from .compile import compile_paper
 
 
@@ -236,9 +245,9 @@ def fill_template(text: str, body: str, *, preamble: str = "", title: str | None
         marker = markers[0]
         if not start <= marker.start() < marker.end() <= end:
             raise TemplateError("AIR:BODY must be inside the document")
-        # A marker inside a literal environment is not an insertion point.
-        if any(m.start() <= marker.start() < m.end() for m in re.finditer(
-                r"\\begin\{(verbatim\*?|lstlisting|minted)\}.*?\\end\{\1\}", text, re.S)):
+        # Use lexical spans so commented/inline examples of environments stay inert.
+        if any(is_literal and start <= marker.start() < end
+               for start, end, is_literal in _inactive_spans(text)):
             raise TemplateError("AIR:BODY is inside literal content")
         text = text[:marker.start()] + body.rstrip() + "\n" + text[marker.end():]
     else:

@@ -15,7 +15,7 @@ from airesearcher.core import templates
 from airesearcher.core.fsutil import sha256_file
 from airesearcher.skills.loader import SkillLoader
 from airesearcher.stages.writing import template as tpl
-from airesearcher.stages.writing._latex import TemplateError, commands
+from airesearcher.stages.writing._latex import TemplateError, active_text, commands
 from airesearcher.stages.writing.compile import compile_paper
 
 REAL_TEX = pytest.mark.skipif(not (shutil.which("latexmk") and shutil.which("kpsewhich")), reason="TeX not installed")
@@ -331,3 +331,170 @@ def test_recursive_dependency_cycle_is_finite(tmp_path, installed_dependencies):
     check = tpl.inspect_template(root)
     assert [(d.name, d.resolution) for d in check.dependencies] == [
         ("article.cls", "system"), ("graphicx.sty", "system"), ("part.tex", "local"), ("part.tex", "local")]
+
+
+@pytest.mark.parametrize("verb", [r"\verb", r"\verb*"])
+@pytest.mark.parametrize("delimiter", ["|", "!", "+", "%", "\\"])
+def test_scanner_inline_literals_hide_percent_and_fake_commands(verb, delimiter):
+    payload = r"\maketitle%\input{fake}\begin{document}\end{document}"
+    if delimiter == "%":
+        payload = payload.replace("%", "")  # percent itself is the delimiter
+    elif delimiter == "\\":
+        payload = "% literal characters"  # no embedded delimiter
+    literal = verb + delimiter + payload + delimiter
+    text = "Example: " + literal + "\r\n" + r"\input{real}"
+    clean = active_text(text)
+    assert clean == "Example: " + " " * len(literal) + "\r\n" + r"\input{real}"
+    [command] = commands(text)
+    assert (command.name, command.value) == ("input", "real")
+    assert (command.start, command.end) == (text.index(r"\input{real}"), len(text))
+    assert text[command.value_start:command.value_end] == "real"
+
+
+@pytest.mark.parametrize("environment", ["verbatim", "verbatim*", "lstlisting", "minted"])
+def test_scanner_literal_environments_preserve_offsets(environment):
+    options = "{text}" if environment == "minted" else ""
+    literal = (f"\\begin{{{environment}}}" + options + "\r\n% fake comment\r\n"
+               + r"\maketitle\input{fake}\begin{document}\end{document}"
+               + "\r\n" + f"\\end{{{environment}}}")
+    text = literal + "\r\n" + r"\input{real}"
+    clean = active_text(text)
+    assert clean == "".join(c if c in "\r\n" else " " for c in literal) + "\r\n" + r"\input{real}"
+    assert len(clean) == len(text)
+    assert [i for i, c in enumerate(clean) if c in "\r\n"] == [i for i, c in enumerate(text) if c in "\r\n"]
+    [command] = commands(text)
+    assert text[command.start:command.end] == r"\input{real}"
+    assert text[command.value_start:command.value_end] == command.value == "real"
+
+
+@pytest.mark.parametrize("comment", [
+    r"% \verb|unclosed \input{fake}",
+    r"% \verb*+\maketitle%+",
+    r"% \begin{verbatim}",
+    r"% \begin{minted}{text}",
+    r"% \end{verbatim} \input{fake}",
+])
+def test_scanner_comment_literals_cannot_consume_real_commands(comment):
+    text = comment + "\n" + r"\input{real}" + "\n% ordinary comment\n"
+    clean = active_text(text)
+    assert clean == " " * len(comment) + "\n" + r"\input{real}" + "\n" + " " * len("% ordinary comment") + "\n"
+    [command] = commands(text)
+    assert command.name == "input" and command.value == "real"
+    assert command.start == text.index(r"\input{real}")
+
+
+@pytest.mark.parametrize("count", range(6))
+def test_scanner_percent_escape_parity(count):
+    prefix = "\\" * count
+    text = prefix + "% text\n" + r"\input{real}"
+    assert active_text(text) == prefix + ("% text" if count % 2 else " " * len("% text")) + "\n" + r"\input{real}"
+
+
+@pytest.mark.parametrize("text", [
+    r"\verb", r"\verb*", r"\verb|unclosed \maketitle",
+    "\\verb|unclosed\n\\input{fake}|", r"\verb*+unclosed \end{document}",
+    r"\verb |unsupported spaced delimiter|",
+    *[f"\\begin{{{name}}}\n% literal\n\\input{{fake}}" for name in
+      ("verbatim", "verbatim*", "lstlisting", "minted")],
+])
+def test_scanner_malformed_literals_fail_explicitly(text):
+    with pytest.raises(TemplateError, match="literal|verb"):
+        active_text(text)
+    with pytest.raises(TemplateError, match="literal|verb"):
+        commands(text)
+
+
+@pytest.mark.parametrize("brace", ["{", "}"])
+@pytest.mark.parametrize("count", range(6))
+def test_scanner_brace_escape_parity_and_original_positions(brace, count):
+    slashes = "\\" * count
+    if brace == "}":
+        argument = "X" + slashes + "}" + ("Y" if count % 2 else "")
+        # With even parity the first brace closes the command, not its value.
+        argument = argument if count % 2 else argument[:-1]
+    else:
+        argument = "X" + slashes + "{Y" + ("}" if count % 2 == 0 else "")
+    raw_command = r"\textbf{" + argument + "}"
+    text = "prefix " + raw_command + " suffix"
+    [command] = commands(text)
+    assert command.name == "textbf" and command.value == argument
+    assert command.start == len("prefix ") and command.end == len("prefix " + raw_command)
+    assert text[command.start:command.end] == raw_command
+    assert text[command.value_start:command.value_end] == argument
+
+
+def test_scanner_nested_braces_and_linebreak_fill():
+    argument = r"A {B \{C\} D} Heading\\"
+    text = r"\textbf{" + argument + "}"
+    [command] = commands(text)
+    assert command.value == argument and command.end == len(text)
+    document = "\\documentclass{article}\n\\begin{document}\n\\textbf{Heading\\\\}\nText.\n" + END
+    expected = "\\documentclass{article}\n\\begin{document}\nNEW BODY\n" + END.lstrip("\n")
+    assert tpl.fill_template(document, "NEW BODY") == expected
+
+
+@pytest.mark.parametrize("text", [r"\textbf{unclosed", r"\textbf{nested {unclosed}", r"\textbf{escaped \}"])
+def test_scanner_really_unbalanced_arguments_still_fail(text):
+    with pytest.raises(TemplateError, match=r"Unbalanced argument of \\textbf"):
+        commands(text)
+
+
+@pytest.mark.parametrize("marker", [False, True])
+@pytest.mark.parametrize("literal", [r"\verb|\maketitle%|", r"\verb*!\input{fake}%\end{document}!",
+                                    r"\textbf{Heading\\}"])
+def test_scanner_fill_keeps_document_structure_and_marker_surroundings(marker, literal):
+    prefix = "\\documentclass{article}\n\\begin{document}\nExample: " + literal + "\n"
+    text = prefix + ("%% AIR:BODY\n" if marker else "OLD SAMPLE\n") + END
+    filled = tpl.fill_template(text, "NEW BODY")
+    if marker:
+        assert filled.startswith(prefix) and literal in filled
+        assert "%% AIR:BODY" not in filled
+    else:
+        assert filled == "\\documentclass{article}\n\\begin{document}\nNEW BODY\n" + END.lstrip("\n")
+    assert "NEW BODY" in filled and "OLD SAMPLE" not in filled
+    assert [(c.name, c.value) for c in commands(filled)] == [
+        ("documentclass", "article"), ("begin", "document"),
+        *([("textbf", "Heading\\\\")] if marker and literal.startswith(r"\textbf") else []), ("end", "document")]
+
+
+@REAL_TEX
+@pytest.mark.parametrize("marker", [False, True])
+@pytest.mark.parametrize("literal", [r"\verb|\maketitle%|", r"\verb*!\input{fake}%\end{document}!",
+                                    r"\textbf{Heading\\}"])
+def test_scanner_real_original_and_filled_documents_compile(tmp_path, marker, literal):
+    text = ("\\documentclass{article}\n\\begin{document}\nExample: " + literal + "\n"
+            + ("%% AIR:BODY\n" if marker else "OLD SAMPLE\n") + END)
+    original = tmp_path / "original.tex"
+    original.write_text(text, encoding="utf-8")
+    original_bytes = original.read_bytes()
+    # Compile the legal source before invoking the scanner, proving the input is valid TeX.
+    original_work = tmp_path / "original-paper"
+    original_work.mkdir()
+    (original_work / "main.tex").write_bytes(original_bytes)
+    original_report = compile_paper(original_work)
+    assert original_report.ok and original_report.pages == 1, original_report
+    filled = tpl.fill_template(text, "NEW BODY")
+    assert "NEW BODY" in filled and "OLD SAMPLE" not in filled
+    assert (literal in filled) is marker
+    assert filled.endswith(END.lstrip("\n"))
+    filled_work = tmp_path / "filled-paper"
+    filled_work.mkdir()
+    (filled_work / "main.tex").write_text(filled, encoding="utf-8")
+    report = compile_paper(filled_work)
+    assert report.ok and report.pages == 1 and not report.errors, report
+    assert (filled_work / "build/main.pdf").stat().st_size > 1000
+    assert original.read_bytes() == original_bytes
+
+
+@pytest.mark.parametrize(("before", "after"), [
+    (r"% \begin{verbatim}", r"% \end{verbatim}"),
+    (r"\verb|\begin{verbatim}|", r"\verb|\end{verbatim}|"),
+    (r"\verb*+\begin{minted}+", r"\verb*+\end{minted}+"),
+])
+def test_scanner_fake_literal_environments_do_not_hide_body_marker(before, after):
+    prefix = "\\documentclass{article}\n\\begin{document}\n" + before + "\n"
+    suffix = "\n" + after + END
+    text = prefix + "%% AIR:BODY" + suffix
+    filled = tpl.fill_template(text, "NEW BODY")
+    assert filled == prefix + "NEW BODY\n" + suffix
+    assert "%% AIR:BODY" not in filled
