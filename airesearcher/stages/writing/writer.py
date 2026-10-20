@@ -229,7 +229,8 @@ class Writer:
             parsed_commands = commands(text)
             braced = {command.start for command in parsed_commands}
             for token in re.finditer(r"\\([A-Za-z]+|[^\r\n])", clean):
-                if token[1] in {"begin", "end", "cite", "includegraphics"} and token.start() not in braced:
+                if (token[1] in {"begin", "end", "cite", "includegraphics", "ref", "pageref", "label"}
+                        and token.start() not in braced):
                     raise ValidationFailed("Use a directly braced, literal command argument")
             for command in parsed_commands:
                 if command.name in {"begin", "end"}:
@@ -250,8 +251,11 @@ class Writer:
                     path = relative_name(command.value.strip())
                     if path not in self.figures.values():
                         raise ValidationFailed(f"Unknown figure path: {path}")
-                elif command.name in {"ref", "pageref", "label"} and command.value.startswith("fig:"):
-                    if command.value[4:] not in self.figures:
+                elif command.name in {"ref", "pageref", "label"}:
+                    if (not re.match(r"\\[A-Za-z]+\s*\{", clean[command.start:])
+                            or not _KEY.fullmatch(command.value)):
+                        raise ValidationFailed("References/labels require a directly braced, literal label")
+                    if command.value.startswith("fig:") and command.value[4:] not in self.figures:
                         raise ValidationFailed(f"Unknown figure ID: {command.value[4:]}")
             if stack:
                 raise ValidationFailed("Unbalanced LaTeX environments")
@@ -355,8 +359,13 @@ class Writer:
             raise ValidationFailed("Template entry selection required", {"candidates": check.entry_candidates})
         original = (source.original / check.entry).read_text(encoding="utf-8")
         declarations = commands(original)
-        if any(c.name in {"addbibresource", "printbibliography"} or
-               (c.name == "begin" and c.value == "thebibliography") for c in declarations):
+        # These control words need no mandatory braced argument. Scan active tokens
+        # as well as parsed declarations, before generating references or copying.
+        tokens = {m[1] for m in re.finditer(r"\\([A-Za-z]+|[^\r\n])", active_text(original))}
+        if (tokens & {"addbibresource", "printbibliography"}
+                or any(c.name == "begin" and c.value.strip() == "thebibliography" for c in declarations)
+                or any(c.name in {"usepackage", "RequirePackage"}
+                       and "biblatex" in {p.strip() for p in c.value.split(",")} for c in declarations)):
             raise ValidationFailed("Writer requires a BibTeX template; adapt the template explicitly")
         if any(c.name == "bibliography" and c.value != "references" for c in declarations):
             raise ValidationFailed("Template bibliography must use the generated references database")

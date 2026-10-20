@@ -116,7 +116,11 @@ class Command:
 def commands(text: str) -> list[Command]:
     clean = active_text(text)
     out = []
-    for m in re.finditer(r"(?<!\\)\\([A-Za-z]+)\*?\s*(?:\[[^\]]*\]\s*)?\{", clean):
+    for m in re.finditer(r"\\([A-Za-z]+)\*?\s*(?:\[[^\]]*\]\s*)?\{", clean):
+        # A control word may immediately follow one or more \\ line breaks.
+        # Only an odd number of preceding slashes escapes this candidate slash.
+        if _is_escaped(clean, m.start()):
+            continue
         depth, i = 1, m.end()
         while i < len(clean) and depth:
             if clean[i] in "{}" and not _is_escaped(clean, i):

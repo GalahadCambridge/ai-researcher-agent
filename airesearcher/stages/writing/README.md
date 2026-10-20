@@ -67,10 +67,18 @@ paths are not treated as supplied fulltext contents.
 
 Optional figure inventory is `fig_id -> figures/<fig_id>.pdf`. The caller supplies
 known assets in paper/figures/; Writer does not select, copy or archive figures.
+Active ref/pageref/label calls, including those immediately after a line break,
+require a direct braced literal label; fig: labels must belong to that inventory.
+Starred, optional, unbraced and macro-expanded reference arguments require explicit
+adaptation. Comments and supported literals do not participate in these checks.
 
 Default and simple uploaded BibTeX templates are supported. Existing styles are kept;
 the bibliography database must be references. Biblatex/manual bibliographies and
 templates with reserved section/build/claim/value resources require explicit adaptation.
+Active printbibliography/addbibresource commands and directly declared biblatex in
+usepackage/RequirePackage lists are rejected before any bibliography or template
+output is replaced. This does not discover arbitrary macro expansion or indirect
+dependencies hidden in custom packages; it does not implement biblatex/biber.
 No silent template fallback occurs. An existing paper tree is preserved, not cleaned;
 the runtime harness moves the sample's old paper aside before generating a fresh one.
 
@@ -84,3 +92,12 @@ has an AIR:AI_USE comment hook, not a fabricated production disclosure. No claim
 value macros, evidence review, Stage orchestration, approvals or archive registration
 are implemented. FakeLLM/PDF success proves integration, not prose quality or evidence
 correctness. Phase 2A-5 must own lifecycle, permissions, stale/recovery and checkpoints.
+
+## Retained functional examples
+
+See [examples/writing](../../../examples/writing/README.md) for the stage index and
+the real compiled Phase 2A-4 PDF with source, report and standalone reproduction.
+Each completed Writing feature phase must add its own example subdirectory and
+update that index. Preserve historical examples; do not overwrite an earlier
+phase's output. These are demonstration materials, not production configuration
+or a new orchestration mechanism.

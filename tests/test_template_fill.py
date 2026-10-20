@@ -24,6 +24,26 @@ END = "\n\\end{document}\n"
 BODY = "\\section{Check}\nDeterministic inserted body.\n"
 
 
+@pytest.mark.parametrize("slashes", [1, 2, 3, 4, 5, 6])
+def test_command_start_parity_preserves_crlf_and_original_offsets(slashes):
+    prefix = "Example \\verb|\\ref{fake}%| % \\label{fake}\r\nText"
+    text = prefix + "\\" * slashes + "ref{fig:known}\r\n\\textbf{Heading\\\\}"
+    clean = active_text(text)
+    assert len(clean) == len(text)
+    assert [(i, c) for i, c in enumerate(clean) if c in "\r\n"] == [
+        (i, c) for i, c in enumerate(text) if c in "\r\n"]
+    found = commands(text)
+    refs = [c for c in found if c.name == "ref"]
+    assert len(refs) == slashes % 2
+    for c in found:
+        assert text[c.start:c.end].startswith("\\" + c.name + "{")
+        assert text[c.value_start:c.value_end] == c.value
+    if refs:
+        assert refs[0].start == len(prefix) + slashes - 1
+        assert refs[0].value == "fig:known"
+    assert found[-1].value == r"Heading\\"
+
+
 def original_at(tmp_path, content=None):
     root = tmp_path / "original"
     root.mkdir()

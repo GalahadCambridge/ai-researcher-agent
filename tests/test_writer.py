@@ -19,6 +19,7 @@ from airesearcher.llm.prompts import PromptNotFound
 from airesearcher.services import literature, runs
 from airesearcher.skills.loader import SkillLoader, SkillNotVerified
 from airesearcher.stages.writing.bundle import Diagnostic, build_bundle
+from airesearcher.stages.writing.compile import compile_paper
 from airesearcher.stages.writing.writer import (
     GENERATION_ORDER,
     PROMPT_ID,
@@ -486,3 +487,120 @@ def test_compile_failure_is_returned_without_llm_repair(writing):
     assert not result.compile_report.ok and result.compile_report.errors
     assert len(llm.backend.calls) == 8 and not (p.root / "paper/build/main.pdf").exists()
     assert "$x" in (p.root / "paper/sections/method.tex").read_text()
+
+
+@pytest.mark.parametrize("name", ["ref", "pageref", "label"])
+@pytest.mark.parametrize("prefix", ["Text ", r"Text\\"])
+@pytest.mark.parametrize("known", [False, True])
+def test_figure_references_after_linebreak_are_checked(writing, name, prefix, known):
+    p, bundle, llm, _ = writing
+    writer = Writer(p.root, bundle, llm=llm, figures={"known": "figures/known.pdf"})
+    previous = writer.write_section(SectionOutput(section="results", latex="Previous valid section."))
+    before = previous.read_bytes()
+    output = SectionOutput(section="results", latex=prefix + "\\" + name + "{fig:" +
+                           ("known" if known else "invented") + "}")
+    if known:
+        assert writer.validate_section(output, "results") == ()
+        assert writer.write_section(output).read_text().strip() == output.latex
+    else:
+        with pytest.raises(ValidationFailed, match="Unknown figure ID"):
+            writer.write_section(output)
+        assert previous.read_bytes() == before
+
+
+@pytest.mark.parametrize("name", ["ref", "pageref", "label"])
+@pytest.mark.parametrize("prefix", ["Text", r"Text\\"])
+@pytest.mark.parametrize("argument", ["", " fig:known", "[option]{fig:known}", "*{fig:known}",
+                                      "{}", r"{fig:\textbf{known}}", r"{fig:known\{x\}}", "{fig:known"])
+def test_figure_reference_arguments_must_be_direct_and_literal(writing, name, prefix, argument):
+    p, bundle, llm, _ = writing
+    writer = Writer(p.root, bundle, llm=llm, figures={"known": "figures/known.pdf"})
+    with pytest.raises(ValidationFailed):
+        writer.validate_section(SectionOutput(section="results", latex=prefix + "\\" + name + argument), "results")
+
+
+@pytest.mark.parametrize("name", ["ref", "pageref", "label"])
+@pytest.mark.parametrize("wrapper", ["% {}\r\nText.", r"\verb|{}|", r"\verb*!{}!",
+                                   "\\begin{verbatim}\n{}\n\\end{verbatim}",
+                                   "\\begin{verbatim*}\n{}\n\\end{verbatim*}"])
+def test_inert_figure_references_are_ignored(writing, name, wrapper):
+    _, _, _, writer = writing
+    latex = wrapper.replace("{}", "\\" + name + "{fig:invented}")
+    assert writer.validate_section(SectionOutput(section="results", latex=latex), "results") == ()
+
+
+def test_citations_and_graphics_after_linebreak_remain_checked(writing):
+    p, bundle, llm, _ = writing
+    writer = Writer(p.root, bundle, llm=llm, figures={"known": "figures/known.pdf"})
+    output = SectionOutput(section="results", latex=r"Text\\\cite{hu2022lora}\\\includegraphics{figures/known.pdf}")
+    assert writer.validate_section(output, "results") == ("hu2022lora",)
+    for latex in [r"Text\\\cite{invented}", r"Text\\\includegraphics{figures/invented.pdf}"]:
+        with pytest.raises(ValidationFailed, match="Unknown"):
+            writer.validate_section(SectionOutput(section="results", latex=latex), "results")
+
+
+def import_writer_template(project, preamble="", body=""):
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, "w") as archive:
+        archive.writestr("entry.tex", "\\documentclass{article}\n" + preamble + "\n\\begin{document}\n" +
+                         body + "\n%% AIR:BODY\n\\end{document}\n")
+        archive.writestr("references.bib", "% Original template references\n")
+        archive.writestr("asset.txt", "New template asset\n")
+    info = templates.import_zip(project, data.getvalue(), "bibliography-template.zip")
+    return project.root / info.path
+
+
+@pytest.mark.parametrize(("preamble", "body"), [
+    (r"\bibliography{references}", r"\printbibliography"),
+    ("", r"\printbibliography[heading=bibintoc,title={Sources}]"),
+    (r"\usepackage{biblatex}\bibliography{references}", ""),
+    (r"\usepackage[backend=biber]{graphicx, biblatex, amsmath}", ""),
+    (r"\RequirePackage{graphicx,biblatex}", ""),
+    (r"\addbibresource{references.bib}", ""),
+    ("", r"\begin{thebibliography}{9}\bibitem{x} Manual.\end{thebibliography}"),
+])
+def test_unsupported_bibliographies_fail_before_any_paper_change(writing, preamble, body):
+    p, _, _, writer = writing
+    write_all(writer)
+    original = import_writer_template(p, preamble, body)
+    original_before = dir_manifest(original, [])
+    for name, content in {"main.tex": "Old main\n", "references.bib": "Old references\n",
+                          "asset.txt": "Old asset\n"}.items():
+        (p.root / "paper" / name).write_text(content)
+    before = dir_manifest(p.root / "paper", [])
+    with pytest.raises(ValidationFailed, match="BibTeX template; adapt"):
+        writer.assemble_draft(template=p.config.template, title="Unsupported bibliography")
+    assert dir_manifest(p.root / "paper", []) == before
+    assert dir_manifest(original, []) == original_before
+
+
+@pytest.mark.parametrize("wrapper", ["% {}\n", r"\verb|{}|", r"\verb*!{}!",
+                                   "\\begin{verbatim}\n{}\n\\end{verbatim}",
+                                   "\\begin{verbatim*}\n{}\n\\end{verbatim*}"])
+def test_inert_biblatex_declarations_do_not_reject_templates(writing, wrapper):
+    p, _, _, writer = writing
+    write_all(writer)
+    fake = r"\usepackage{biblatex}\printbibliography[title={Fake}]\addbibresource{x}\begin{thebibliography}"
+    original = import_writer_template(p, body=wrapper.replace("{}", fake))
+    before = dir_manifest(original, [])
+    main = writer.assemble_draft(template=p.config.template, title="Inert examples")
+    assert "\\bibliographystyle{plain}" in main.read_text()
+    assert "hu2022lora" in (p.root / "paper/references.bib").read_text()
+    assert dir_manifest(original, []) == before
+
+
+@REAL_TEX
+def test_real_user_bibtex_template_compiles(writing):
+    p, _, _, writer = writing
+    write_all(writer)
+    original = import_writer_template(p, preamble=r"\bibliographystyle{abbrv}",
+                                      body="User template retained text.\n\\bibliography{references}")
+    before = dir_manifest(original, [])
+    main = writer.assemble_draft(template=p.config.template, title="User BibTeX template")
+    report = compile_paper(main.parent)
+    assert report.ok and report.pages and not report.errors, report
+    assert not report.undefined_citations and not report.undefined_refs and not report.missing_files
+    assert "sections/results" in main.read_text() and "User template retained text." in main.read_text()
+    assert "0.779900" in (p.root / "paper/sections/results.tex").read_text()
+    assert (main.parent / "build/main.pdf").stat().st_size > 1000
+    assert dir_manifest(original, []) == before
