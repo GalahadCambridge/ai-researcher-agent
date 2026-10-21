@@ -772,3 +772,273 @@ def test_real_tex_first_repair_succeeds(tmp_path):
     assert receipt(p, "runtime")["repairs"][0]["installed"] is True
     report = CompileReport.model_validate_json((p.root / "paper/build/compile_report.json").read_bytes())
     assert report.ok and not report.errors
+
+
+@pytest.mark.parametrize("existing", ["absent", "matching", "human"])
+def test_pending_section_compare_before_install(writing, monkeypatch, existing):
+    p, e = writing
+    to_phase(e, "write")
+    original = Writer.write_section
+
+    def crash(writer, output):
+        if existing == "matching":
+            original(writer, output)
+        raise OSError("crash before installed receipt update")
+
+    monkeypatch.setattr(Writer, "write_section", crash)
+    assert isinstance(e.tick().result, Error)
+    path = p.root / "paper/sections/introduction.tex"
+    assert not receipt(p, "section-introduction")["installed"]
+    if existing == "human":
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\\section{Introduction}\nHuman-authored replacement.\n")
+    before = sha256_file(path) if path.exists() else None
+    calls = len(e.llm.backend.calls)
+    writes = []
+
+    def observe(writer, output):
+        writes.append(output.section)
+        return original(writer, output)
+
+    monkeypatch.setattr(Writer, "write_section", observe)
+    e.request_action("resume")
+    resumed = restart(p, e)
+    # Stop at the next section boundary so a legitimate subsequent call is not
+    # confused with replaying introduction's already completed model call.
+    monkeypatch.setattr(module, "GENERATION_ORDER", ("introduction",))
+    monkeypatch.setattr(module.WritingStage, "_assemble", lambda *args: None)
+    result = resumed.tick().result
+    assert len(e.llm.backend.calls) == calls
+    if existing == "human":
+        assert sha256_file(path) == before
+        assert isinstance(result, Error) and "reconciliation" in result.message
+        assert not writes and not receipt(p, "section-introduction")["installed"]
+    else:
+        assert isinstance(result, Continue)
+        assert receipt(p, "section-introduction")["installed"]
+        assert receipt(p, "section-introduction")["file_sha256"] == sha256_file(path)
+        assert writes == (["introduction"] if existing == "absent" else [])
+        if existing == "matching":
+            assert sha256_file(path) == before
+
+
+def replace_paper_figure(p):
+    path = p.root / "paper/figures/fig_c1.pdf"
+    before = sha256_file(path)
+    # Another real renderer-produced PDF, not a fake signature/placeholder.
+    path.write_bytes((p.root / "paper/figures/fig_c2.pdf").read_bytes())
+    assert path.read_bytes().startswith(b"%PDF-") and sha256_file(path) != before
+    return path, before
+
+
+@pytest.mark.parametrize("phase", ["write", "compile", "submit"])
+def test_figure_replacement_after_figures_fails_closed(writing, phase):
+    p, e = writing
+    to_phase(e, phase)
+    path, _ = replace_paper_figure(p)
+    changed = path.read_bytes()
+    approvals = p.approvals.list("manuscript")
+    calls = len(e.llm.backend.calls)
+    result = e.tick().result
+    assert isinstance(result, Error) and "figure" in result.message.lower() and "provenance" in result.message
+    assert path.read_bytes() == changed
+    assert p.approvals.list("manuscript") == approvals
+    assert len(e.llm.backend.calls) == calls
+
+
+def test_pending_manuscript_figure_replacement_engine_reconciliation(writing):
+    p, e = writing
+    approval = run(e)
+    s = e.ck.scratch["writing"]
+    figures = {fid: module._ref(ref) for fid, ref in s["figures"].items()}
+    old_paper = p.archive.get(approval.target)
+    old_figures = {fid: p.archive.get(ref) for fid, ref in figures.items()}
+    path, _ = replace_paper_figure(p)
+    changed = path.read_bytes()
+    approvals = len(p.approvals.list("manuscript"))
+    result = e.tick().result
+    assert p.approvals.get(approval.approval_id).status == "superseded"
+    for _ in range(20):
+        if isinstance(result, Error):
+            break
+        assert e.state != S.ManuscriptPending
+        result = e.tick().result
+    assert isinstance(result, Error) and "provenance" in result.message
+    assert path.read_bytes() == changed
+    assert len(p.approvals.list("manuscript")) == approvals
+    assert p.archive.get(approval.target) == old_paper
+    for fid, ref in figures.items():
+        assert p.archive.get(ref) == old_figures[fid]
+        assert p.archive.latest(ref.artifact_id) == ref
+
+
+def test_manuscript_figure_parents_represent_included_bytes(writing):
+    p, e = writing
+    approval = run(e)
+    paper = p.archive.stored_path(approval.target)
+    parents = p.archive.version_info(approval.target).parents
+    for fid, raw in e.ck.scratch["writing"]["figures"].items():
+        ref = module._ref(raw)
+        assert ref in parents
+        p.archive.get(ref)
+        archived = p.archive.stored_path(ref)
+        assert (paper / f"figures/{fid}.pdf").read_bytes() == (archived / f"{fid}.pdf").read_bytes()
+        assert (p.root / f"artifacts/figures/{fid}/{fid}.pdf").read_bytes() == (archived / f"{fid}.pdf").read_bytes()
+
+
+def change_figure_dependency(p, e, monkeypatch, tmp_path, dependency):
+    from dataclasses import replace
+
+    if dependency == "prompt":
+        original = e.llm.prompts.load(module.FIGURE_PROMPT)
+        copied = tmp_path / "prompts/writing/prompts"
+        copied.mkdir(parents=True)
+        (copied / "figure_spec.v2.md").write_text(original.path.read_text().replace("version: 1", "version: 2"))
+        e.llm.prompts.roots = [tmp_path / "prompts", *e.llm.prompts.roots]
+        p.config.prompt_pins[module.FIGURE_PROMPT] = 2
+        p.save_config(p.config)
+    else:
+        loader = e.build_context().skills
+        original_load = type(loader).load
+        skill = loader.load("scientific-plotting")
+        copied = tmp_path / "plotting-skill"
+        shutil.copytree(skill.root, copied)
+        script = copied / "scripts/plot.py"
+        script.write_text(script.read_text() + "\n# Stabilization dependency test\n")
+        changed = replace(skill, root=copied, version="0.1.1" if dependency == "skill" else skill.version)
+        def load(self, name, *args, **kwargs):
+            return changed if name == "scientific-plotting" else original_load(self, name, *args, **kwargs)
+
+        monkeypatch.setattr(type(loader), "load", load)
+
+
+@pytest.mark.parametrize("phase", ["write", "compile", "submit"])
+@pytest.mark.parametrize("dependency", ["prompt", "script", "skill"])
+def test_figure_dependency_change_returns_to_figures(writing, monkeypatch, tmp_path, phase, dependency):
+    p, e = writing
+    to_phase(e, phase)
+    s = e.ck.scratch["writing"]
+    old_basis = s.get("figure_basis")
+    old_key = receipt(p, "figure-fig_c1")["key"]
+    old_refs = dict(s["figures"])
+    before = len(e.llm.backend.calls)
+    change_figure_dependency(p, e, monkeypatch, tmp_path, dependency)
+    result = e.tick().result
+    assert isinstance(result, Continue)
+    assert e.ck.scratch["writing"]["phase"] == "figures"
+    assert len(e.llm.backend.calls) == before  # no later phase work before invalidation
+    to_phase(e, "template")
+    assert s["figure_basis"] != old_basis
+    assert receipt(p, "figure-fig_c1")["key"] != old_key
+    assert len([c for c in e.llm.backend.calls if c.prompt_id == module.FIGURE_PROMPT]) == 4
+    if dependency != "prompt":
+        assert s["figures"] != old_refs
+    for raw in old_refs.values():
+        p.archive.get(module._ref(raw))  # historical versions survive regeneration
+    if phase == "compile" and dependency == "script":
+        previous = receipt(p, "section-introduction")["fingerprint"]
+        run(e)
+        assert receipt(p, "section-introduction")["fingerprint"] != previous
+        assert len(writing_calls(e)) == 16
+
+
+def test_dependency_change_does_not_overwrite_replaced_paper_figure(writing, monkeypatch, tmp_path):
+    p, e = writing
+    to_phase(e, "compile")
+    path, _ = replace_paper_figure(p)
+    changed = path.read_bytes()
+    change_figure_dependency(p, e, monkeypatch, tmp_path, "script")
+    result = e.tick().result
+    assert isinstance(result, Error) and "provenance" in result.message
+    assert path.read_bytes() == changed
+
+
+@pytest.mark.parametrize("boundary", ["_assemble", "_compile", "_submit"])
+def test_each_manuscript_boundary_has_its_own_figure_gate(writing, boundary):
+    p, e = writing
+    to_phase(e, "submit")
+    ctx = e.build_context()
+    s = ctx.scratch["writing"]
+    stage = module.WritingStage()
+    stage._validate_provisioned_figures(ctx, s, complete=True)
+    path, _ = replace_paper_figure(p)  # edit after an earlier successful check
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match="provenance"):
+        # No step-level gate here: the boundary must independently reject the edit.
+        getattr(stage, boundary)(ctx, s, receipt(p, "runtime"), None)
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("damage", ["artifact", "archive", "missing", "wrong_ref", "wrong_parent", "metadata"])
+def test_figure_gate_checks_full_registered_artifact(writing, damage):
+    p, e = writing
+    to_phase(e, "submit")
+    s = e.ck.scratch["writing"]
+    ref = module._ref(s["figures"]["fig_c1"])
+    directory = p.root / ref.artifact_id
+    if damage == "artifact":
+        (directory / "fig_c1.pdf").write_bytes((directory.parent / "fig_c2/fig_c2.pdf").read_bytes())
+    elif damage == "archive":
+        (p.archive.stored_path(ref) / "fig_c1.pdf").write_bytes(b"corrupt archived PDF")
+    elif damage == "missing":
+        (p.root / "paper/figures/fig_c1.pdf").unlink()
+    elif damage == "wrong_ref":
+        s["figures"]["fig_c1"] = s["figures"]["fig_c2"]
+    else:
+        figure = json.loads((directory / "figure.json").read_text())
+        parents = p.archive.version_info(ref).parents
+        if damage == "metadata":
+            figure["fig_id"] = "fig_wrong"
+        else:
+            figure["created_at"] = "2026-10-21T00:00:00Z"
+            parents = []
+        atomic_write_json(directory / "figure.json", figure)
+        changed = p.archive.put(ref.artifact_id, "figure", directory, parents=parents)
+        s["figures"]["fig_c1"] = changed.model_dump()
+    with pytest.raises(ValueError, match="provenance"):
+        module.WritingStage()._submit(e.build_context(), s, receipt(p, "runtime"), None)
+
+
+def test_compile_fix_dependency_change_precedes_repair(writing, monkeypatch, tmp_path):
+    p, e = simulated_compile(writing, monkeypatch)
+    before = len(e.llm.backend.calls)
+    change_figure_dependency(p, e, monkeypatch, tmp_path, "script")
+    result = e.tick().result
+    assert isinstance(result, Continue) and e.ck.scratch["writing"]["phase"] == "figures"
+    assert len(e.llm.backend.calls) == before
+
+
+def test_figure_basis_uses_effective_planner_configuration_only(writing):
+    p, e = writing
+    to_phase(e, "write")
+    stage = module.WritingStage()
+    selected, _, runtime = stage._inputs(e.build_context())
+    original = stage._figure_keys(e.build_context(), selected, runtime)
+    p.config.models = {"roles": {"writing.writer": "openai/test-prose"}}
+    p.config.prompt_pins[PROMPT_ID] = 1
+    p.config.title = "An unrelated prose/template change"
+    p.save_config(p.config)
+    assert stage._figure_keys(e.build_context(), selected, runtime) == original
+    p.config.models["roles"]["writing.figure_spec"] = "openai/test-figure-planner"
+    p.save_config(p.config)
+    result = e.tick().result
+    assert isinstance(result, Continue) and e.ck.scratch["writing"]["phase"] == "figures"
+    assert stage._figure_keys(e.build_context(), selected, runtime) != original
+
+
+def test_changed_figure_refs_after_registered_submit_recovery_have_exact_parents(writing, monkeypatch, tmp_path):
+    p, e = writing
+    to_phase(e, "submit")
+    # Registration completed, but Engine has not consumed NeedsApproval yet.
+    first = module.WritingStage().step(e.build_context())
+    assert isinstance(first, module.NeedsApproval)
+    old_refs = dict(e.ck.scratch["writing"]["figures"])
+    old_bytes = (p.root / "paper/figures/fig_c1.pdf").read_bytes()
+    change_figure_dependency(p, e, monkeypatch, tmp_path, "script")
+    approval = run(e)
+    new_refs = e.ck.scratch["writing"]["figures"]
+    assert new_refs != old_refs
+    assert (p.root / "paper/figures/fig_c1.pdf").read_bytes() == old_bytes
+    parents = p.archive.version_info(approval.target).parents
+    assert all(module._ref(raw) in parents for raw in new_refs.values())
+    assert approval.target != first.target

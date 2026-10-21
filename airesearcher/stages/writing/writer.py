@@ -149,6 +149,11 @@ class SectionOutput(BaseModel):
         return value
 
 
+def _section_bytes(output: SectionOutput) -> bytes:
+    """Canonical installed UTF-8 representation, shared with recovery receipts."""
+    return (output.latex + ("" if output.latex.endswith("\n") else "\n")).encode("utf-8")
+
+
 @dataclass(frozen=True)
 class GeneratedSection:
     output: SectionOutput
@@ -305,7 +310,7 @@ class Writer:
         self._provenance()
         self.validate_section(output, output.section)
         target = self._target(f"paper/sections/{output.section}.tex")
-        atomic_write_text(target, output.latex + ("" if output.latex.endswith("\n") else "\n"))
+        atomic_write_bytes(target, _section_bytes(output))
         return target
 
     def read_section(self, section: str) -> SectionOutput | None:

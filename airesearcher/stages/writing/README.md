@@ -179,6 +179,25 @@ validated artifact; Writer sees only this fixed inventory. The English FakeLLM d
 explicitly declares the synthetic smoke score dimensionless and uses English figure
 titles; production code contains no domain-specific unit inference.
 
+On every Stage step, one shared dependency construction computes per-figure keys
+and the global figure basis: exact Aggregate refs, runtime/task hashes, plotting
+skill ref/instructions, renderer SHA, effective FigureSpec prompt ID/version/pin/SHA,
+and resolved figure-planner model/fallback configuration. Prompt/model dependencies
+remain conservative even when explicit task units bypass planning. Template/prose
+state is excluded. A changed basis returns later phases to `figures`; archive history
+is preserved and normal section fingerprints decide downstream prose freshness.
+
+Before invalidation/reprovisioning, and independently at assembly, compilation and
+final submission, the Stage verifies current generated artifacts and archived copies
+against the exact registered Figure manifest, metadata and Aggregate parent. Existing
+figure validation is reused, and provisioned PDF bytes must match that artifact
+exactly. Missing, divergent or corrupted files stop for explicit reconciliation;
+manual PDF replacement never acquires scientific provenance or gets silently
+replaced by dependency-driven regeneration. The existing source-identity hash also
+includes exact Figure refs, so identical rendered PDFs with updated provenance do
+not reuse manuscript parents from an older generation; submission checks the actual
+archived parent list before requesting approval.
+
 Template resolution/inspection/minimal compilation uses the existing immutable
 module. Multiple entries ask for a filename with no default. Missing dependencies,
 invalid inspection or failed minimal compilation ask `uploaded_fix/use_default/end`.
@@ -199,7 +218,11 @@ separate so a template change does not invalidate unrelated prose.
 
 Fixed `paper/.writing/section-<name>.json` files record validated output, fingerprint,
 call/prompt metadata and installed content hash. Output is durable before installation;
-recovery replays installation without another call. Figure-spec receipts and a small
+recovery compares canonical UTF-8 bytes before installation, without another call.
+A missing file is installed and verified; an exact existing match is validated and
+marked installed without rewriting. A divergent pending file is preserved and stops
+for explicit reconciliation. Normal edits to already installed sections retain the
+existing validation/preservation behavior. Figure-spec receipts and a small
 runtime receipt retain question answers, feedback IDs, compile reports/attempts and
 assembly identity. These files are internal and excluded from the manuscript archive.
 The engine scratch remains the phase machine; Writing does not implement a generic

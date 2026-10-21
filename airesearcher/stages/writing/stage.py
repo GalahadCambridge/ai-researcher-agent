@@ -11,7 +11,7 @@ from pathlib import PurePosixPath
 
 from pydantic import ConfigDict
 
-from airesearcher.core.archive import dir_manifest
+from airesearcher.core.archive import dir_manifest, manifest_bytes
 from airesearcher.core.errors import AirError
 from airesearcher.core.fsutil import atomic_write_bytes, atomic_write_json, atomic_write_text, sha256_bytes, sha256_file
 from airesearcher.core.models.claim import CompileReport
@@ -28,7 +28,7 @@ from .bundle import ApprovedSource, EvidenceBundle, _runtime_input, build_bundle
 from .compile import compile_paper
 from .figures import default_spec, generate_figure, prepare_data, validate_artifact
 from .template import check_template, inspect_template, resolve_template, write_check
-from .writer import GENERATION_ORDER, PROMPT_ID, SECTIONS, SectionOutput, Writer
+from .writer import GENERATION_ORDER, PROMPT_ID, SECTIONS, SectionOutput, Writer, _section_bytes
 
 PAPER_EXCLUDE = [
     "build/**",
@@ -105,7 +105,11 @@ class WritingStage:
             )
         s = ctx.scratch.setdefault("writing", {})
         meta = _receipt(ctx, "runtime")
-        selected, basis = self._inputs(ctx)
+        # Establish existing provenance before any invalidation can reprovision files.
+        self._validate_provisioned_figures(ctx, s)
+        selected, basis, runtime = self._inputs(ctx)
+        figure_keys = self._figure_keys(ctx, selected, runtime)
+        figure_basis = _hash(figure_keys)
         new_basis = s.get("basis") != basis
         if new_basis:
             s.update(basis=basis, phase="bundle", aggregates=[r.model_dump() for r in selected], figures={})
@@ -182,6 +186,9 @@ class WritingStage:
             meta["answers"].append(ctx.answer.question_id)
             meta.pop("waiting", None)
         _save(ctx, "runtime", meta)
+        if s.get("phase") not in {"bundle", "figures"} and s.get("figure_basis") != figure_basis:
+            s["phase"] = "figures"
+            return Continue("Figure dependencies changed; revalidate/regenerate figures before manuscript work")
         phase = s.setdefault("phase", "bundle")
         index = _PHASES.index(phase) if phase in _PHASES else 4
         labels = {
@@ -205,7 +212,7 @@ class WritingStage:
             return Continue("Frozen evidence bundle registered")
         bundle = EvidenceBundle.model_validate_json(ctx.archive.get(_ref(s["bundle_ref"])))
         if phase == "figures":
-            return self._figures(ctx, s, meta, bundle)
+            return self._figures(ctx, s, meta, bundle, figure_keys, figure_basis)
         if phase == "template":
             return self._template(ctx, s, meta)
         writer = Writer(
@@ -277,21 +284,91 @@ class WritingStage:
                 "literature": sha256_file(lit) if lit.exists() else None,
             }
         )
-        return selected, basis
+        return selected, basis, runtime
 
-    def _figures(self, ctx, s, meta, bundle):
+    def _figure_keys(self, ctx, selected, runtime):
+        """One dependency construction for global invalidation and per-figure reuse.
+
+        Prompt/model dependencies remain conservative even with explicit task units.
+        Template, prose, and user writing feedback are intentionally absent.
+        """
+        skill = ctx.skills.load("scientific-plotting")
+        pin = ctx.project.prompt_pins.get(FIGURE_PROMPT)
+        prompt = ctx.llm.prompts.load(FIGURE_PROMPT, pin)
+        common = {
+            "runtime": runtime.sha256,
+            "task": runtime.task_sha256,
+            "skill": skill.ref,
+            "skill_instructions": skill.instructions,
+            "script": sha256_file(skill.path("scripts/plot.py")),
+            "prompt": {"id": prompt.id, "version": prompt.version, "pin": pin, "sha256": sha256_file(prompt.path)},
+            "models": [
+                {"alias": model.alias, "entry": model.entry.model_dump(mode="json")}
+                for model in ctx.llm.resolve("writing.figure_spec", FIGURE_PROMPT, "strong", prompt.tier)
+            ],
+        }
+        return {
+            f"fig_{PurePosixPath(ref.artifact_id).stem.lower()}": _hash({**common, "aggregate": ref.model_dump()})
+            for ref in selected
+        }
+
+    def _validate_provisioned_figures(self, ctx, s, *, complete=False):
+        """Prove current paper bytes against exact archived refs, never adopt edits.
+
+        Validate the *registered* implementation here. Freshness against the current
+        skill is separate, so an authorized dependency change can regenerate safely.
+        """
+        figures = s.get("figures", {})
+        if not figures and not complete:
+            return
+        try:
+            bundle = EvidenceBundle.model_validate_json(ctx.archive.get(_ref(s["bundle_ref"])))
+            expected = {f"fig_{a.aggregate_id.lower()}": a for a in bundle.aggregates}
+            if complete and figures.keys() != expected.keys():
+                raise ValueError("registered figure set differs from required comparisons")
+            for fid, raw in figures.items():
+                if fid not in expected:
+                    raise ValueError(f"unexpected figure identity: {fid}")
+                ref = _ref(raw)
+                if ref.artifact_id != f"artifacts/figures/{fid}":
+                    raise ValueError(f"incorrect Figure artifact identity: {fid}")
+                archived_manifest = ctx.archive.get(ref)
+                info = ctx.archive.version_info(ref)
+                item = expected[fid]
+                if info.kind != "figure" or not info.is_dir or info.parents != [item.ref]:
+                    raise ValueError(f"incorrect Figure/Aggregate provenance: {fid}")
+                archived = ctx.archive.stored_path(ref)
+                directory = _path(ctx, ref.artifact_id)
+                if (
+                    archived is None
+                    or manifest_bytes(dir_manifest(safe_path(archived), [])) != archived_manifest
+                    or manifest_bytes(dir_manifest(directory, [])) != archived_manifest
+                ):
+                    raise ValueError(f"Figure artifact no longer matches archived version: {fid}")
+                figure = Figure.model_validate_json((directory / "figure.json").read_bytes())
+                if figure.fig_id != fid or figure.aggregate_ref != item.ref:
+                    raise ValueError(f"incorrect Figure metadata identity: {fid}")
+                problems = validate_artifact(
+                    directory, item.data, item.ref,
+                    script_path=archived / "plot.py", skill_ref=figure.skill_ref,
+                )
+                if problems:
+                    raise ValueError(f"invalid registered Figure {fid}: {problems}")
+                source = _path(ctx, f"{ref.artifact_id}/{fid}.pdf")
+                provisioned = _path(ctx, f"paper/figures/{fid}.pdf")
+                if provisioned.read_bytes() != source.read_bytes():
+                    raise ValueError(f"provisioned PDF differs: {fid}")
+        except (AirError, ValueError, OSError, KeyError) as exc:
+            raise ValueError(
+                "Manuscript figure no longer matches its registered scientific Figure provenance; "
+                f"explicit reconciliation/regeneration required: {exc}"
+            ) from exc
+
+    def _figures(self, ctx, s, meta, bundle, figure_keys, figure_basis):
         skill = ctx.skills.load("scientific-plotting")
         for item in bundle.aggregates:
             fid = f"fig_{item.aggregate_id.lower()}"
-            key = _hash(
-                [
-                    item.ref.model_dump(),
-                    bundle.runtime.task_sha256,
-                    skill.ref,
-                    sha256_file(skill.path("scripts/plot.py")),
-                    sha256_file(ctx.llm.prompts.load(FIGURE_PROMPT, ctx.project.prompt_pins.get(FIGURE_PROMPT)).path),
-                ]
-            )
+            key = figure_keys[fid]
             receipt = _receipt(ctx, f"figure-{fid}")
             if receipt.get("key") != key:
                 units = bundle.runtime.task.get("metric_units", {})
@@ -358,7 +435,7 @@ class WritingStage:
             s["figures"][fid] = ref.model_dump()
             if not completed or not reuse or not provisioned:
                 return Continue(f"Scientific figure ready: {fid}")
-        s["phase"] = "template"
+        s.update(phase="template", figure_basis=figure_basis)
         return Continue("All comparison figures provisioned")
 
     def _ask(self, ctx, meta, kind, text, options, **details):
@@ -435,8 +512,21 @@ class WritingStage:
                 raise ValueError(f"unreceipted existing section {section}; preserve/reconcile it before generation")
             if receipt.get("fingerprint") == fingerprint:
                 if not receipt.get("installed", True) or not path.exists():
-                    writer.write_section(SectionOutput.model_validate(receipt["output"]))
-                    receipt.update(installed=True, file_sha256=sha256_file(path))
+                    output = SectionOutput.model_validate(receipt["output"])
+                    writer.validate_section(output, section)
+                    expected = _section_bytes(output)
+                    if path.exists():
+                        if path.read_bytes() != expected:
+                            raise ValueError(
+                                f"pending generated section {section} conflicts with an existing different file; "
+                                "explicit reconciliation required"
+                            )
+                        writer.read_section(section)
+                    else:
+                        writer.write_section(output)
+                    if path.read_bytes() != expected:
+                        raise ValueError(f"section installation verification failed: {section}")
+                    receipt.update(installed=True, file_sha256=sha256_bytes(expected))
                     _save(ctx, f"section-{section}", receipt)
                 output = writer.read_section(section)
                 current = sha256_file(path)
@@ -464,13 +554,13 @@ class WritingStage:
                 "call_id": generated.call_id,
                 "prompt_id": generated.prompt_id,
                 "prompt_version": generated.prompt_version,
-                "file_sha256": sha256_bytes(
-                    (generated.output.latex + ("" if generated.output.latex.endswith("\n") else "\n")).encode()
-                ),
+                "file_sha256": sha256_bytes(_section_bytes(generated.output)),
                 "installed": False,
             }
             _save(ctx, f"section-{section}", receipt)
             writer.write_section(generated.output)
+            if path.read_bytes() != _section_bytes(generated.output):
+                raise ValueError(f"section installation verification failed: {section}")
             receipt.update(installed=True, file_sha256=sha256_file(path))
             _save(ctx, f"section-{section}", receipt)
             return Continue(f"Section persisted: {section}")
@@ -479,6 +569,7 @@ class WritingStage:
         return Continue("Sections, references and deterministic AI-use statement assembled")
 
     def _assemble(self, ctx, s, meta, writer):
+        self._validate_provisioned_figures(ctx, s, complete=True)
         receipts = [_receipt(ctx, f"section-{name}") for name in SECTIONS]
         calls = sorted({f"{r['prompt_id']} v{r['prompt_version']}" for r in receipts if r.get("call_id")})
         repairs = meta.get("repairs", [])
@@ -544,7 +635,11 @@ class WritingStage:
         # Bind PDF bytes to the complete source basis, including comment-only edits.
         # Archive.put deduplicates bytes: this invisible deterministic PDF metadata
         # prevents a new source version reusing a PDF parented to an older manuscript.
-        source_identity = _hash([dir_manifest(_path(ctx, "paper"), [*PAPER_EXCLUDE, "ai_use.tex"]), lines])
+        # Identical rendered PDFs can have new Figure refs after a renderer change.
+        # Include those refs so byte-deduplication cannot retain old paper parents.
+        source_identity = _hash(
+            [dir_manifest(_path(ctx, "paper"), [*PAPER_EXCLUDE, "ai_use.tex"]), lines, s["figures"]]
+        )
         atomic_write_text(
             _path(ctx, "paper/ai_use.tex"),
             "\n".join(lines)
@@ -561,6 +656,7 @@ class WritingStage:
         return ctx.archive.current_sha("paper", exclude=PAPER_EXCLUDE)
 
     def _compile(self, ctx, s, meta, writer):
+        self._validate_provisioned_figures(ctx, s, complete=True)
         if meta.get("assembled_source_sha256") != self._source_sha(ctx):
             s["phase"] = "write"
             return Continue("Source edited before compilation; validate and refresh references")
@@ -632,7 +728,7 @@ class WritingStage:
             actual = writer.read_section(output.section)
             if sha256_bytes(actual.latex.encode()) not in {
                 attempt["source_sha256"],
-                sha256_bytes((output.latex + ("" if output.latex.endswith("\n") else "\n")).encode()),
+                sha256_bytes(_section_bytes(output)),
             }:
                 raise ValueError("section changed after repair receipt; refusing to overwrite human edits")
             writer.write_section(output)
@@ -716,6 +812,7 @@ class WritingStage:
         return Continue(f"Compile repair attempt {attempt['number']}: {attempt['status']}")
 
     def _submit(self, ctx, s, meta, writer):
+        self._validate_provisioned_figures(ctx, s, complete=True)
         if meta.get("compiled", {}).get("source_sha256") != self._source_sha(ctx):
             s["phase"] = "write"
             return Continue("Source changed; preserve and validate edits before compiling")
@@ -744,6 +841,11 @@ class WritingStage:
             producer="agent:writing",
             exclude=PAPER_EXCLUDE,
         )
+        registered_parents = ctx.archive.version_info(paper).parents
+        if any(_ref(raw) not in registered_parents for raw in s["figures"].values()):
+            raise ValueError(
+                "archived manuscript Figure parents differ from validated provenance; reconcile explicitly"
+            )
         report = CompileReport.model_validate_json(_path(ctx, "paper/build/compile_report.json").read_bytes())
         if not report.ok and not (not ctx.project.dev.compile and report.engine == "disabled"):
             raise ValueError("unsuccessful compilation cannot be submitted in real compile mode")
