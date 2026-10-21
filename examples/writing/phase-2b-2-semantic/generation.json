@@ -1,0 +1,103 @@
+{
+  "approval_id": "ap-0007",
+  "approval_summary": "Manuscript v4: 2 claims; combined review: 2 supported, 0 partially supported, 0 unsupported, 0 contradicted, 0 unverifiable; 0 blockers, 0 major issues; compiled. Semantic review rounds: 2; automatic revision rounds: 1.",
+  "artifact_sha256": {
+    "ai_use.tex": "9571f498c2b3fc452a7b10334794b123f97ba449d5bc24405ef117a2221d6aae",
+    "air_values.tex": "75bd6bd15ef18bb05d84160616f089eba9d446008c07ac7abb0535c4001d8076",
+    "before/claims.jsonl": "eafcd26a792d9c99dfcb35bcd2102481bb27ee98bc90e213f98d656b3dccb32f",
+    "before/results.tex": "5e80284aff3a95e5e3948d43eda85c0ac1798578fa935442ce46c6ebd54f4f89",
+    "claims.jsonl": "1f3dcfd85dca0326257a5907e763a51e331180aa13b4beb9c84503677dab3484",
+    "compile_report.json": "b1fb3ac0bbce3037d9a2b71bffcace4e9c0eff2ea9415f78596661f4a590e19b",
+    "evidence_bundle.json": "9c28f5e76e239e9f92e7edcab7fea8967284684f0bfdf8c66ed3c71a82b4aba8",
+    "figures/fig_c1.pdf": "de256962f5ac9122c7f3048c765f8921325dc30637eba036ceb76155cbc76cac",
+    "figures/fig_c2.pdf": "ef21c0cfa9f21ec1ac3937480a1c43c3943aa5e3aa6dc50c50ab3ac412eba1d2",
+    "main.pdf": "60ba104f4ff1392fa64fa941dbc4fbcf117f55a228bbe890a843f1b1f6d83868",
+    "main.tex": "bba5eeb58d33da6da9132a6972b1c30b03031bea1ec36ecc4d1c0018ce8da7ac",
+    "references.bib": "978afb65143489391a5a024c954100ba0f27919bbdd65d6b57091a319a02257a",
+    "review/review_v1.json": "2c939cdfd5cadb37efabe9f96ace2ab8e0d8d625a82ab11336c1df0a8f62a034",
+    "review/review_v1.md": "3373ac8a1979d07207819b343c554237596c5dbaa27d736dd23e430c5b6d8d08",
+    "review/review_v2.json": "51a756f1bdeb1cb4d456d4126dcba446fcc6978d1c3b2260fde4e4a811ecedb8",
+    "review/review_v2.md": "9b701df6b20eeec815cc60fab5b7bd0aab592c1704837c1bb38e8ff6a66cca21",
+    "sections/abstract.tex": "ac71fc6bdb66080830630203e5473962842d36a755b212a85f9064cf68fc05c8",
+    "sections/conclusion.tex": "619818c8ed328fa237be1433e87519a802d5307420eb8cd72e0fbfd95cd03798",
+    "sections/discussion.tex": "f1654b3a04c556d3f52c57bfc8a7dd8837facb1d60aadd68f8fd13b1243c6246",
+    "sections/introduction.tex": "23e2b70edd87c1222f92aed255346b9235ed65bc10f44e6746fc4c6f73e697ea",
+    "sections/method.tex": "1c033b82da508532ba50ea0b1174e2d910224677084fc08bccc4c0cdebef3d43",
+    "sections/related_work.tex": "9aac631f42fe0c7a5daf59ccff7a9e6c0ccc37ed91dfd8e332ce99bb5c2078e0",
+    "sections/results.tex": "bbdea84183a0b4e96d56696ab138cc442c18017a9acf57b316483f65fc02525e",
+    "sections/setup.tex": "4e14d0da5ffa571233c0564ce060da791eccbdc8a275f9ce68f07bd8d107fe0c"
+  },
+  "automatic_revision_rounds": 1,
+  "backend": "SampleWritingLLM through real LLMGateway; AIR_REAL_LLM=0; no paid API calls",
+  "baseline_sha": "57ec9d8317bcb57784fa80b382a9a6b989b709ff",
+  "calls": {
+    "writing/claims": 1,
+    "writing/figure_spec": 2,
+    "writing/review": 12,
+    "writing/revise": 1,
+    "writing/section": 8
+  },
+  "claims": 2,
+  "code_state": "Phase 2B-2 working tree; exact implementation file hashes below",
+  "compiled_manuscripts": {
+    "3": {
+      "build_refs": [
+        {
+          "artifact_id": "paper/build/main.pdf",
+          "sha256": "d11f8397f8f8ebed96df5ef6289986f310643f1e0cea671260f6ef08c789ca53",
+          "version": 3
+        },
+        {
+          "artifact_id": "paper/build/compile_report.json",
+          "sha256": "e52e0aa5e05916710ad81f9ca219196958468bee748419559ca8692d859d81e2",
+          "version": 3
+        }
+      ],
+      "paper_ref": {
+        "artifact_id": "paper",
+        "sha256": "1604ddccff57b480f8650209046766b0591352a1020492a872db8963d279b400",
+        "version": 3
+      }
+    },
+    "4": {
+      "build_refs": [
+        {
+          "artifact_id": "paper/build/main.pdf",
+          "sha256": "60ba104f4ff1392fa64fa941dbc4fbcf117f55a228bbe890a843f1b1f6d83868",
+          "version": 4
+        },
+        {
+          "artifact_id": "paper/build/compile_report.json",
+          "sha256": "b1fb3ac0bbce3037d9a2b71bffcace4e9c0eff2ea9415f78596661f4a590e19b",
+          "version": 4
+        }
+      ],
+      "paper_ref": {
+        "artifact_id": "paper",
+        "sha256": "c2d632b64feb492174aeeba1b2162b8b9a739dc2c5c7ee5fc516165faf6f812b",
+        "version": 4
+      }
+    }
+  },
+  "data": "public canonical sample copied into a disposable workspace; no fixture edits",
+  "final_counts": {
+    "blocker": 0,
+    "major": 0,
+    "minor": 0,
+    "supported": 2
+  },
+  "implementation_sha256": {
+    "airesearcher/stages/writing/prompts/review.v1.md": "f30454725e6b5667c900228f781a386a7a16c5d3eb0ef89c7658c2643bdb2284",
+    "airesearcher/stages/writing/prompts/revise.v1.md": "499cf6297ff79688fefcff3aefb97f8ebefddedfd4db1259030f540f8d446246",
+    "airesearcher/stages/writing/review.py": "b30a5792cc4f4e1eadb9f70276822a7074c8e946762da079ebc154379a015df2",
+    "airesearcher/stages/writing/stage.py": "af12443173a77d68ba7d393c8e7a683b0447cf7fd9a67c74d68f63de7d525e9b",
+    "scripts/writing/demo.py": "4a115e077a26778e1848161aa7288be72541af9cc8e83c60b02ff064aa4ac2ad",
+    "skills/claim-review/SKILL.md": "d937838456859ce09cedd6dd4fa7ffe6c5128b747fc960e13f4d2c5734305ecd",
+    "skills/claim-review/skill.yaml": "9e6297410f44f151fdf9f6b51ddbdf8fc3b5d3247452b934b7f33d77b992c20e",
+    "skills/latex-writing/SKILL.md": "3654f60b9824900cd877c315b6f5a7ef268170d751b60f238ca49023842d4a6d",
+    "skills/latex-writing/skill.yaml": "56a2fce5bffe9d2ec8e3edd8f9973d6c2f7c789cbe916732d2830d690ec1bca1"
+  },
+  "phase": "2B-2",
+  "semantic_rounds": 2,
+  "state": "ManuscriptPending"
+}

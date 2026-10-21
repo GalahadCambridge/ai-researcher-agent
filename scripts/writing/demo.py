@@ -17,6 +17,7 @@ from airesearcher.engine.stage import Error, Stop
 from airesearcher.llm.gateway import LLMGateway
 from airesearcher.stages.writing.claims import PROMPT_ID as CLAIM_PROMPT
 from airesearcher.stages.writing.figures import default_spec
+from airesearcher.stages.writing.review import REVIEW_PROMPT, REVISE_PROMPT
 from airesearcher.stages.writing.stage import FIGURE_PROMPT
 from airesearcher.stages.writing.writer import PROMPT_ID
 from airesearcher.testing.fake_llm import FakeLLM
@@ -30,6 +31,8 @@ def context_of(request):
 
 class SampleWritingLLM(FakeLLM):
     """Explicit synthetic answers for the public smoke sample, never a real model."""
+
+    semantic_revision = False
 
     def call(self, request):
         context = context_of(request)
@@ -89,7 +92,29 @@ class SampleWritingLLM(FakeLLM):
                             ],
                         }
                     )
+            if self.semantic_revision:
+                claims[0]["text_template"] += " This establishes universal superiority."
             self.default = {"claims": claims}
+        elif request.prompt_id == REVIEW_PROMPT:
+            issues = []
+            if "This establishes universal superiority." in context["sentence"]:
+                issues = [
+                    {
+                        "code": "OVERCLAIM_SCOPE",
+                        "detail": "The evidence covers only the evaluated conditions.",
+                        "suggestion": "Restrict the conclusion to the recorded scope.",
+                    }
+                ]
+            self.default = {"sentence": context["sentence"], "claim_id": context["claim_id"], "issues": issues}
+        elif request.prompt_id == REVISE_PROMPT:
+            self.default = {
+                "sentence": context["sentence"],
+                "claim_id": context["claim_id"],
+                "hedge": "possible",
+                "replacement": context["sentence"].replace(
+                    "This establishes universal superiority.", "This observation is limited to the evaluated scope."
+                ),
+            }
         elif request.prompt_id == PROMPT_ID:
             section = context["section"]
             content = {
@@ -162,7 +187,11 @@ def prepare_sample(destination: Path, *, compile_enabled: bool = True, evidence_
     (project.root / "paper").rename(project.root / "fixture-paper")
     (project.root / "artifacts/figures").rename(project.root / "fixture-figures")
     config = project.config.model_copy(deep=True)
-    config.title = "Sample Project: Control-Arm Writing Stage"
+    config.title = (
+        "Sample Project: Evidence-Aware Writing Stage"
+        if evidence_check
+        else "Sample Project: Control-Arm Writing Stage"
+    )
     config.evidence_check = evidence_check
     config.dev.stage_impl["writing"] = "real"
     config.dev.compile = compile_enabled
@@ -195,6 +224,7 @@ def main():
     parser.add_argument("--workspace", required=True, type=Path)
     parser.add_argument("--no-compile", action="store_true")
     parser.add_argument("--evidence-check", action="store_true")
+    parser.add_argument("--semantic-revision", action="store_true", help="FakeLLM semantic correction scenario")
     args = parser.parse_args()
     target = args.workspace.resolve()
     if target.exists() or target == repo_root() or repo_root() in target.parents:
@@ -203,6 +233,7 @@ def main():
         parser.error("latexmk unavailable; use --no-compile for honest source-only development")
     os.environ["AIR_REAL_LLM"] = "0"
     project, engine = prepare_sample(target, compile_enabled=not args.no_compile, evidence_check=args.evidence_check)
+    engine.llm.backend.semantic_revision = args.semantic_revision
     approval = run(engine)
     print(
         json.dumps(

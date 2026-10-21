@@ -1,0 +1,14 @@
+[
+  {
+    "claim_id": "CL1",
+    "code": "OVERCLAIM_SCOPE",
+    "detail": "Only one dataset evaluated.",
+    "location": {
+      "file": "paper/sections/results.tex",
+      "line": 1
+    },
+    "sentence": "This works on all datasets.",
+    "severity": "major",
+    "suggestion": "Restrict scope to the evaluated dataset."
+  }
+]

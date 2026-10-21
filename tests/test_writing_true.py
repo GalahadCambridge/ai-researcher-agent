@@ -33,7 +33,7 @@ def test_true_vertical_slice_archive_and_trace(writing_true):
     report = CheckReport.model_validate_json((p.root / "paper/review/review_v1.json").read_bytes())
     assert report.paper_ref == approval.target
     assert report.counts == {"blocker": 0, "major": 0, "minor": 0, "supported": 2}
-    assert "Semantic review not run" in approval.summary
+    assert "Semantic review rounds: 1; automatic revision rounds: 0" in approval.summary
     parents = p.archive.version_info(approval.target).parents
     claims_ref = p.archive.latest("paper/claims.jsonl")
     assert claims_ref in parents

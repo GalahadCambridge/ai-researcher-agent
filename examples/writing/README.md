@@ -9,6 +9,7 @@ phases are not retroactively populated by this change.
 | Phase | PDF | Stage notes and reproduction |
 | --- | --- | --- |
 | Phase 2A-4 Writer, after independent-review fixes | [main.pdf](phase-2a-4-writer/main.pdf) | [README](phase-2a-4-writer/README.md) |
+| Phase 2B-2 semantic review + targeted revision | [main.pdf](phase-2b-2-semantic/main.pdf) | [README](phase-2b-2-semantic/README.md) |
 | Phase 2B-1 evidence binding + deterministic verification | [main.pdf](phase-2b-1-evidence/main.pdf) | [README](phase-2b-1-evidence/README.md) |
 | Phase 2A-5 real control-arm WritingStage | [main.pdf](phase-2a-5-stage/main.pdf) | [README](phase-2a-5-stage/README.md) |
 

@@ -1,4 +1,4 @@
-# LaTeX template infrastructure (0.2.0)
+# LaTeX template infrastructure (0.3.0)
 
 This skill supplies template infrastructure and mode-aware scientific writing rules.
 The Stage and Writer own generation; the skill is not an orchestration implementation.
@@ -60,7 +60,11 @@ Evidence-bound writing (evidence_check=true):
   conclusions, not experimental details; citation planning declares this scope.
 - Human surrounding-prose edits are permitted. Bound-claim changes require explicit
   reconciliation; syntax repair must preserve every exact claim.
-- Deterministic verification is not semantic LLM review. No semantic review/revision
-  skill is provided in this version.
+- Deterministic verification is followed by exact-sentence semantic review using
+  writing.reviewer and the verified claim-review skill. Bounded targeted revision
+  uses writing.reviser only for safely revisable major issues. Code preserves Claim
+  IDs, numeric values, comparison and evidence; hard evidence errors remain visible.
+  Each revised manuscript is compiled, deterministically checked and reviewed again.
+  Residual issues after paper.max_review_rounds are submitted for human inspection.
 Control writing (evidence_check=false) continues direct bundle-based prose without
 claims, value macros or deterministic claim review artifacts.

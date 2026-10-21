@@ -1,12 +1,14 @@
 """Resumable real Writing control arm. Shared engine owns checkpoints and approvals.
 
 Writing-owned receipts close completed-call/file-write gaps. They are not manuscript
-evidence and are excluded from its directory archive. No Phase 2B functionality.
+evidence and are excluded from its directory archive. Both paths share compilation
+and approvals.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import PurePosixPath
 
 from pydantic import ConfigDict
@@ -24,6 +26,7 @@ from airesearcher.llm.gateway import LLMOutputError
 from airesearcher.services import evidence, literature, runs
 
 from . import claims as binding
+from . import review as semantic
 from ._latex import TemplateError, safe_path
 from .bundle import ApprovedSource, EvidenceBundle, _runtime_input, build_bundle, write_bundle
 from .compile import compile_paper
@@ -108,6 +111,11 @@ class WritingStage:
             raise ValueError("Writing mode changed in place; preserve history and use a fresh workspace")
         meta["evidence_check"] = ctx.project.evidence_check
         if ctx.project.evidence_check:
+            semantic.round_limit(ctx.project.paper.get("max_review_rounds", 2))
+            revision = _receipt(ctx, "pending-revision")
+            if revision and not revision.get("assembled"):
+                self._finish_revision(ctx, revision)
+                s["phase"] = "revision_assemble"
             pending = _receipt(ctx, "pending-claims")
             if pending and not pending.get("installed"):
                 self._finish_claim_install(ctx, pending)
@@ -150,7 +158,7 @@ class WritingStage:
             }
         )
         if s.get("writing_config") != writing_config:
-            if not new_basis and s.get("phase") in {"compile", "compile_fix", "verify", "submit"}:
+            if not new_basis and s.get("phase") in {"compile", "compile_fix", "verify", "review", "revise", "submit"}:
                 s["phase"] = "write"
             s["writing_config"] = writing_config
         selection = ctx.project.template
@@ -200,7 +208,7 @@ class WritingStage:
             return Continue("Figure dependencies changed; revalidate/regenerate figures before manuscript work")
         phase = s.setdefault("phase", "bundle")
         phases = (
-            ("bundle", "figures", "template", "claims", "write", "compile", "verify", "submit")
+            ("bundle", "figures", "template", "claims", "write", "compile", "verify", "review", "revise", "submit")
             if ctx.project.evidence_check
             else _PHASES
         )
@@ -260,6 +268,12 @@ class WritingStage:
             return self._repair(ctx, s, meta, writer)
         if phase == "verify":
             return self._verify(ctx, s, meta, writer)
+        if phase == "review":
+            return self._review(ctx, s, meta, writer)
+        if phase == "revise":
+            return self._revise(ctx, s, meta, writer)
+        if phase == "revision_assemble":
+            return self._revision_assemble(ctx, s, meta, writer)
         if phase == "submit":
             return self._submit(ctx, s, meta, writer)
         raise ValueError(f"unknown Writing phase {phase}")
@@ -466,34 +480,129 @@ class WritingStage:
         receipt = _receipt(ctx, name)
         if not receipt:
             report = evidence.check(ctx.root, paper_ref=paper, mode="full")
-            numbers = [int(p.stem.removeprefix("review_v")) for p in _path(ctx, "paper/review").glob("review_v*.json")]
-            receipt = {"number": max(numbers, default=0) + 1, "report": report.model_dump(mode="json")}
+            receipt = {"report": report.model_dump(mode="json")}
             _save(ctx, name, receipt)
         report = CheckReport.model_validate(receipt["report"])
         if report.paper_ref != paper:
             raise ValueError("persisted check report has the wrong manuscript basis")
-        number = receipt["number"]
-        lines = [
-            f"# Deterministic evidence check v{number}",
-            "",
-            f"Paper: v{paper.version} ({paper.sha256})",
-            "",
-            "Deterministic checks only. Semantic LLM claim review was not run.",
-            f"Compile success: {report.compile_ok}",
-            f"Counts: {report.counts}",
-            "",
-        ]
-        for c in report.claims:
-            lines.append(f"- {c.claim_id}: {c.support}")
-            lines.extend(f"  - {i.severity} {i.code}: {i.detail}" for i in c.issues)
-        lines.extend(f"- {i.severity} {i.code} {i.location}: {i.detail}" for i in report.unbound_issues)
+        s.update(deterministic_basis=basis, deterministic_report=receipt["report"], phase="review")
+        return self._review(ctx, s, meta, writer)
+
+    def _semantic_route(self, ctx, prompt_id, role):
+        prompt = ctx.llm.prompts.load(prompt_id, ctx.project.prompt_pins.get(prompt_id))
+        skill = ctx.skills.load("claim-review")
+        return {
+            "prompt": [prompt.id, prompt.version, sha256_file(prompt.path)],
+            "models": [
+                {"alias": m.alias, "model": m.entry.model, "config_sha256": _hash(m.entry.model_dump(mode="json"))}
+                for m in ctx.llm.resolve(role, prompt_id, "strong", prompt.tier)
+            ],
+            "skill_ref": skill.ref,
+            "skill_sha256": _hash(skill.instructions),
+            "policy": sha256_file(semantic.__file__),
+        }
+
+    def _review_basis(self, ctx, s):
+        return _hash(
+            [
+                s["claims_ref"],
+                s["deterministic_report"],
+                self._semantic_route(ctx, semantic.REVIEW_PROMPT, "writing.reviewer"),
+            ]
+        )
+
+    def _semantic_call(self, ctx, prompt, role, schema, context):
+        skill = ctx.skills.load("claim-review")
+        return ctx.llm.complete(
+            role=role,
+            prompt_id=prompt,
+            tier="strong",
+            max_retries=0,
+            response_schema=schema,
+            variables={
+                "schema": schema.model_json_schema(),
+                "skill_ref": skill.ref,
+                "skill_rules": skill.instructions,
+                "context": ctx.llm.wrap_untrusted(json.dumps(context), "exact-sentence"),
+            },
+        )
+
+    def _review(self, ctx, s, meta, writer):
+        report = CheckReport.model_validate(s["deterministic_report"])
+        paper = report.paper_ref
+        if meta.get("compiled", {}).get("source_sha256") != self._source_sha(ctx) or s[
+            "deterministic_basis"
+        ] != self._verification_basis(ctx, s, paper):
+            s["phase"] = "verify"
+            return Continue("Manuscript/evidence changed before semantic review; recheck")
+        basis = self._review_basis(ctx, s)
+        name = "semantic-" + basis
+        receipt = _receipt(ctx, name)
+        if not receipt:
+            source = ctx.archive.stored_path(paper)
+            units = semantic.units(source, writer.claims, writer.bundle, report)
+            numbers = [int(p.stem.removeprefix("review_v")) for p in _path(ctx, "paper/review").glob("review_v*.json")]
+            # Reserve a number before calls; a crash cannot overwrite an older review.
+            for path in _path(ctx, "paper/.writing").glob("semantic-*.json"):
+                numbers.append(json.loads(path.read_text())["number"])
+            cycle = self._cycle(s)
+            history = meta.setdefault("semantic_rounds", {}).setdefault(cycle, [])
+            receipt = {
+                "number": max(numbers, default=0) + 1,
+                "round": len(history) + 1,
+                "revision_rounds": len(meta.get("semantic_revisions", [])),
+                "revision_receipts": list(meta.get("semantic_revisions", [])),
+                "cycle": cycle,
+                "basis": basis,
+                "claims_ref": s["claims_ref"],
+                "route": self._semantic_route(ctx, semantic.REVIEW_PROMPT, "writing.reviewer"),
+                "units": units,
+                "responses": [],
+                "report": None,
+            }
+            _save(ctx, name, receipt)
+        # Reject persisted untrusted output before issuing any further calls on restart.
+        for unit, saved in zip(receipt["units"], receipt["responses"], strict=False):
+            if "rejected" in saved:
+                raise ValueError("untrusted semantic response rejected: " + saved["rejected"])
+            semantic.normalize(unit, saved["response"])
+        for unit in receipt["units"][len(receipt["responses"]) :]:
+            try:
+                response = self._semantic_call(
+                    ctx,
+                    semantic.REVIEW_PROMPT,
+                    "writing.reviewer",
+                    semantic.ReviewResponse,
+                    semantic.model_context(unit),
+                )
+                saved = {
+                    "response": semantic.ReviewResponse.model_validate(response.parsed).model_dump(mode="json"),
+                    "call_id": response.call_id,
+                }
+            except LLMOutputError as exc:
+                saved = {"rejected": str(exc)}
+            receipt["responses"].append(saved)
+            _save(ctx, name, receipt)  # response durable before normalization or artifact writes
+            if "rejected" in saved:
+                raise ValueError("untrusted semantic response rejected: " + saved["rejected"])
+            semantic.normalize(unit, saved["response"])
+        issues = []
+        for unit, saved in zip(receipt["units"], receipt["responses"], strict=False):
+            if "rejected" in saved:
+                raise ValueError("untrusted semantic response rejected: " + saved["rejected"])
+            issues.extend(semantic.normalize(unit, saved["response"]))
+        if len(receipt["responses"]) != len(receipt["units"]):
+            raise ValueError("semantic review incomplete")
+        combined = semantic.merge(report, issues)
+        receipt["report"] = combined.model_dump(mode="json")
+        _save(ctx, name, receipt)
         content = {
-            "json": binding.encoded(report.model_dump(mode="json")) + b"\n",
-            "md": ("\n".join(lines) + "\n").encode("utf-8"),
+            "json": binding.encoded(receipt["report"]) + b"\n",
+            "md": semantic.markdown(combined, receipt).encode("utf-8"),
         }
         refs = {}
         for suffix, data in content.items():
-            path = f"paper/review/review_v{number}.{suffix}"
+            path = f"paper/review/review_v{receipt['number']}.{suffix}"
             target = _path(ctx, path)
             if target.exists() and target.read_bytes() != data:
                 raise ValueError("historical review report changed; explicit reconciliation required")
@@ -503,13 +612,173 @@ class WritingStage:
                 "review_report" if suffix == "json" else "other",
                 target,
                 parents=[paper, _ref(s["claims_ref"])],
-                producer="agent:writing/check",
+                producer="agent:writing/review",
             )
             if ctx.archive.version_info(ref).parents != [paper, _ref(s["claims_ref"])]:
                 raise ValueError("review report retains stale manuscript parents")
             refs[suffix] = ref
-        s.update(review_ref=refs["json"].model_dump(), review_basis=basis, phase="submit")
-        return Continue("Deterministic check persisted; semantic review deferred")
+        history = meta.setdefault("semantic_rounds", {}).setdefault(receipt["cycle"], [])
+        if basis not in history:
+            history.append(basis)
+        _save(ctx, "runtime", meta)
+        targets = semantic.revision_targets(combined, receipt["units"])
+        more = len(history) < semantic.round_limit(ctx.project.paper.get("max_review_rounds", 2))
+        s.update(
+            review_ref=refs["json"].model_dump(),
+            review_basis=s["deterministic_basis"],
+            semantic_basis=basis,
+            phase="revise" if targets and more else "submit",
+        )
+        return Continue("Combined deterministic and semantic review persisted")
+
+    def _revise(self, ctx, s, meta, writer):
+        if s["semantic_basis"] != self._review_basis(ctx, s):
+            s["phase"] = "review"
+            return Continue("Semantic dependencies changed before revision; rereview")
+        if meta["compiled"]["source_sha256"] != self._source_sha(ctx):
+            s["phase"] = "write"
+            return Continue("Human source edit before revision; preserve and recheck")
+        review = _receipt(ctx, "semantic-" + s["semantic_basis"])
+        report = CheckReport.model_validate(review["report"])
+        targets = semantic.revision_targets(report, review["units"])
+        route = self._semantic_route(ctx, semantic.REVISE_PROMPT, "writing.reviser")
+        basis = _hash(
+            [
+                s["semantic_basis"],
+                route,
+                [c.model_dump() for c in writer.claims],
+                [(u, [i.model_dump() for i in issues]) for u, issues in targets],
+            ]
+        )
+        # Issue models are serialized explicitly for the receipt identity.
+        name = "revision-" + basis
+        receipt = _receipt(ctx, name)
+        if not receipt:
+            receipt = {"basis": basis, "review_basis": s["semantic_basis"], "route": route, "responses": []}
+            _save(ctx, name, receipt)
+        claims = [c.model_copy(deep=True) for c in writer.claims]
+        sections = {u["section"] for u, _ in targets}
+        old = {
+            f"paper/sections/{section}.tex": _path(ctx, f"paper/sections/{section}.tex").read_bytes().decode("utf-8")
+            for section in sections
+        }
+        new = dict(old)
+        # Descending offsets allow multiple exact targets in one section without relocating anchors.
+        targets = sorted(targets, key=lambda item: (item[0]["section"], -item[0]["location"]["start"]))
+        for index, (unit, issues) in enumerate(targets):
+            claim = next((c for c in claims if c.claim_id == unit["claim_id"]), None)
+            context, placeholders = semantic.revision_context(unit, issues, claim)
+            if index == len(receipt["responses"]):
+                try:
+                    response = self._semantic_call(
+                        ctx, semantic.REVISE_PROMPT, "writing.reviser", semantic.RevisionResponse, context
+                    )
+                    saved = {
+                        "response": semantic.RevisionResponse.model_validate(response.parsed).model_dump(mode="json"),
+                        "call_id": response.call_id,
+                    }
+                except LLMOutputError as exc:
+                    saved = {"rejected": str(exc)}
+                receipt["responses"].append(saved)
+                _save(ctx, name, receipt)
+            saved = receipt["responses"][index]
+            if "rejected" in saved:
+                raise ValueError("untrusted revision rejected: " + saved["rejected"])
+            replacement, revised = semantic.validate_revision(context, placeholders, saved["response"], claim)
+            relative = unit["location"]["file"]
+            a, b = unit["location"]["start"], unit["location"]["end"]
+            if new[relative][a:b] != unit["source"]:
+                raise ValueError("revision exact source anchor changed")
+            new[relative] = new[relative][:a] + replacement + new[relative][b:]
+            if revised:
+                claims = [revised if c.claim_id == revised.claim_id else c for c in claims]
+        if new == old:
+            s["phase"] = "submit"
+            return Continue("Revision made no change; preserve remaining issues for human inspection")
+        # Compute final locations before the transaction, so assembly does not create a second claims write.
+        for claim in claims:
+            relative = f"paper/sections/{claim.section}.tex"
+            text = new.get(relative, _path(ctx, relative).read_bytes().decode("utf-8"))
+            start = next(
+                m.start()
+                for m in re.finditer(re.escape(claim.text), text)
+                if binding.active_text(text)[m.start() : m.start() + 6] == r"\claim"
+            )
+            claim.location = {"file": relative, "line": text[:start].count("\n") + 1}
+        writer.claims = claims
+        for section in sections:
+            writer.validate_section(SectionOutput(section=section, latex=new[f"paper/sections/{section}.tex"]), section)
+        if binding.values_tex(claims) != _path(ctx, "paper/air_values.tex").read_bytes():
+            raise ValueError("revision changed code-owned numeric values")
+        if meta["compiled"]["source_sha256"] != self._source_sha(ctx):
+            raise ValueError("source changed during semantic revision; preserve human edits and recheck")
+        old["paper/claims.jsonl"] = _path(ctx, "paper/claims.jsonl").read_text()
+        new["paper/claims.jsonl"] = binding.claims_bytes(claims).decode()
+        transaction = {
+            "basis": basis,
+            "review_basis": s["semantic_basis"],
+            "claim_basis": s["claim_basis"],
+            "claims": [c.model_dump(mode="json") for c in claims],
+            "old": old,
+            "new": new,
+            "source_hashes": dir_manifest(_path(ctx, "paper"), PAPER_EXCLUDE),
+            "affected_claims": [u["claim_id"] for u, _ in targets],
+            "responses": receipt["responses"],
+            "installed": False,
+            "assembled": False,
+        }
+        _save(ctx, "pending-revision", transaction)
+        self._finish_revision(ctx, transaction)
+        s["phase"] = "revision_assemble"
+        return Continue("Accepted targeted revision installed; reassembly and compilation required")
+
+    def _finish_revision(self, ctx, pending):
+        if pending.get("installed"):
+            return
+        # Validate ALL targets before writing ANY: half-installed states allow only exact old/new bytes.
+        for relative, new in pending["new"].items():
+            path = _path(ctx, relative)
+            if not path.exists() or path.read_bytes() not in {pending["old"][relative].encode(), new.encode()}:
+                raise ValueError("pending semantic revision conflicts with an intervening human edit: " + relative)
+        current = dir_manifest(_path(ctx, "paper"), PAPER_EXCLUDE)
+        excluded = {p.removeprefix("paper/") for p in pending["new"]}
+        if {k: v for k, v in current if k not in excluded} != {
+            k: v for k, v in pending["source_hashes"] if k not in excluded
+        }:
+            raise ValueError("pending semantic revision conflicts with an intervening source edit")
+        for relative, new in pending["new"].items():
+            atomic_write_bytes(_path(ctx, relative), new.encode())
+        _save(ctx, "bound-claims", {"basis": pending["claim_basis"], "claims": pending["claims"]})
+        pending["installed"] = True
+        _save(ctx, "pending-revision", pending)
+
+    def _revision_assemble(self, ctx, s, meta, writer):
+        pending = _receipt(ctx, "pending-revision")
+        for section in SECTIONS:
+            path = _path(ctx, f"paper/sections/{section}.tex")
+            receipt = _receipt(ctx, f"section-{section}")
+            output = writer.read_section(section)
+            relative = f"paper/sections/{section}.tex"
+            expected = pending["new"].get(relative)
+            authorized_sha = sha256_bytes(expected.encode()) if expected is not None else receipt.get("file_sha256")
+            if sha256_file(path) != authorized_sha:
+                receipt["human_edited"] = True
+            receipt.update(
+                fingerprint=_hash([writer.section_fingerprint(section), s["writing_config"], None]),
+                output=output.model_dump(),
+                file_sha256=sha256_file(path),
+                installed=True,
+            )
+            _save(ctx, f"section-{section}", receipt)
+        self._assemble(ctx, s, meta, writer)
+        revisions = meta.setdefault("semantic_revisions", [])
+        if pending["basis"] not in revisions:
+            revisions.append(pending["basis"])
+        _save(ctx, "runtime", meta)
+        pending["assembled"] = True
+        _save(ctx, "pending-revision", pending)
+        s["phase"] = "compile"
+        return Continue("Revised manuscript assembled; compile, deterministic recheck and semantic rereview required")
 
     def _inputs(self, ctx):
         for kind, aid in (("idea", "idea/selected.md"), ("plan", "plan/experiment_plan.md")):
@@ -627,8 +896,11 @@ class WritingStage:
                 if figure.fig_id != fid or figure.aggregate_ref != item.ref:
                     raise ValueError(f"incorrect Figure metadata identity: {fid}")
                 problems = validate_artifact(
-                    directory, item.data, item.ref,
-                    script_path=archived / "plot.py", skill_ref=figure.skill_ref,
+                    directory,
+                    item.data,
+                    item.ref,
+                    script_path=archived / "plot.py",
+                    skill_ref=figure.skill_ref,
                 )
                 if problems:
                     raise ValueError(f"invalid registered Figure {fid}: {problems}")
@@ -874,8 +1146,9 @@ class WritingStage:
             f"accepted: {accepted}.",
             (
                 "Evidence checking is enabled (evidence\\_check=true). Claim planning used writing.claims; "
-                "experimental values were resolved by code. Deterministic evidence verification precedes submission. "
-                "Semantic LLM claim review was not run in Phase 2B-1."
+                "experimental values are resolved deterministically by code. Deterministic evidence verification "
+                "is followed by semantic review using writing.reviewer. Bounded targeted revision may use "
+                "writing.reviser. Completed review and revision details are recorded in review artifacts."
                 if ctx.project.evidence_check
                 else "Evidence checking is disabled (control arm, evidence\\_check=false). "
                 "Compilation and local offline citation checks do not establish scientific correctness."
@@ -1137,6 +1410,9 @@ class WritingStage:
             if s.get("review_basis") != self._verification_basis(ctx, s, paper):
                 s["phase"] = "verify"
                 return Continue("Exact manuscript/check basis changed; deterministic verification required")
+            if s.get("semantic_basis") != self._review_basis(ctx, s):
+                s["phase"] = "review"
+                return Continue("Reviewer prompt/model/skill changed; semantic rereview required")
             ref = _ref(s["review_ref"])
             report = CheckReport.model_validate_json(ctx.archive.get(ref))
             if report.paper_ref != paper or paper not in ctx.archive.version_info(ref).parents:
@@ -1149,12 +1425,18 @@ class WritingStage:
                 target=paper,
                 kind="manuscript",
                 extra_refs=extra,
-                summary=f"Manuscript v{paper.version}: {len(report.claims)} claims; deterministic check: "
+                summary=f"{'RESIDUAL BLOCKER/MAJOR ISSUES: ' if counts.get('blocker') or counts.get('major') else ''}"
+                f"Manuscript v{paper.version}: {len(report.claims)} claims; combined review: "
                 f"{counts.get('supported', 0)} supported, {counts.get('partially_supported', 0)} partially supported, "
+                f"{counts.get('unsupported', 0)} unsupported, {counts.get('contradicted', 0)} contradicted, "
+                f"{counts.get('unverifiable', 0)} unverifiable; "
                 f"{counts.get('blocker', 0)} blockers, {counts.get('major', 0)} major issues; "
-                f"{'compiled' if report.compile_ok else 'compilation disabled'}. Semantic review not run.",
+                f"{'compiled' if report.compile_ok else 'compilation disabled'}. "
+                f"Semantic review rounds: {len(meta.get('semantic_rounds', {}).get(self._cycle(s), []))}; "
+                f"automatic revision rounds: {len(meta.get('semantic_revisions', []))}.",
                 impact=(
-                    "Human approval required; inspect deterministic issues. Approval is not publication authorization."
+                    "Human inspection is required; review residual issues. "
+                    "Approval does not authorize publication/submission."
                 ),
             )
         report = CompileReport.model_validate_json(_path(ctx, "paper/build/compile_report.json").read_bytes())

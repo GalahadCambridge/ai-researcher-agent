@@ -104,7 +104,7 @@ or a new orchestration mechanism.
 
 Select `dev.stage_impl.writing: real` and `evidence_check: false`. The stage registry
 loads `stage.py:create_stage()` without stage registry changes. `evidence_check: true`
-now follows the Phase 2B-1 path below. Neither mode performs semantic review or audit.
+now follows the evidence binding and semantic review path below. Neither mode performs audit().
 The old independent Writer API remains available.
 
 The engine calls these bounded phases through `StageContext` / `StepResult`:
@@ -294,7 +294,8 @@ discipline. The new retained example is in `examples/writing/phase-2a-5-stage/`.
 
 ## Phase 2B-1: deterministic evidence binding
 
-True runtime: `bundle → figures → template → claims → write → compile → verify → submit`.
+The Phase 2B-1 deterministic binding foundation is retained; the current true runtime
+adds the Phase 2B-2 review/revision loop described below.
 False runtime retains the six phases above. The existing `evidence_check` field selects
 mode; switching a populated paper tree between modes fails explicitly.
 
@@ -343,8 +344,8 @@ Review JSON/Markdown parents are paper + claims; no reverse edge exists. Every r
 Archive byte-dedup result is checked for exact parents. Review receipts preserve the
 original CheckReport timestamp/number across interrupted writes; source/run changes
 invalidate verification. Manuscript approval targets the complete paper and exposes
-claims, review and build refs, counts and the deterministic-only disclosure. Blockers
-remain visible for human decision; there is no automatic semantic revision loop.
+claims, review and build refs and final combined counts. Blockers remain visible for
+human decision after the bounded semantic review/revision loop.
 
 `services.evidence.check(paper_ref=...)` verifies the archived source, exact supporting
 raw metrics, macro dispatcher/definitions, run validity, frozen-bundle staleness,
@@ -360,8 +361,73 @@ Trace uses exact archived claim/Aggregate/Figure versions and selected supportin
 modern bundles provide frozen safe runtime/Literature snapshots. Legacy fake bundles
 lack full Literature records and Figure versions, so their restricted local-ID/BibTeX
 fallback remains for compatibility. Historical raw run metrics are not separately
-versioned by this patch. `audit()` and semantic review remain deferred.
+versioned by this patch. `audit()` remains deferred to Phase 3.
 
 See `examples/writing/phase-2b-1-evidence` for real TeX/FakeLLM reproduction. Shared
-models, dependencies, engine and StageContext are unchanged. `latex-writing@0.2.0`
-and `writing/section v3` describe both modes; no claim-review skill exists.
+models, dependencies, engine and StageContext are unchanged. `latex-writing@0.3.0`
+and `writing/section v3` describe both modes; `claim-review@0.1.0` owns semantic policy.
+
+
+## Phase 2B-2: semantic review and bounded targeted revision
+
+True flow: `bundle → figures → template → claims → write → compile → verify → review`
+then `revise → assemble → compile → verify → review` when safe major issues remain
+and another review round is available, otherwise `submit`. False flow is unchanged.
+One round is an exact compiled manuscript, deterministic check, semantic review and
+one combined `review_vN`. `paper.max_review_rounds` defaults to 2, accepts integers
+1–20 (not booleans). Minor-only findings never trigger revision. Residual major or
+blocker issues are prominent in the human approval summary, with no publication grant.
+
+`review.py` constructs exact units from archived section bytes. Every bound Claim is
+reviewed independently; unbound sentences are extracted from Abstract, Results and
+Conclusion outside bound spans, comments, literals and figure/table environments.
+Each call contains one Claim/sentence (maximum 2400 characters), at most two nearby
+sentences (800 characters each), and only linked scope/values (unit maximum 24000
+UTF-8 bytes). Oversized units fail explicitly and require splitting/reconciliation.
+This is a conservative literal TeX sentence scanner, not macro expansion or general NLP.
+
+`writing/review v1` / `writing.reviewer` / strong requests a strict ReviewResponse.
+Only five semantic codes are allowed. Code owns severity, exact source location and
+support merging. Exact sentence/Claim mismatches or illegal outputs are persisted as
+untrusted and fail closed; they do not become Issues or clean verdicts. Deterministic
+issues cannot be deleted, downgraded or overridden. `evidence.check/trace` remain
+model-free, and `audit()` remains NotImplemented.
+
+`writing/revise v1` / `writing.reviser` / strong receives one exact target, issues,
+bounded scope and VALUE/CITATION placeholders. Code checks placeholder multiplicities and
+restores the same macros, IDs, ValueRefs, Comparison and EvidenceLinks. Only wording,
+a more cautious hedge and code-computed locations change. A conservative lexical
+guard preserves explicit direction/negation; complete Writer validation follows.
+Literal prose revisions cannot introduce TeX commands, citations, figures or numeric
+literals. Code preserves existing citation/reference commands via placeholders; other complex
+macro wording may require human editing.
+Unbound NO_EVIDENCE sentences can be removed/rephrased without creating Claims.
+No-op revisions stop for human inspection. Hard evidence errors anywhere disable prose
+revision for that round; wording-oriented deterministic issues are conservatively left
+for humans. Multiple semantic major targets in a round share one installation transaction.
+
+Review receipts include exact paper/claims refs, deterministic report identity, prompt
+version/hash, effective reviewer route and verified skill identity/instructions hash.
+Reviser receipts additionally bind exact targets/Claim representations and reviser route.
+Reviewer-only changes rerun review without redoing figures, claims or sections. Responses
+are durable before normalization/artifact writes. Accepted revisions persist old/new
+section+claims bytes and all source hashes before installation. Startup recovers this
+transaction before normal Claim ownership checks. Only exact old/new target states are
+accepted; intervening human edits stop recovery. Completed responses are reused without
+new calls. A process loss before a returned response reaches its receipt still cannot
+guarantee exactly-once remote execution; no new external transaction system is added.
+
+JSON/Markdown review artifacts never overwrite historical rounds and have exact paper
+and claims archive parents. Existing Phase 2B-1 reviews keep their numbers. AI-use prose
+is stable and truthful; exact completed review/revision counts live in artifacts and
+approval summaries, avoiding manuscript hash feedback loops. Historical Aggregate
+recomputation still rereads current raw metrics for pinned supporting run IDs.
+
+Offline engineering demonstration with a real revision cycle and real TeX:
+
+```bash
+AIR_REAL_LLM=0 python -m scripts.writing.demo --workspace /new/disposable/project \
+  --evidence-check --semantic-revision
+```
+
+This remains FakeLLM engineering validation, not real-model smoke testing or Phase 3.

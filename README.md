@@ -265,8 +265,9 @@ air dev check /tmp/ws
 | LLM 网关：`complete()`、工具调用循环 `tool_loop()`、按阶段选模型（提示文件、格式校验与重试、记账、调用日志、录制/回放） | **真实**；已用假模型测试，真实模型测试见第 9 节 |
 | 本地执行器 + 运行包装器、冒烟任务 `tasks/smoke` | **真实但精简**（没有环境 pip freeze、数据校验、GPU 串行），实验同学接手补全 |
 | 汇总统计 `services/runs.py`、引用核验 `services/literature.py` | **真实** |
-| 证据核验 `services/evidence.py` | **部分**：只做了数字重算、过期证据、结论相反、引用不存在四项检查 |
-| 文献检索、选题、实验计划、编码 Agent、分析决策、论文写作 | **假实现**（固定内容，不调用大模型） |
+| 证据核验 `services/evidence.py` | **真实**：确定性证据检查与追溯；`audit()` 仍留待 Phase 3 |
+| 论文写作 `stages/writing` | **真实**：绘图、Claim 绑定、LaTeX 编译、语义审查及有界定点修订；已做 FakeLLM 工程验证，未做真实模型验证 |
+| 文献检索、选题、实验计划、编码 Agent、分析决策 | **假实现**（固定内容，不调用大模型） |
 | 测试替身 `FakeLLM`、`FakeExecutor`、`FakeLiterature`；skill 版本登记与 `air skills verify` | **真实**（给组员写测试用） |
 | SQLite 索引 | **没做**：目前直接读文件（数据量小，够用） |
 | GUI | 不在本仓库这部分（GUI 同学负责），接口见 http://127.0.0.1:8765/docs |
