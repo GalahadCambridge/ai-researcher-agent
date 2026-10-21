@@ -24,14 +24,18 @@ def list_literature(pid: str, m: ProjectManager = Depends(manager)) -> list[Pape
     return list(literature.load_papers(m.get(pid).root).values())
 
 
-@router.get("/literature/{paper_id}")
+@router.get("/literature/{paper_id:path}")
 def get_paper(pid: str, paper_id: str, m: ProjectManager = Depends(manager)) -> dict:
     root = m.get(pid).root
     papers = literature.load_papers(root)
     if paper_id not in papers:
         raise NotFound(f"文献记录中没有 {paper_id}")
-    pattern = f"{paper_id.replace(':', '_')}__*.json"
-    cards = [read_json(p) for p in sorted((root / "idea" / "reading_cards").glob(pattern))]
+    # Match stored identities instead of deriving filenames from external paper IDs.
+    cards = []
+    for path in sorted((root / "idea" / "reading_cards").glob("*.json")):
+        card = read_json(path)
+        if card.get("paper_id") == paper_id:
+            cards.append(card)
     return {"paper": papers[paper_id].model_dump(mode="json"), "reading_cards": cards}
 
 
