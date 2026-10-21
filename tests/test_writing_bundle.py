@@ -11,6 +11,7 @@ import pytest
 from airesearcher.core.approvals import Approvals
 from airesearcher.core.archive import dir_manifest
 from airesearcher.core.fsutil import append_jsonl, atomic_write_json, sha256_file
+from airesearcher.core.models.common import VersionRef
 from airesearcher.core.models.frontmatter import render_front_matter
 from airesearcher.core.models.plan import parse_plan_md
 from airesearcher.services import literature, runs
@@ -402,3 +403,102 @@ def test_literature_change_during_capture_fails(sample_project, monkeypatch):
     monkeypatch.setattr(literature, "verify_citation", change_during_lookup)
     with pytest.raises(BundleError, match="literature changed during capture"):
         build_bundle(p.root)
+
+
+def historical_lineage(project):
+    """Old v1 lineage, newer approved v2 sources; only the aggregate uses v1."""
+    idea1, plan1 = seed(project)
+    aggregate = runs.load_aggregate(SAMPLE_PROJECT, "C1").model_copy(update={"plan_ref": plan1})
+    aggregate_ref = put_aggregate(project, aggregate)
+    idea2 = project.archive.put(idea1.artifact_id, "idea", project.archive.read_text(idea1) + "\nNew idea")
+    approve(project, idea2, "idea")
+    plan = parse_plan_md(project.archive.read_text(plan1))
+    plan.idea_ref = idea2
+    plan2 = project.archive.put(plan1.artifact_id, "plan", render_front_matter(plan.model_dump(mode="json"),
+                               "# New approved plan"), parents=[idea2])
+    approve(project, plan2, "plan")
+    return idea1, plan1, aggregate_ref, idea2, plan2
+
+
+def test_old_valid_lineage_is_preserved_with_complete_parents_and_idempotency(project):
+    idea1, plan1, aggregate_ref, idea2, plan2 = historical_lineage(project)
+    before = dir_manifest(project.root, [])
+    bundle = build_bundle(project.root)
+    assert dir_manifest(project.root, []) == before
+    assert bundle.schema_version == 1 and bundle.idea_ref == idea2 and bundle.plan_ref == plan2
+    assert bundle.aggregates[0].ref == aggregate_ref and bundle.aggregates[0].data.plan_ref == plan1
+    assert parse_plan_md(project.archive.read_text(plan1)).idea_ref == idea1
+    assert [(d.code, d.actual_ref, d.approved_ref) for d in bundle.diagnostics] == [
+        ("AGGREGATE_PLAN_MISMATCH", plan1, plan2)]
+    first = write_bundle(project.root, bundle)
+    parents = project.archive.version_info(first).parents
+    assert set((r.artifact_id, r.version, r.sha256) for r in parents) == set(
+        (r.artifact_id, r.version, r.sha256) for r in [idea1, idea2, plan1, plan2, aggregate_ref])
+    assert len(parents) == 5 and parents == sorted(parents, key=lambda r: (r.artifact_id, r.version, r.sha256))
+    for parent in parents:
+        project.archive.get(parent)
+    second_bundle = build_bundle(project.root)
+    assert second_bundle.to_bytes() == bundle.to_bytes()
+    assert write_bundle(project.root, second_bundle) == first
+    assert len(project.archive.versions(BUNDLE_ID)) == 1
+
+
+@pytest.mark.parametrize("damage", ["missing_plan", "tampered_plan", "missing_idea", "tampered_idea",
+                                   "bad_idea_hash", "bad_idea_version", "invalid_idea_ref", "unparseable_idea",
+                                   "directory_idea", "wrong_idea_kind", "wrong_plan_kind"])
+def test_broken_historical_closure_blocks_build_and_preserves_bundle(project, damage):
+    idea1, plan1, aggregate_ref, _, _ = historical_lineage(project)
+    good = build_bundle(project.root)
+    saved = write_bundle(project.root, good)
+    before = (project.root / BUNDLE_ID).read_bytes()
+    if damage in {"missing_plan", "tampered_plan", "missing_idea", "tampered_idea"}:
+        path = project.archive.stored_path(plan1 if damage.endswith("plan") else idea1)
+        if damage.startswith("missing"):
+            path.unlink()
+        else:
+            path.write_bytes(b"tampered archived bytes")
+    else:
+        plan = parse_plan_md(project.archive.read_text(plan1))
+        if damage == "bad_idea_hash":
+            plan.idea_ref = idea1.model_copy(update={"sha256": "f" * 64})
+        elif damage == "bad_idea_version":
+            plan.idea_ref = idea1.model_copy(update={"version": 999})
+        elif damage == "invalid_idea_ref":
+            plan.idea_ref = VersionRef(artifact_id=idea1.artifact_id, version=0, sha256="invalid")
+        elif damage == "unparseable_idea":
+            plan.idea_ref = project.archive.put("idea/historical.md", "idea", "not valid idea front matter")
+        elif damage == "directory_idea":
+            path = project.root / "idea/history"
+            path.mkdir()
+            (path / "note.md").write_text("not an Idea")
+            plan.idea_ref = project.archive.put("idea/history", "idea", path)
+        elif damage == "wrong_idea_kind":
+            plan.idea_ref = project.archive.put("idea/history.md", "other", project.archive.read_text(idea1))
+        historical = project.archive.put("plan/history.md", "other" if damage == "wrong_plan_kind" else "plan",
+                                        render_front_matter(plan.model_dump(mode="json"), "# Historical test plan"))
+        aggregate = runs.load_aggregate(project.root, "C1", version=aggregate_ref.version)
+        aggregate.plan_ref = historical
+        put_aggregate(project, aggregate)
+        # Check the new captured selection during write too, independent of payload drift.
+        good.aggregates[0].data = aggregate
+        good.aggregates[0].ref = project.archive.latest(aggregate_ref.artifact_id)
+    with pytest.raises(BundleError):
+        build_bundle(project.root)
+    with pytest.raises(BundleError):
+        write_bundle(project.root, good)
+    assert (project.root / BUNDLE_ID).read_bytes() == before
+    assert project.archive.latest(BUNDLE_ID) == saved
+
+
+def test_identical_legacy_bundle_with_incomplete_parents_is_not_silently_reused(project):
+    idea1, plan1, aggregate_ref, idea2, plan2 = historical_lineage(project)
+    bundle = build_bundle(project.root)
+    # Simulate a pre-patch archive entry: same payload, missing the historical Idea.
+    legacy = project.archive.put(BUNDLE_ID, "other", bundle.to_bytes(),
+                                 parents=[idea2, plan2, plan1, aggregate_ref])
+    before = dir_manifest(project.root, [])
+    with pytest.raises(BundleError, match="identical bundle.*parents.*migration"):
+        write_bundle(project.root, bundle)
+    assert dir_manifest(project.root, []) == before
+    assert project.archive.latest(BUNDLE_ID) == legacy
+    assert idea1 not in project.archive.version_info(legacy).parents

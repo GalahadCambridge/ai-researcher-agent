@@ -29,6 +29,7 @@ from airesearcher.stages.writing.figures import (
     load_renderer,
     prepare_data,
     validate_artifact,
+    validate_spec_input,
 )
 
 SKILL = repo_root() / "skills/scientific-plotting"
@@ -326,3 +327,66 @@ def test_exact_historical_version(tmp_path, aggregate, plot_spec, plotting_skill
     metadata["aggregate_ref"]["sha256"] = "f" * 64
     atomic_write_json(directory / "figure.json", metadata)
     assert check_output({"artifact_dir": directory, "project_root": tmp_path})
+
+
+def test_valid_input_envelope_cannot_validate_as_generated_output(aggregate, plot_spec, plotting_skill, tmp_path):
+    envelope = {"aggregate": aggregate.model_dump(mode="json"), "spec": plot_spec.model_dump(mode="json")}
+    assert prepare_data(aggregate, plot_spec)  # This is valid input, but nothing was rendered.
+    assert validate_spec_input(envelope) == []
+    assert not list(tmp_path.iterdir())
+    assert check_output(envelope)
+    assert plotting_skill.validate(envelope)
+
+
+@pytest.mark.parametrize(("name", "message"), [
+    ("missing_xlabel", "xlabel"), ("missing_uncertainty", "uncertainty"),
+    ("incorrect_run_count", "provenance"), ("incorrect_scale_data", "scale"),
+    ("wrong_caption_n", "actual n"), ("exploratory_unlabelled", "exploratory"),
+])
+def test_bad_sample_failures_remain_semantic(name, message, plotting_skill):
+    text = (SKILL / f"sample/bad/{name}.json").read_text(encoding="utf-8")
+    assert any(message in problem for problem in validate_spec_input(text))
+    assert any(message in problem for problem in check_output(text))
+    assert any(message in issue.message for issue in plotting_skill.validate(text))
+
+
+def caption_aggregate(aggregate, counts):
+    rows = []
+    for source, name, n in zip(aggregate.rows[:2], ["A", "B"], counts, strict=True):
+        rows.append(source.model_copy(update={
+            "group": {"method": name}, "n": n, "run_ids": [f"{name}-{i}" for i in range(n)],
+            "values": [source.mean] * n, "std": 0.0, "ci95": [source.mean, source.mean],
+            "min": source.mean, "max": source.mean,
+        }))
+    return aggregate.model_copy(update={"rows": rows, "comparison": {"group_by": ["method"], "metric": "latency"}})
+
+
+@pytest.mark.parametrize("counts", [(3, 5), (3, 3)])
+@pytest.mark.parametrize("form", ["canonical", "short", "prefix"])
+def test_caption_correct_group_count_bindings_pass(aggregate, counts, form):
+    source = caption_aggregate(aggregate, counts)
+    spec = default_spec(source, ylabel="Latency (s)")
+    if form == "short":
+        spec.caption = f"n={counts[0]} (A), n={counts[1]} (B); 95% CI."
+    elif form == "prefix":
+        spec.caption = f"A: n={counts[0]}; B: n={counts[1]}; 95% CI."
+    assert prepare_data(source, spec)
+
+
+@pytest.mark.parametrize("caption", [
+    'n=5 ({"method":"A"}), n=3 ({"method":"B"}); 95% CI.',
+    "n=5 (A), n=3 (B); 95% CI.", "A: n=5; B: n=3; 95% CI.",
+    "n=3; n=5; 95% CI.", "n=3 (A), n=5 (A); 95% CI.",
+])
+def test_caption_swapped_or_unbound_heterogeneous_counts_fail(aggregate, caption):
+    source = caption_aggregate(aggregate, (3, 5))
+    spec = default_spec(source, ylabel="Latency (s)").model_copy(update={"caption": caption})
+    with pytest.raises(ValueError, match="group"):
+        prepare_data(source, spec)
+
+
+def test_caption_omitted_equal_count_group_fails(aggregate):
+    source = caption_aggregate(aggregate, (3, 3))
+    spec = default_spec(source, ylabel="Latency (s)").model_copy(update={"caption": "n=3 (A); 95% CI."})
+    with pytest.raises(ValueError, match="group"):
+        prepare_data(source, spec)

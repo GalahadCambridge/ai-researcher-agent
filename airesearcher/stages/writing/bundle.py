@@ -156,6 +156,18 @@ def _approved_source(archive: Archive, approval: Approval, kind: str) -> Approve
     return ApprovedSource(ref=approval.target, approval_id=approval.approval_id, text=text, data=data)
 
 
+def _plan_idea(archive: Archive, plan_ref: VersionRef) -> VersionRef:
+    """Verify exact archived Plan -> Idea closure, without requiring current approval."""
+    plan = parse_plan_md(_read(archive, plan_ref).decode("utf-8"))
+    if archive.version_info(plan_ref).kind != "plan":
+        raise BundleError(f"not a Plan artifact: {plan_ref.short()}")
+    idea_ref = plan.idea_ref
+    parse_selected_md(_read(archive, idea_ref).decode("utf-8"))
+    if archive.version_info(idea_ref).kind != "idea":
+        raise BundleError(f"not an Idea artifact: {idea_ref.short()}")
+    return idea_ref
+
+
 def _aggregate_sources(root: Path, archive: Archive, refs: Sequence[VersionRef] | None) -> list[AggregateSource]:
     selected = list(refs) if refs is not None else [
         v.ref for v in archive.list_latest("aggregate")
@@ -175,7 +187,7 @@ def _aggregate_sources(root: Path, archive: Archive, refs: Sequence[VersionRef] 
         source = runs.load_aggregate(root, path.stem, version=ref.version)
         if source.aggregate_id != path.stem or source != Aggregate.model_validate_json(raw):
             raise BundleError(f"service/source Aggregate mismatch: {ref.short()}")
-        parse_plan_md(_read(archive, source.plan_ref).decode("utf-8"))
+        _plan_idea(archive, source.plan_ref)
         result.append(AggregateSource(aggregate_id=source.aggregate_id, ref=ref, data=source))
     return result
 
@@ -250,8 +262,7 @@ def build_bundle(root: Path, *, approved: Mapping[str, VersionRef] | None = None
             log_groups.setdefault(approval.target.artifact_id, []).append(approval)
         logs = [_approved_source(archive, _choose(log_groups[aid]), "log") for aid in sorted(log_groups)]
         aggregates = _aggregate_sources(root, archive, aggregate_refs)
-        plan_idea = parse_plan_md(selected["plan"].text).idea_ref
-        parse_selected_md(_read(archive, plan_idea).decode("utf-8"))
+        plan_idea = _plan_idea(archive, selected["plan"].ref)
         diagnostics = []
         if plan_idea != selected["idea"].ref:
             diagnostics.append(Diagnostic(code="PLAN_IDEA_MISMATCH", artifact_id=selected["plan"].ref.artifact_id,
@@ -278,6 +289,9 @@ def write_bundle(root: Path, bundle: EvidenceBundle) -> VersionRef:
     New latest aggregate versions do not invalidate an explicit captured selection.
     Changed approvals/log selection or literature fail before replacing an old bundle.
     Archive writes are atomic for the bundle file, not a multi-file crash transaction.
+    Archive.put deduplicates by payload, not parents. An identical legacy payload
+    with incomplete parents requires explicit lineage migration; never rewrite its
+    historical metadata or silently claim that missing parents were registered.
     """
     root = Path(root).resolve()
     target = root / BUNDLE_ID
@@ -296,7 +310,16 @@ def write_bundle(root: Path, bundle: EvidenceBundle) -> VersionRef:
             *[x.actual_ref for x in bundle.diagnostics]]
     if bundle.literature_source.ref:
         refs.append(bundle.literature_source.ref)
+    archive = _archive(root)
+    plan_refs = {(r.artifact_id, r.version, r.sha256): r
+                 for r in [bundle.plan_ref, *[x.data.plan_ref for x in bundle.aggregates]]}
+    refs.extend(_plan_idea(archive, plan_refs[key]) for key in sorted(plan_refs))
     unique = {(r.artifact_id, r.version, r.sha256): r for r in refs}
     parents = [unique[key] for key in sorted(unique)]
-    archive = _archive(root)
+    latest = archive.latest_version(BUNDLE_ID)
+    if latest and latest.ref.sha256 == sha256_bytes(payload):
+        recorded = {(r.artifact_id, r.version, r.sha256) for r in latest.parents}
+        if not unique.keys() <= recorded:
+            raise BundleError("identical bundle is missing required provenance parents; "
+                              "explicit lineage migration required")
     return archive.put(BUNDLE_ID, "other", payload, parents=parents, producer="agent:writing/bundle")

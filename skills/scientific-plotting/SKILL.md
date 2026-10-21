@@ -18,7 +18,12 @@ actual per-run points. Explicit FigureSpec also supports boxes from actual obser
   when uncertainty is unavailable; never substitute zero for a missing CI/std.
 - Caption must state actual n (e.g. `n=3` or `over 3 seeds`) and define the error bars
   (`95% CI` / `95% confidence interval` / `95%置信区间`, or `SD` / `standard deviation` / `标准差`).
-  For heterogeneous counts list each n, e.g. `n=2 (A), n=3 (B)`.
+  For heterogeneous counts bind each n to its group, e.g. `n=2 (A), n=3 (B)` or
+  `A: n=2; B: n=3`. Short labels must identify a unique complete group; use the
+  default `n=2 ({"method":"A","size":10})` form for ambiguous/multidimensional
+  groups. Once groups are explicitly named, cover every group, even for equal n.
+  A common-n shorthand (`n=3`, `over 3 seeds`, `每组 n=3`) remains valid when all
+  groups genuinely have the same n, including a single group.
 - Exploratory Aggregate results require `exploratory` or `探索性` in title/caption.
 - Numeric x is sorted numerically. Lines need numeric x; log x additionally requires
   positive values and is not supported on categorical bars. Unplotted varying grouping
@@ -36,6 +41,11 @@ actual per-run points. Explicit FigureSpec also supports boxes from actual obser
 - Runtime validation uses `check_output({"artifact_dir": path, "project_root": root})`;
   it checks archived source data, metadata, source/script provenance and file signatures,
   not only file existence. It never executes an artifact's potentially edited script.
+  A bare Aggregate/spec envelope cannot pass output validation. For pre-render checks,
+  use `figures.validate_spec_input({"aggregate": ..., "spec": ...})` (optionally with
+  `csv`); preflight success does not prove an artifact exists. Invalid preflight-only
+  skill samples retain their semantic diagnostics, while valid envelopes still fail
+  output validation because generated artifacts are required.
 
 The canonical figure artifact is complete here. Copying PDFs into `paper/figures/`
 is deferred to later Writing integration. This skill does not write paper sources.

@@ -52,6 +52,61 @@ def ordered(values: list) -> list:
     ]
 
 
+def validate_caption_counts(caption: str, rows: list[AggregateRow]) -> None:
+    """Bind explicit counts to canonical groups or unique human group labels.
+
+    Keep the existing common-n shorthand for homogeneous groups. Once any group
+    is explicitly named, every group must be covered; heterogeneous n always needs
+    explicit binding. Short labels must unambiguously identify one complete group.
+    """
+    counts = list(re.finditer(r"\bn\s*=\s*(\d+)|(?:over|across)\s+(\d+)\s+(?:seeds|runs|observations)|"
+                              r"(\d+)\s*(?:个)?(?:种子|次运行|个观测)", caption, re.I))
+    def count_of(match):
+        return int(next(v for v in match.groups() if v))
+
+    if {count_of(m) for m in counts} != {r.n for r in rows}:
+        raise ValueError("caption must state the actual n for every group")
+    expected = {canonical(r.group): r.n for r in rows}
+    aliases: dict[str, set[str]] = {}
+    for row in rows:
+        for value in row.group.values():
+            aliases.setdefault(str(value), set()).add(canonical(row.group))
+    bound = set()
+    for match in counts:
+        tail, candidates = caption[match.end():].lstrip(), set()
+        if tail.startswith("("):
+            label = tail[1:].lstrip()
+            if label.startswith("{"):
+                try:
+                    group, end = json.JSONDecoder().raw_decode(label)
+                except ValueError as exc:
+                    raise ValueError("invalid caption group label") from exc
+                if not label[end:].lstrip().startswith(")"):
+                    raise ValueError("unclosed caption group label")
+                candidates = {canonical(group)} & expected.keys()
+            elif ")" in label:
+                candidates = aliases.get(label.split(")", 1)[0].strip(), set())
+            if len(candidates) != 1:
+                raise ValueError("caption group label is unknown or ambiguous")
+        else:
+            # Also accept A: n=3 / A (n=3), with a unique short group label.
+            before = caption[:match.start()]
+            for label, groups in aliases.items():
+                if re.search(r"(?<!\w)" + re.escape(label) + r"\s*[:,]?\s*\(?\s*$", before):
+                    candidates.update(groups)
+        if candidates:
+            if len(candidates) != 1:
+                raise ValueError("caption group label is ambiguous")
+            key = next(iter(candidates))
+            if count_of(match) != expected[key]:
+                raise ValueError("caption n does not match its group")
+            bound.add(key)
+        elif len(set(expected.values())) > 1:
+            raise ValueError("heterogeneous caption counts require group-specific n")
+    if bound and bound != expected.keys():
+        raise ValueError("caption must state the actual n for every group; group omitted")
+
+
 def validate_rows(spec: FigureSpec, rows: list[AggregateRow], condition: str) -> None:
     """Check plot semantics without estimating or repairing experimental statistics."""
     if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", spec.fig_id):
@@ -126,11 +181,7 @@ def validate_rows(spec: FigureSpec, rows: list[AggregateRow], condition: str) ->
         raise ValueError("line plot requires numeric x")
     if spec.log_x and (not numeric_x or spec.kind == "bar" or any(r.group[spec.x] <= 0 for r in rows)):
         raise ValueError("log_x requires positive numeric x on line/point/box")
-    counts = re.findall(r"\bn\s*=\s*(\d+)|(?:over|across)\s+(\d+)\s+(?:seeds|runs|observations)|"
-                        r"(\d+)\s*(?:个)?(?:种子|次运行|个观测)", spec.caption, re.I)
-    caption_counts = {int(next(v for v in match if v)) for match in counts}
-    if caption_counts != {r.n for r in rows}:
-        raise ValueError("caption must state the actual n for every group")
+    validate_caption_counts(spec.caption, rows)
     if spec.error == "ci95" and not re.search(r"ci95|95\s*%\s*(?:CI|confidence|置信)", spec.caption, re.I):
         raise ValueError("caption must define 95% CI error bars")
     if spec.error == "std" and not re.search(r"\bstd\b|\bSD\b|standard deviation|标准差", spec.caption, re.I):

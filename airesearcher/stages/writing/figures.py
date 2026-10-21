@@ -189,20 +189,36 @@ def generate_figure(root: Path, aggregate_id: str, spec: FigureSpec | None = Non
     return figure
 
 
+def validate_spec_input(value: object) -> list[str]:
+    """Preflight Aggregate/spec/optional CSV only; success does not prove any output."""
+    try:
+        if isinstance(value, str):
+            value = json.loads(value)
+        if not isinstance(value, dict):
+            return ["expected spec/Aggregate preflight envelope"]
+        aggregate = Aggregate.model_validate(value["aggregate"])
+        spec = FigureSpec.model_validate(value["spec"])
+        expected = prepare_data(aggregate, spec)
+        if "csv" in value and value["csv"] != expected:
+            return ["data.csv differs from source Aggregate or scale"]
+        return []
+    except (ValueError, KeyError, TypeError) as exc:
+        return [f"invalid scientific plotting spec input: {exc}"]
+
+
 def check_output(output: object) -> list[str]:
-    """Skill protocol: artifact context, or self-contained spec/Aggregate negative sample."""
+    """Skill output protocol: require real artifacts and independent archived sources.
+
+    Preflight-only envelopes remain useful negative samples: report their semantic
+    failures, but never promote a successful preflight into output success.
+    """
     try:
         if isinstance(output, str):
             output = json.loads(output)
         if not isinstance(output, dict):
-            return ["expected artifact context or spec/Aggregate validation envelope"]
+            return ["expected generated artifact context"]
         if "artifact_dir" not in output:
-            aggregate = Aggregate.model_validate(output["aggregate"])
-            spec = FigureSpec.model_validate(output["spec"])
-            expected = prepare_data(aggregate, spec)
-            if "csv" in output and output["csv"] != expected:
-                return ["data.csv differs from source Aggregate or scale"]
-            return []
+            return validate_spec_input(output) or ["generated output requires artifact_dir and project_root"]
         root, directory = Path(output["project_root"]), Path(output["artifact_dir"])
         figure = Figure.model_validate_json((directory / "figure.json").read_text(encoding="utf-8"))
         archive = Archive(root, Events(root))
