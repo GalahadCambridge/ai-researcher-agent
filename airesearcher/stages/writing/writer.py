@@ -115,6 +115,8 @@ def build_section_context(bundle: EvidenceBundle, section: str, *, language: str
                             "open_questions")}
     if section in {"method", "setup"}:
         context["plan"] = {"ref": bundle.plan.ref.model_dump(), "text": bundle.plan.text, "data": bundle.plan.data}
+        if bundle.runtime is not None:
+            context["runtime"] = bundle.runtime.model_dump(mode="json")
     if section in {"method", "results", "discussion"}:
         context["approved_logs"] = [{"ref": log.ref.model_dump(), "text": log.text}
                                     for log in sorted(bundle.logs, key=lambda log: log.ref.artifact_id)]
@@ -176,13 +178,14 @@ class Writer:
 
     def __init__(self, root: Path, bundle: EvidenceBundle, *, llm: LLMGateway,
                  skills: SkillLoader | None = None, language: str | None = None,
-                 figures: Mapping[str, str] | None = None):
+                 figures: Mapping[str, str] | None = None, guidance: list[dict] | None = None):
         self.root = safe_path(root)
         self.bundle = EvidenceBundle.model_validate_json(bundle.to_bytes())
         self.llm = llm
         self.skill = (skills or SkillLoader()).load("latex-writing")
         self.language = language
         self.figures = _figures(figures)
+        self.guidance = json.loads(_json(guidance or []))
         self._allowed = {row["citation_key"]: row["paper_id"] for row in _citation_table(self.bundle, abstracts=False)
                          if row["allowed"]}
 
@@ -267,9 +270,25 @@ class Writer:
         except (TemplateError, UnicodeError) as exc:
             raise ValidationFailed(f"Invalid LaTeX fragment: {exc}") from exc
 
+    def section_context(self, section: str) -> dict:
+        """Detached context shared by generation and pre-call freshness checks."""
+        context = build_section_context(self.bundle, section, language=self.language, figures=self.figures)
+        if self.guidance:
+            context["user_writing_guidance"] = self.guidance
+        return context
+
+    def section_fingerprint(self, section: str, *, prompt_version: int | None = None) -> str:
+        """Identity of facts, presentation, guidance, skill and actual versioned prompt."""
+        pins = self.llm.project.config.prompt_pins
+        prompt = self.llm.prompts.load(PROMPT_ID, prompt_version or pins.get(PROMPT_ID))
+        return sha256_bytes(_json({"context": self.section_context(section),
+                                   "bundle_sha256": sha256_bytes(self.bundle.to_bytes()),
+                                   "skill": self.skill.ref, "instructions": self.skill.instructions,
+                                   "prompt": [prompt.id, prompt.version, prompt.system, prompt.user]}).encode("utf-8"))
+
     def generate_section(self, section: str, *, prompt_version: int | None = None) -> GeneratedSection:
         self._provenance()
-        context = build_section_context(self.bundle, section, language=self.language, figures=self.figures)
+        context = self.section_context(section)
         encoded = _json(context)
         response = self.llm.complete(role="writing.writer", prompt_id=PROMPT_ID, tier="strong",
                                      prompt_version=prompt_version, response_schema=SectionOutput,
@@ -278,8 +297,7 @@ class Writer:
                                                 "evidence": LLMGateway.wrap_untrusted(encoded, f"bundle:{section}")})
         output = SectionOutput.model_validate(response.parsed)
         citations = self.validate_section(output, section)
-        fingerprint = sha256_bytes(_json({"context": context, "skill": self.skill.ref,
-                                         "instructions": self.skill.instructions}).encode("utf-8"))
+        fingerprint = self.section_fingerprint(section, prompt_version=response.prompt_version)
         return GeneratedSection(output, citations, fingerprint, self.skill.ref, response.call_id,
                                 response.prompt_id, response.prompt_version)
 
@@ -338,7 +356,7 @@ class Writer:
         return target
 
     def assemble_draft(self, *, template: dict | None = None, entry: str | None = None,
-                       title: str | None = None) -> Path:
+                       title: str | None = None, ai_use: bool = False) -> Path:
         """Bridge prepare_template's new-directory API into an existing section tree.
 
         No automatic figure copying. Non-main template resource collisions fail before
@@ -371,7 +389,12 @@ class Writer:
             raise ValidationFailed("Template bibliography must use the generated references database")
         body = "\\begin{abstract}\n\\input{sections/abstract}\n\\end{abstract}\n"
         body += "".join(f"\\input{{sections/{section}}}\n" for section in SECTIONS[1:])
-        body += "% AIR:AI_USE reserved for deterministic runtime-history integration\n"
+        if ai_use:
+            if not self._target("paper/ai_use.tex").is_file():
+                raise ValidationFailed("Deterministic AI-use source is missing")
+            body += "\\input{ai_use}\n"
+        else:
+            body += "% AIR:AI_USE reserved for deterministic runtime-history integration\n"
         references = self.generate_references()
         if references.stat().st_size:
             if not any(c.name == "bibliographystyle" for c in declarations):
@@ -390,7 +413,9 @@ class Writer:
                 rel = path.relative_to(prepared).as_posix()
                 if rel == "references.bib":
                     continue
-                if rel.startswith(("sections/", "build/")) or rel in {"claims.jsonl", "air_values.tex"}:
+                if rel.startswith(("sections/", "build/", ".writing/", "figures/")) or rel in {
+                    "claims.jsonl", "air_values.tex", "ai_use.tex", "evidence_bundle.json",
+                }:
                     raise ValidationFailed(f"Template resource conflicts with Writer output: {rel}")
                 target = self._target("paper/" + rel)
                 content = path.read_bytes()

@@ -1,0 +1,180 @@
+{
+  "AIR_REAL_LLM": "0",
+  "approval": {
+    "approval_id": "ap-0007",
+    "created_at": "2026-10-21T13:28:59.171217Z",
+    "decided_at": null,
+    "decided_by": null,
+    "decision_comment": "",
+    "extra_refs": [
+      {
+        "artifact_id": "paper/build/compile_report.json",
+        "sha256": "464f4857870de7dcd9360168e3e6875d3b35f02fe40d5805d1ec4f8901964f50",
+        "version": 3
+      },
+      {
+        "artifact_id": "paper/build/main.pdf",
+        "sha256": "4081191987043e74b36a4e6215dba0b707567fa27a67e577dfeaec5e61864880",
+        "version": 3
+      }
+    ],
+    "impact": "Approval marks project completion; it does not authorize publication or submission.",
+    "kind": "manuscript",
+    "previous": null,
+    "request_ids": [],
+    "status": "pending",
+    "summary": "Manuscript v3: 2 figures; compiled, 3 pages; evidence checking disabled (control arm).",
+    "target": {
+      "artifact_id": "paper",
+      "sha256": "d30590990df807e43dea0a3c9924c1931cbca9f2d6643cca08c507e25f14ecb7",
+      "version": 3
+    }
+  },
+  "approved": {
+    "idea": {
+      "artifact_id": "idea/selected.md",
+      "sha256": "da042f112a87fd48fd901fff41188f5cc94dd1e70975bba04e66ac0ebcabef7f",
+      "version": 2
+    },
+    "plan": {
+      "artifact_id": "plan/experiment_plan.md",
+      "sha256": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2",
+      "version": 1
+    }
+  },
+  "bundle_ref": {
+    "artifact_id": "paper/evidence_bundle.json",
+    "sha256": "9c28f5e76e239e9f92e7edcab7fea8967284684f0bfdf8c66ed3c71a82b4aba8",
+    "version": 1
+  },
+  "citation_keys": [
+    "devlin2019bert",
+    "hu2022lora"
+  ],
+  "code_head": "c785521e2f2ff69b1116ec3decc1d02184852eae",
+  "configuration": {
+    "compile": true,
+    "evidence_check": false,
+    "title": "Sample Project: Control-Arm Writing Stage",
+    "writing": "real"
+  },
+  "extra_refs": [
+    {
+      "artifact_id": "paper/build/compile_report.json",
+      "sha256": "464f4857870de7dcd9360168e3e6875d3b35f02fe40d5805d1ec4f8901964f50",
+      "version": 3
+    },
+    {
+      "artifact_id": "paper/build/main.pdf",
+      "sha256": "4081191987043e74b36a4e6215dba0b707567fa27a67e577dfeaec5e61864880",
+      "version": 3
+    }
+  ],
+  "figure_refs": {
+    "fig_c1": {
+      "artifact_id": "artifacts/figures/fig_c1",
+      "sha256": "feea9b10b2e3b6a39006b96e24fda5c15d6290c618682dccb42cbb7aaae5911a",
+      "version": 2
+    },
+    "fig_c2": {
+      "artifact_id": "artifacts/figures/fig_c2",
+      "sha256": "f68f40492dd1a2a8d73955b73647c3a53e9c2be980ba626f61d12b414cb7115d",
+      "version": 2
+    }
+  },
+  "implementation_sha256": {
+    "airesearcher/stages/writing/__init__.py": "42903f9affa815b9475af1899a5a21ea7887b3eebe27d280242128cd8f6fdcf9",
+    "airesearcher/stages/writing/_latex.py": "c86cecb3653999a4a44851d8b5132b828031705af8f2b6eceacd90600642e95f",
+    "airesearcher/stages/writing/bundle.py": "a57058d3122fa7351b8335626995f5a73e2256987fa5b82bc450f2eae7849135",
+    "airesearcher/stages/writing/compile.py": "41e7bdb13d402fbcdcc4bacbcb8ede199569047b8aebd79d845a487ae1bd2e1c",
+    "airesearcher/stages/writing/figures.py": "f6cfcf8b7cc73d4756bb2ee95e7cac0abb74cefaf10999071a8fe81ac877710e",
+    "airesearcher/stages/writing/prompts/compile_repair.v1.md": "c66503f60c31d21cd91f2904f78ff412628954ad4e0bfaf298efe3bf941e2f56",
+    "airesearcher/stages/writing/prompts/figure_spec.v1.md": "d0ab7c2fcece0266fdf04134afb61849f805a63806882de5d58b294b519f2bc2",
+    "airesearcher/stages/writing/prompts/section.v1.md": "b4c98464144ce52ad0d749e1f4cc42cd5632eb32a7f7e7d812af5186e50e9795",
+    "airesearcher/stages/writing/prompts/section.v2.md": "facb9c0abd4da5c947b4222218ac953b078dedb3764b661bd7b533a458dec818",
+    "airesearcher/stages/writing/stage.py": "17eab07bfe2b193e52ca8bde4adcc1228ff6ff33a8cab34f59543ff334981a67",
+    "airesearcher/stages/writing/template.py": "85dacbd2b7848accd13e19765e6d6f935fe7fc33679d8ebfca56269828a7c9cc",
+    "airesearcher/stages/writing/writer.py": "ed2c446d8888b3c8093c0406127ccd2c7834e7a77b45a89bb2e8acf0a5166d35",
+    "examples/writing/phase-2a-5-stage/reproduce.py": "01df990471b29902cedce0387778978e8afd0aeaa1d85664885cbad046852aa1",
+    "scripts/writing/demo.py": "a6c28f10f1aa931f504e98e0d2b648ea8e09a4ae02d1010516d35ae293ee91ee"
+  },
+  "input": "fresh copy of fixtures/sample_project; original fake paper and figures preserved outside paper/",
+  "latexmk": "Latexmk, John Collins, 11 Dec. 2024. Version 4.86",
+  "model_backend": "SampleWritingLLM",
+  "model_calls": {
+    "writing/figure_spec": 2,
+    "writing/section": 8
+  },
+  "online_citation_checks": 0,
+  "pages": 3,
+  "paid_calls": 0,
+  "paper_ref": {
+    "artifact_id": "paper",
+    "sha256": "d30590990df807e43dea0a3c9924c1931cbca9f2d6643cca08c507e25f14ecb7",
+    "version": 3
+  },
+  "pdf_bytes": 115654,
+  "report_log": "source-specific real workspace log; build logs and internal receipts are not distributed",
+  "selected_aggregates": [
+    {
+      "artifact_id": "artifacts/aggregates/C1.json",
+      "sha256": "579765f917f1261ed5df6bb60d4f53435dcba11fc0c52443f09d6a94db606fc8",
+      "version": 1
+    },
+    {
+      "artifact_id": "artifacts/aggregates/C2.json",
+      "sha256": "7bab00803be48cd81d63454d88cc5bf041ba8feb91f43edd34b66d1814c80b5f",
+      "version": 1
+    }
+  ],
+  "sha256": {
+    "ai_use.tex": "fe48db484c1dc4352b084d3e063fcfa141214421499a35a42a2b4b1cb53b3ac7",
+    "compile_report.json": "464f4857870de7dcd9360168e3e6875d3b35f02fe40d5805d1ec4f8901964f50",
+    "evidence_bundle.json": "9c28f5e76e239e9f92e7edcab7fea8967284684f0bfdf8c66ed3c71a82b4aba8",
+    "figure_artifacts/fig_c1/data.csv": "39dad0e5de384391b46d27161b38edf1f300e219a4b34e7ae62548a5ad46175c",
+    "figure_artifacts/fig_c1/fig_c1.pdf": "de256962f5ac9122c7f3048c765f8921325dc30637eba036ceb76155cbc76cac",
+    "figure_artifacts/fig_c1/fig_c1.png": "f267e385c55d2a69cca14f79a7845367793d772645689dbb757ebed49e037e93",
+    "figure_artifacts/fig_c1/figure.json": "f7099e24c0dc6df6df1c58e8a55fab236870a5391465d4544dd8d4adac4e4d5d",
+    "figure_artifacts/fig_c1/plot.py": "6b2567367e392e52ad535114cdc5ce9fafb6c2e7857796cbc9caa4384c478fcb",
+    "figure_artifacts/fig_c1/spec.json": "156731add10ffe716f36f06ae16574d5d9afbe33f5710025459e33fb88acb2d3",
+    "figure_artifacts/fig_c2/data.csv": "c55ec78b252390422ca4be3d7b3a4f33dd18be261f104c71f06332019da63207",
+    "figure_artifacts/fig_c2/fig_c2.pdf": "ef21c0cfa9f21ec1ac3937480a1c43c3943aa5e3aa6dc50c50ab3ac412eba1d2",
+    "figure_artifacts/fig_c2/fig_c2.png": "7f61cf2864e58006f138a24697ae68f437c18242c19a093e7ecd0a75b13731b0",
+    "figure_artifacts/fig_c2/figure.json": "2723af6937e3463f922c6cba70bce3422551e7f19102fa5cdd12f2aa5f649d7d",
+    "figure_artifacts/fig_c2/plot.py": "6b2567367e392e52ad535114cdc5ce9fafb6c2e7857796cbc9caa4384c478fcb",
+    "figure_artifacts/fig_c2/spec.json": "b3f24f4155fdd014949850c92c09dc84ab01f3f0ca6e55e0bd39352199ca4f84",
+    "figures/fig_c1.pdf": "de256962f5ac9122c7f3048c765f8921325dc30637eba036ceb76155cbc76cac",
+    "figures/fig_c2.pdf": "ef21c0cfa9f21ec1ac3937480a1c43c3943aa5e3aa6dc50c50ab3ac412eba1d2",
+    "main.pdf": "4081191987043e74b36a4e6215dba0b707567fa27a67e577dfeaec5e61864880",
+    "main.tex": "89725a5eb8f9e0b925554cef1268051107f42ebd8c0b6424524e0edf059215ac",
+    "references.bib": "978afb65143489391a5a024c954100ba0f27919bbdd65d6b57091a319a02257a",
+    "sections/abstract.tex": "ac71fc6bdb66080830630203e5473962842d36a755b212a85f9064cf68fc05c8",
+    "sections/conclusion.tex": "619818c8ed328fa237be1433e87519a802d5307420eb8cd72e0fbfd95cd03798",
+    "sections/discussion.tex": "f1654b3a04c556d3f52c57bfc8a7dd8837facb1d60aadd68f8fd13b1243c6246",
+    "sections/introduction.tex": "23e2b70edd87c1222f92aed255346b9235ed65bc10f44e6746fc4c6f73e697ea",
+    "sections/method.tex": "f935ac6d1e491a83fc7af57f808de930af225f7bad15c3f91834c913d2a59169",
+    "sections/related_work.tex": "9aac631f42fe0c7a5daf59ccff7a9e6c0ccc37ed91dfd8e332ce99bb5c2078e0",
+    "sections/results.tex": "2296534ecca6503b1a2ee6e42dcd37e976042270c53b0a441c05fb4dc54d9808",
+    "sections/setup.tex": "47119f4c659ce63d76c2f5fbb8c0163ae0707577fb78aeed63befaa872cbaf85"
+  },
+  "state": "ManuscriptPending",
+  "template": "verified latex-writing default",
+  "tracked_changes": [
+    "airesearcher/stages/writing/README.md",
+    "airesearcher/stages/writing/bundle.py",
+    "airesearcher/stages/writing/writer.py",
+    "examples/writing/README.md",
+    "tests/test_writer.py"
+  ],
+  "untracked_files": [
+    "airesearcher/stages/writing/prompts/compile_repair.v1.md",
+    "airesearcher/stages/writing/prompts/figure_spec.v1.md",
+    "airesearcher/stages/writing/prompts/section.v2.md",
+    "airesearcher/stages/writing/stage.py",
+    "examples/writing/phase-2a-5-stage/README.md",
+    "examples/writing/phase-2a-5-stage/reproduce.py",
+    "scripts/writing/__init__.py",
+    "scripts/writing/demo.py",
+    "tests/test_writing_stage.py"
+  ]
+}

@@ -108,7 +108,7 @@ def test_gateway_calls_context_skill_accounting_and_output_tree(writing):
     expected_alias = llm.resolve("writing.writer", PROMPT_ID, "strong", "strong")[0].alias
     for call in llm.backend.calls:
         assert call.role == "writing.writer" and call.alias == expected_alias
-        assert call.prompt_id == PROMPT_ID and call.prompt_version == 1 and call.schema_name == "SectionOutput"
+        assert call.prompt_id == PROMPT_ID and call.prompt_version == 2 and call.schema_name == "SectionOutput"
         assert writer.skill.instructions in call.messages[0]["content"]
         assert writer.skill.ref in call.messages[0]["content"]
     assert all(x.skill_ref == "latex-writing@0.1.0" and len(x.context_sha256) == 64 for x in result.sections)

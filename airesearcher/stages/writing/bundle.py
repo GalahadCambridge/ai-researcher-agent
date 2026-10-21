@@ -1,4 +1,7 @@
-"""Writing-owned evidence bundle schema v1 (no shared/core contract changes).
+"""Writing-owned evidence bundle v1/v2 (no shared/core contract changes).
+
+include_runtime=True opts into v2 frozen task/selected-run metadata. v1 remains
+readable and serializes without claiming absent runtime facts; see README.md.
 
 API: build_bundle(root, approved=None, aggregate_refs=None) -> EvidenceBundle;
 write_bundle(root, bundle) -> VersionRef. Building is read-only. Persistence validates
@@ -42,7 +45,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+import yaml
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from airesearcher.core.approvals import Approvals
 from airesearcher.core.archive import Archive
@@ -53,7 +57,8 @@ from airesearcher.core.models.aggregate import Aggregate
 from airesearcher.core.models.approval import Approval
 from airesearcher.core.models.common import VersionRef
 from airesearcher.core.models.idea import parse_selected_md
-from airesearcher.core.models.plan import parse_plan_md
+from airesearcher.core.models.plan import TaskConfig, parse_plan_md
+from airesearcher.core.workspace import repo_root
 from airesearcher.services import literature, runs
 
 BUNDLE_ID = "paper/evidence_bundle.json"
@@ -104,8 +109,18 @@ class Diagnostic(_Model):
     approved_ref: VersionRef
 
 
+class RuntimeInput(_Model):
+    """Writing v2 snapshot, captured through official services; not a shared model."""
+
+    task_source: str
+    task_sha256: str
+    task: dict[str, Any]
+    runs: list[dict[str, Any]]
+    sha256: str
+
+
 class EvidenceBundle(_Model):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 1
     idea_ref: VersionRef
     plan_ref: VersionRef
     idea: ApprovedSource
@@ -115,10 +130,75 @@ class EvidenceBundle(_Model):
     papers: list[PaperSource]
     literature_source: LiteratureSource
     diagnostics: list[Diagnostic]
+    runtime: RuntimeInput | None = None
+
+    @model_validator(mode="after")
+    def _runtime_version(self):
+        if (self.schema_version == 2) != (self.runtime is not None):
+            raise ValueError("only schema v2 contains frozen task/run context")
+        return self
 
     def to_bytes(self) -> bytes:
         """Stable UTF-8 JSON; reject NaN/Infinity instead of emitting invalid evidence."""
-        return _json_bytes(self.model_dump(mode="json"))
+        return _json_bytes(self.model_dump(mode="json", exclude={"runtime"} if self.schema_version == 1 else set()))
+
+
+def _portable_input(value: Any) -> Any:
+    """Omit sensitive keys and machine paths, including nested environment metadata."""
+    if isinstance(value, dict):
+        return {k: _portable_input(v) for k, v in sorted(value.items())
+                if not re.search(r"secret|token|password|credential|api.?key|authorization", k, re.I)}
+    if isinstance(value, list):
+        return [_portable_input(v) for v in value]
+    if isinstance(value, str) and (Path(value).is_absolute() or PureWindowsPath(value).is_absolute()):
+        return "<external-path>"
+    return value
+
+
+def _runtime_input(root: Path, plan: ApprovedSource, aggregates: list[AggregateSource]) -> RuntimeInput:
+    from ._latex import relative_name, safe_path
+
+    # The approved plan selects the task file. Never substitute project.task or mutable plan text.
+    name = relative_name((plan.data or {})["task_config"])
+    if not name.endswith((".yaml", ".yml")):
+        name += "/task.yaml"
+    candidates = [safe_path(root / name), safe_path(repo_root() / name)]
+    path = next((p for p in candidates if p.is_file()), None)
+    if path is None:
+        raise BundleError(f"approved task configuration unavailable: {name}")
+    raw = path.read_bytes()
+    task = TaskConfig.model_validate(yaml.safe_load(raw)).model_dump(mode="json")
+    # TaskMetric is frozen and has no units field. Preserve explicit optional units locally.
+    declared = yaml.safe_load(raw)
+    task["metric_units"] = {m["name"]: m["unit"] for m in declared.get("metrics", []) if m.get("unit")}
+    task = _portable_input(task)
+    task_hash = sha256_bytes(_json_bytes(task))
+    selected = sorted({rid for a in aggregates for row in a.data.rows for rid in row.run_ids})
+    snapshots = []
+    for run_id in selected:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", run_id):
+            raise BundleError("unsafe aggregate run ID")
+        view = runs.load_run(root, run_id, with_metrics=False)
+        if view.record.run_id != run_id:
+            raise BundleError(f"run service identity mismatch: {run_id}")
+        record = view.record.model_dump(mode="json", include={
+            "run_id", "experiment_id", "kind", "eval_condition", "plan_ref", "idea_ref",
+            "code_commit", "config_sha256", "seed", "executor",
+        })
+        env = view.environment or {}
+        # Explicit allowlist: no command, workdir, hostname, arbitrary env vars or package URLs.
+        environment = {key: env[key] for key in ("os", "python", "hardware", "frameworks", "unknown") if key in env}
+        environment["env_vars"] = {key: env.get("env_vars", {})[key]
+                                   for key in ("PYTHONHASHSEED", "OMP_NUM_THREADS", "MKL_NUM_THREADS")
+                                   if key in env.get("env_vars", {})}
+        record.update(environment=_portable_input(environment), status=view.status.state.value,
+                      label=view.label.label if view.label else None,
+                      resources=view.resources.model_dump(mode="json") if view.resources else None)
+        snapshots.append(_portable_input(record))
+    if path.read_bytes() != raw:
+        raise BundleError("task configuration changed during capture")
+    payload = {"task_source": name, "task_sha256": task_hash, "task": task, "runs": snapshots}
+    return RuntimeInput(**payload, sha256=sha256_bytes(_json_bytes(payload)))
 
 
 def _json_bytes(value: object) -> bytes:
@@ -234,7 +314,8 @@ def _literature(root: Path, archive: Archive) -> tuple[LiteratureSource, list[Pa
 
 
 def build_bundle(root: Path, *, approved: Mapping[str, VersionRef] | None = None,
-                 aggregate_refs: Sequence[VersionRef] | None = None) -> EvidenceBundle:
+                 aggregate_refs: Sequence[VersionRef] | None = None,
+                 include_runtime: bool = False) -> EvidenceBundle:
     """Collect an inspectable, read-only snapshot. Explicit ctx.approved is supported.
 
     Default selection includes all latest registered Aggregate JSONs, even historical
@@ -274,7 +355,9 @@ def build_bundle(root: Path, *, approved: Mapping[str, VersionRef] | None = None
         literature_source, papers = _literature(root, archive)
         bundle = EvidenceBundle(idea_ref=selected["idea"].ref, plan_ref=selected["plan"].ref,
                                 idea=selected["idea"], plan=selected["plan"], logs=logs, aggregates=aggregates,
-                                papers=papers, literature_source=literature_source, diagnostics=diagnostics)
+                                papers=papers, literature_source=literature_source, diagnostics=diagnostics,
+                                schema_version=2 if include_runtime else 1,
+                                runtime=_runtime_input(root, selected["plan"], aggregates) if include_runtime else None)
         bundle.to_bytes()  # Validate serialization before any caller can persist it.
         return bundle
     except (AirError, OSError, ValueError, KeyError) as exc:
@@ -302,7 +385,8 @@ def write_bundle(root: Path, bundle: EvidenceBundle) -> VersionRef:
     bundle = EvidenceBundle.model_validate(bundle.model_dump(mode="json"))
     payload = bundle.to_bytes()
     current = build_bundle(root, approved={"idea": bundle.idea_ref, "plan": bundle.plan_ref},
-                           aggregate_refs=[a.ref for a in bundle.aggregates])
+                           aggregate_refs=[a.ref for a in bundle.aggregates],
+                           include_runtime=bundle.schema_version == 2)
     if current.to_bytes() != payload:
         raise BundleError("captured bundle or selected sources changed; rebuild before writing")
     refs = [bundle.idea_ref, bundle.plan_ref, *[x.ref for x in bundle.logs],
