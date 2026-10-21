@@ -1,0 +1,42 @@
+{
+  "fig_id": "fig_c1",
+  "spec": {
+    "fig_id": "fig_c1",
+    "kind": "bar",
+    "aggregate_id": "C1",
+    "x": "method",
+    "hue": null,
+    "metric": "score",
+    "error": "ci95",
+    "title": "Comparison C1",
+    "xlabel": "method",
+    "ylabel": "Score (dimensionless)",
+    "scale": 1.0,
+    "log_x": false,
+    "caption": "n=3 ({\"method\":\"baseline\"}), n=3 ({\"method\":\"main\"}). Error bars: 95% CI."
+  },
+  "aggregate_ref": {
+    "artifact_id": "artifacts/aggregates/C1.json",
+    "version": 1,
+    "sha256": "579765f917f1261ed5df6bb60d4f53435dcba11fc0c52443f09d6a94db606fc8"
+  },
+  "run_ids": [
+    "r-20261010-113808-e173",
+    "r-20261010-113808-6128",
+    "r-20261010-113809-6926",
+    "r-20261010-113809-0426",
+    "r-20261010-113811-02ea",
+    "r-20261010-113812-86a1"
+  ],
+  "skill_ref": "scientific-plotting@0.1.0",
+  "script_sha256": "6b2567367e392e52ad535114cdc5ce9fafb6c2e7857796cbc9caa4384c478fcb",
+  "outputs": [
+    "artifacts/figures/fig_c1/fig_c1.pdf",
+    "artifacts/figures/fig_c1/fig_c1.png"
+  ],
+  "n_per_group": {
+    "{\"method\":\"baseline\"}": 3,
+    "{\"method\":\"main\"}": 3
+  },
+  "created_at": "2026-10-21T15:37:11.174190Z"
+}

@@ -1,9 +1,9 @@
-# Writing: independent Writer and real control-arm Stage
+# Writing: independent Writer and evidence-aware Stage
 
 `Writer(root, bundle, llm=ctx.llm, skills=ctx.skills)` is used by the real Stage below;
 it does not import StageContext or implement a Stage. The only factual input is a
-detached EvidenceBundle. The implementation is the future `evidence_check=false`
-arm: direct numeric prose is allowed, and no scientific review/binding is performed.
+detached EvidenceBundle. Without `claims`, Writer serves `evidence_check=false`: direct numeric prose is allowed.
+With code-bound `claims`, it inserts exact claim wrappers and forbids numerical/claim identity edits.
 
 The frozen section vocabulary is abstract, introduction, related_work, method, setup,
 results, discussion, conclusion. Discussion includes a Limitations subsection, as in
@@ -21,8 +21,8 @@ research question; an explicit caller language is supported without a config cha
   sections omit raw seed values; method/setup use approved plan material. No current
   idea/plan/run/log reads, statistics recomputation or model-generated summaries.
 - `Writer.generate_section(section, prompt_version=None)` calls `llm.complete` once
-  with role `writing.writer`, tier `strong`, prompt `writing/section.v2.md` and the
-  local SectionOutput schema. The current default is v2; v1 remains pinnable. Omitting a prompt version lets gateway pins apply.
+  with role `writing.writer`, tier `strong`, prompt `writing/section.v3.md` and the
+  local SectionOutput schema. The current default is v3; immutable v1/v2 remain pinnable. Omitting a prompt version lets gateway pins apply.
   Gateway schema retries/accounting remain gateway-owned. Structural rejection does
   not start a Writer retry loop. Verified skill instructions are explicitly supplied.
 - `validate_section(output, expected_section)` checks identity, nonempty UTF-8 body,
@@ -89,8 +89,7 @@ examples explicitly request English and supply an ASCII test title.
 
 Standalone Writer leaves an AIR:AI_USE comment hook unless ai_use=True requests the
 Stage-owned source. The real Stage described below owns lifecycle, disclosure,
-archive registration and approval; Writer itself remains independent. Neither
-component implements claims, value macros or evidence review in this control arm.
+archive registration and approval; Writer itself remains independent. The false arm produces no claims, value macros or deterministic review.
 
 ## Retained functional examples
 
@@ -104,9 +103,8 @@ or a new orchestration mechanism.
 ## Real WritingStage (Phase 2A-5)
 
 Select `dev.stage_impl.writing: real` and `evidence_check: false`. The stage registry
-loads `stage.py:create_stage()` without registry changes. `evidence_check: true`
-returns a non-retryable Stage error before any output/model call; Phase 2B is not
-implemented. There are no claims, evidence macros, semantic review or audit outputs.
+loads `stage.py:create_stage()` without stage registry changes. `evidence_check: true`
+now follows the Phase 2B-1 path below. Neither mode performs semantic review or audit.
 The old independent Writer API remains available.
 
 The engine calls these bounded phases through `StageContext` / `StepResult`:
@@ -292,3 +290,78 @@ No real-model key, model dependency or online citation request is required. Fake
 proves orchestration, recovery, prompts, schemas, artifacts, compilation and approval
 lifecycle; it does not prove prose quality, semantic citation correctness or real-model
 discipline. The new retained example is in `examples/writing/phase-2a-5-stage/`.
+
+
+## Phase 2B-1: deterministic evidence binding
+
+True runtime: `bundle → figures → template → claims → write → compile → verify → submit`.
+False runtime retains the six phases above. The existing `evidence_check` field selects
+mode; switching a populated paper tree between modes fails explicitly.
+
+`claims.py` owns strict planner schemas and calls are orchestrated by Stage through
+`writing/claims v1`, role `writing.claims`, tier strong. The planner sees frozen approved
+idea/plan/logs, all selected comparisons, exact validated Figures, safe runtime and
+Literature snapshots. It proposes selectors and `[[NAME]]` placeholders, never trusted
+ValueRefs, rendered values, formats, archive versions or IDs. Code assigns ordered
+CL1… slots, binds `runs.resolve_value` against exact bundle Aggregates, and verifies
+comparison directions. Figure metadata supplies metric scale; n uses integer scale 1,
+p-values scale 1/four decimals. Other statistics use four decimals and the declared
+Figure scale. Unknown/conflicting units fail; no percentage inference is made.
+
+Every hypothesis and selected comparison/contrast must retain a Results observation,
+including unfavorable/non-significant evidence. Interpretations require a hedge and
+cannot enter Results. Binding errors receive at most one correction call, preserving
+slot order/count. Invalid optional slots may be dropped only with complete coverage;
+structurally invalid gateway responses fail closed. Persisted planning responses are
+reused before binding. Installation receipts compare old/new bytes and reject human
+conflicts, including partial multi-file installation recovery.
+
+`claims.jsonl` is canonical JSONL in planner slot order. Each `Claim.text` includes the
+exact `\claim{CLn}{...}` wrapper. `air_values.tex` contains sorted code-owned numeric
+macros. Identical selectors share keys; conflicting values under a key fail. Evidence
+links accept only bundled Aggregates, current validated Figures, supporting runs,
+frozen papers with explicit citation scope, and approved plan/log refs. A code-owned
+provenance note binds serialized claims to the bundle and full Figure ref inventory.
+
+True Writer contexts supply assigned bound claims/markers without raw Aggregate tables.
+`[[CLAIM:CLn]]` is replaced by code exactly once in the correct section. Unknown IDs,
+keys, missing/duplicated/changed claims fail. Surrounding prose edits remain possible;
+file/line locations refresh deterministically and do not affect section fingerprints.
+Syntax repair uses the same validator, so cannot change bound claims. Simple templates
+receive `\input{air_values}` and the transparent `\claim` macro. Reserved definitions
+or resources require explicit adaptation; this is not arbitrary TeX macro interpretation.
+
+Claim basis includes exact bundle ref/bytes, approved refs, full validated Figures,
+claim prompt identity/file digest, resolved claim models, skill instructions and binding
+rules. Template, prose prompt and user prose feedback do not replan claims. Section
+fingerprints include their assigned claims and prose inputs. Figure provenance gates and
+pending-section edit protection from Phase 2A-5.1 remain active in both modes.
+
+Before verification, located claims are archived with bundle/Aggregate/Figure parents;
+paper parents include these plus claims. Compile/PDF parents are the exact paper.
+Review JSON/Markdown parents are paper + claims; no reverse edge exists. Every relevant
+Archive byte-dedup result is checked for exact parents. Review receipts preserve the
+original CheckReport timestamp/number across interrupted writes; source/run changes
+invalidate verification. Manuscript approval targets the complete paper and exposes
+claims, review and build refs, counts and the deterministic-only disclosure. Blockers
+remain visible for human decision; there is no automatic semantic revision loop.
+
+`services.evidence.check(paper_ref=...)` verifies the archived source, exact supporting
+raw metrics, macro dispatcher/definitions, run validity, frozen-bundle staleness,
+exploratory wording/structured conditions, explicit n, directions, lexical significance
+and frozen citations. NUM_UNBOUND scans active section literals, excluding keys,
+references, comments/literals, ordinary years and layout numbering. It is conservative,
+not a semantic detector. Missing required evidence yields unverifiable; contradictory
+comparisons take precedence. `runs.recompute_aggregate(..., version=N)` preserves the
+exact supporting run set; omitting version retains its existing behavior. The shared
+private TeX lexer is now in `services/_tex.py`, re-exported from Writing `_latex.py`.
+
+Trace uses exact archived claim/Aggregate/Figure versions and selected supporting runs;
+modern bundles provide frozen safe runtime/Literature snapshots. Legacy fake bundles
+lack full Literature records and Figure versions, so their restricted local-ID/BibTeX
+fallback remains for compatibility. Historical raw run metrics are not separately
+versioned by this patch. `audit()` and semantic review remain deferred.
+
+See `examples/writing/phase-2b-1-evidence` for real TeX/FakeLLM reproduction. Shared
+models, dependencies, engine and StageContext are unchanged. `latex-writing@0.2.0`
+and `writing/section v3` describe both modes; no claim-review skill exists.

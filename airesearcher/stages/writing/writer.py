@@ -1,4 +1,4 @@
-"""Independent Writer for the evidence-check-disabled arm; no Stage or claim machinery.
+"""Independent mode-aware Writer; orchestration and scientific review stay outside Writer.
 
 Facts come only from the supplied bundle. Local literature is read solely to check its
 snapshot and call the official citation/BibTeX services. Provenance mismatches fail
@@ -20,32 +20,56 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 from airesearcher.core.errors import StaleVersion, ValidationFailed
 from airesearcher.core.fsutil import atomic_write_bytes, atomic_write_text, sha256_bytes
-from airesearcher.core.models.claim import CompileReport
+from airesearcher.core.models.claim import Claim, CompileReport
 from airesearcher.llm.gateway import LLMGateway
 from airesearcher.services import literature
 from airesearcher.skills.loader import SkillLoader
 
+from . import claims as binding
 from ._latex import TemplateError, _inactive_spans, _is_escaped, active_text, commands, relative_name, safe_path
 from .bundle import EvidenceBundle
 from .compile import compile_paper
 from .template import inspect_template, prepare_template, resolve_template
 
 SectionName = Literal[
-    "abstract", "introduction", "related_work", "method", "setup", "results", "discussion", "conclusion",
+    "abstract",
+    "introduction",
+    "related_work",
+    "method",
+    "setup",
+    "results",
+    "discussion",
+    "conclusion",
 ]
 SECTIONS = ("abstract", "introduction", "related_work", "method", "setup", "results", "discussion", "conclusion")
 GENERATION_ORDER = (*SECTIONS[1:], "abstract")
 PROMPT_ID = "writing/section"
 _KEY = re.compile(r"[A-Za-z0-9_.:+-]+")
-_WORDS = set("""section subsection subsubsection paragraph subparagraph begin end item
+_WORDS = set(
+    """section subsection subsubsection paragraph subparagraph begin end item
 textbf textit emph texttt textrm textsf textsc underline textsuperscript textsubscript
 textbackslash textasciitilde textasciicircum footnote caption label ref pageref cite includegraphics
 centering hline cline multicolumn small footnotesize scriptsize tiny normalsize large Large LARGE
 quad qquad ldots cdots pm times leq geq approx alpha beta gamma delta mu sigma theta lambda epsilon
 frac sqrt sum mathrm mathbf mathit mathsf mathcal left right hspace vspace rule newline linebreak
-noindent par percent""".split())
-_ENVIRONMENTS = {"itemize", "enumerate", "description", "figure", "figure*", "table", "table*", "center",
-                 "tabular", "tabular*", "equation", "equation*", "displaymath", "math"}
+noindent par percent""".split()
+)
+_ENVIRONMENTS = {
+    "itemize",
+    "enumerate",
+    "description",
+    "figure",
+    "figure*",
+    "table",
+    "table*",
+    "center",
+    "tabular",
+    "tabular*",
+    "equation",
+    "equation*",
+    "displaymath",
+    "math",
+}
 
 
 def _json(value: object) -> str:
@@ -181,18 +205,31 @@ class Writer:
     must compare saved input fingerprints before deciding whether to reuse it.
     """
 
-    def __init__(self, root: Path, bundle: EvidenceBundle, *, llm: LLMGateway,
-                 skills: SkillLoader | None = None, language: str | None = None,
-                 figures: Mapping[str, str] | None = None, guidance: list[dict] | None = None):
+    def __init__(
+        self,
+        root: Path,
+        bundle: EvidenceBundle,
+        *,
+        llm: LLMGateway,
+        skills: SkillLoader | None = None,
+        language: str | None = None,
+        figures: Mapping[str, str] | None = None,
+        guidance: list[dict] | None = None,
+        claims: list[Claim] | None = None,
+    ):
         self.root = safe_path(root)
         self.bundle = EvidenceBundle.model_validate_json(bundle.to_bytes())
         self.llm = llm
         self.skill = (skills or SkillLoader()).load("latex-writing")
         self.language = language
         self.figures = _figures(figures)
+        self.claims = None if claims is None else [Claim.model_validate(c.model_dump()) for c in claims]
         self.guidance = json.loads(_json(guidance or []))
-        self._allowed = {row["citation_key"]: row["paper_id"] for row in _citation_table(self.bundle, abstracts=False)
-                         if row["allowed"]}
+        self._allowed = {
+            row["citation_key"]: row["paper_id"]
+            for row in _citation_table(self.bundle, abstracts=False)
+            if row["allowed"]
+        }
 
     def _target(self, relative: str) -> Path:
         target = safe_path(self.root / relative)
@@ -212,6 +249,8 @@ class Writer:
         if output.section != section:
             raise ValidationFailed(f"Expected section {section}, received {output.section}")
         text = output.latex
+        if self.claims is not None:
+            binding.validate_bound_section(text, self.claims, section)
         try:
             text.encode("utf-8")
             if any(ord(c) < 32 and c not in "\r\n\t" for c in text):
@@ -221,7 +260,9 @@ class Writer:
                 raise ValidationFailed("TeX character-code escape syntax is not supported")
             for token in re.finditer(r"\\([A-Za-z]+|[^\r\n])", clean):
                 word = token[1]
-                if word.isalpha() and word not in _WORDS:
+                if word.isalpha() and word not in (
+                    _WORDS | ({"claim", "airval"} if self.claims is not None else set())
+                ):
                     raise ValidationFailed(f"Unsupported or unsafe generated command: \\{word}")
             depth = 0
             for i, char in enumerate(clean):
@@ -237,8 +278,10 @@ class Writer:
             parsed_commands = commands(text)
             braced = {command.start for command in parsed_commands}
             for token in re.finditer(r"\\([A-Za-z]+|[^\r\n])", clean):
-                if (token[1] in {"begin", "end", "cite", "includegraphics", "ref", "pageref", "label"}
-                        and token.start() not in braced):
+                if (
+                    token[1] in {"begin", "end", "cite", "includegraphics", "ref", "pageref", "label"}
+                    and token.start() not in braced
+                ):
                     raise ValidationFailed("Use a directly braced, literal command argument")
             for command in parsed_commands:
                 if command.name in {"begin", "end"}:
@@ -260,8 +303,7 @@ class Writer:
                     if path not in self.figures.values():
                         raise ValidationFailed(f"Unknown figure path: {path}")
                 elif command.name in {"ref", "pageref", "label"}:
-                    if (not re.match(r"\\[A-Za-z]+\s*\{", clean[command.start:])
-                            or not _KEY.fullmatch(command.value)):
+                    if not re.match(r"\\[A-Za-z]+\s*\{", clean[command.start :]) or not _KEY.fullmatch(command.value):
                         raise ValidationFailed("References/labels require a directly braced, literal label")
                     if command.value.startswith("fig:") and command.value[4:] not in self.figures:
                         raise ValidationFailed(f"Unknown figure ID: {command.value[4:]}")
@@ -278,6 +320,13 @@ class Writer:
     def section_context(self, section: str) -> dict:
         """Detached context shared by generation and pre-call freshness checks."""
         context = build_section_context(self.bundle, section, language=self.language, figures=self.figures)
+        context["evidence_check"] = self.claims is not None
+        if self.claims is not None:
+            context.pop("aggregates", None)
+            context["bound_claims"] = [c.model_dump(exclude={"location"}) for c in self.claims if c.section == section]
+            context["claim_markers"] = [f"[[CLAIM:{c.claim_id}]]" for c in self.claims if c.section == section]
+            # Raw result tables are planner input only, never true-arm prose input.
+            context["claim_rule"] = "Arrange each assigned marker exactly once; code inserts immutable bound claims."
         if self.guidance:
             context["user_writing_guidance"] = self.guidance
         return context
@@ -286,25 +335,49 @@ class Writer:
         """Identity of facts, presentation, guidance, skill and actual versioned prompt."""
         pins = self.llm.project.config.prompt_pins
         prompt = self.llm.prompts.load(PROMPT_ID, prompt_version or pins.get(PROMPT_ID))
-        return sha256_bytes(_json({"context": self.section_context(section),
-                                   "bundle_sha256": sha256_bytes(self.bundle.to_bytes()),
-                                   "skill": self.skill.ref, "instructions": self.skill.instructions,
-                                   "prompt": [prompt.id, prompt.version, prompt.system, prompt.user]}).encode("utf-8"))
+        return sha256_bytes(
+            _json(
+                {
+                    "context": self.section_context(section),
+                    "bundle_sha256": sha256_bytes(self.bundle.to_bytes()) if self.claims is None else None,
+                    "skill": self.skill.ref,
+                    "instructions": self.skill.instructions,
+                    "prompt": [prompt.id, prompt.version, prompt.system, prompt.user],
+                }
+            ).encode("utf-8")
+        )
 
     def generate_section(self, section: str, *, prompt_version: int | None = None) -> GeneratedSection:
         self._provenance()
         context = self.section_context(section)
         encoded = _json(context)
-        response = self.llm.complete(role="writing.writer", prompt_id=PROMPT_ID, tier="strong",
-                                     prompt_version=prompt_version, response_schema=SectionOutput,
-                                     variables={"section": section, "skill_rules": self.skill.instructions,
-                                                "skill_ref": self.skill.ref,
-                                                "evidence": LLMGateway.wrap_untrusted(encoded, f"bundle:{section}")})
+        response = self.llm.complete(
+            role="writing.writer",
+            prompt_id=PROMPT_ID,
+            tier="strong",
+            prompt_version=prompt_version,
+            response_schema=SectionOutput,
+            variables={
+                "section": section,
+                "skill_rules": self.skill.instructions,
+                "skill_ref": self.skill.ref,
+                "evidence": LLMGateway.wrap_untrusted(encoded, f"bundle:{section}"),
+            },
+        )
         output = SectionOutput.model_validate(response.parsed)
+        if self.claims is not None:
+            output = output.model_copy(update={"latex": binding.insert_markers(output.latex, self.claims, section)})
         citations = self.validate_section(output, section)
         fingerprint = self.section_fingerprint(section, prompt_version=response.prompt_version)
-        return GeneratedSection(output, citations, fingerprint, self.skill.ref, response.call_id,
-                                response.prompt_id, response.prompt_version)
+        return GeneratedSection(
+            output,
+            citations,
+            fingerprint,
+            self.skill.ref,
+            response.call_id,
+            response.prompt_id,
+            response.prompt_version,
+        )
 
     def write_section(self, output: SectionOutput) -> Path:
         self._provenance()
@@ -360,8 +433,9 @@ class Writer:
         atomic_write_text(target, text)
         return target
 
-    def assemble_draft(self, *, template: dict | None = None, entry: str | None = None,
-                       title: str | None = None, ai_use: bool = False) -> Path:
+    def assemble_draft(
+        self, *, template: dict | None = None, entry: str | None = None, title: str | None = None, ai_use: bool = False
+    ) -> Path:
         """Bridge prepare_template's new-directory API into an existing section tree.
 
         No automatic figure copying. Non-main template resource collisions fail before
@@ -380,15 +454,31 @@ class Writer:
         check = inspect_template(source.original, entry=entry)
         if not check.entry:
             raise ValidationFailed("Template entry selection required", {"candidates": check.entry_candidates})
+        if self.claims is not None:
+            # Reject direct reserved-token use anywhere in template sources/resources.
+            # Conservative adaptation boundary: no attempt to interpret custom macros.
+            for path in source.original.rglob("*"):
+                if path.is_file() and path.suffix in {".tex", ".sty", ".cls"}:
+                    active = active_text(path.read_text(encoding="utf-8"))
+                    if re.search(r"\\(?:claim|airval)\b|\b(?:airval@|air_values)\b|\\csname", active):
+                        raise ValidationFailed("Template conflicts with reserved claim/airval macros; adapt explicitly")
+            expected = binding.values_tex(self.claims)
+            values = self._target("paper/air_values.tex")
+            if not values.exists() or values.read_bytes() != expected:
+                raise ValidationFailed("Code-owned air_values.tex differs from bound Claims")
         original = (source.original / check.entry).read_text(encoding="utf-8")
         declarations = commands(original)
         # These control words need no mandatory braced argument. Scan active tokens
         # as well as parsed declarations, before generating references or copying.
         tokens = {m[1] for m in re.finditer(r"\\([A-Za-z]+|[^\r\n])", active_text(original))}
-        if (tokens & {"addbibresource", "printbibliography"}
-                or any(c.name == "begin" and c.value.strip() == "thebibliography" for c in declarations)
-                or any(c.name in {"usepackage", "RequirePackage"}
-                       and "biblatex" in {p.strip() for p in c.value.split(",")} for c in declarations)):
+        if (
+            tokens & {"addbibresource", "printbibliography"}
+            or any(c.name == "begin" and c.value.strip() == "thebibliography" for c in declarations)
+            or any(
+                c.name in {"usepackage", "RequirePackage"} and "biblatex" in {p.strip() for p in c.value.split(",")}
+                for c in declarations
+            )
+        ):
             raise ValidationFailed("Writer requires a BibTeX template; adapt the template explicitly")
         if any(c.name == "bibliography" and c.value != "references" for c in declarations):
             raise ValidationFailed("Template bibliography must use the generated references database")
@@ -408,9 +498,15 @@ class Writer:
                 body += "\\bibliography{references}\n"
         with tempfile.TemporaryDirectory(prefix="air-writing-") as tmp:
             prepared = Path(tmp) / "paper"
-            prepare_template(source.original, prepared, body, entry=check.entry,
-                             title=title if title is not None else (self.bundle.idea.data or {}).get("title"),
-                             author="Anonymous")
+            prepare_template(
+                source.original,
+                prepared,
+                body,
+                entry=check.entry,
+                title=title if title is not None else (self.bundle.idea.data or {}).get("title"),
+                author="Anonymous",
+                preamble=binding.PREAMBLE if self.claims is not None else "",
+            )
             copies = []
             for path in sorted(prepared.rglob("*")):
                 if not path.is_file():
@@ -419,7 +515,10 @@ class Writer:
                 if rel == "references.bib":
                     continue
                 if rel.startswith(("sections/", "build/", ".writing/", "figures/")) or rel in {
-                    "claims.jsonl", "air_values.tex", "ai_use.tex", "evidence_bundle.json",
+                    "claims.jsonl",
+                    "air_values.tex",
+                    "ai_use.tex",
+                    "evidence_bundle.json",
                 }:
                     raise ValidationFailed(f"Template resource conflicts with Writer output: {rel}")
                 target = self._target("paper/" + rel)

@@ -1,7 +1,7 @@
-# LaTeX template infrastructure (0.1.0)
+# LaTeX template infrastructure (0.2.0)
 
-This version supplies deterministic infrastructure only. It does not generate prose,
-sections, claims, value macros, citations, reviews, or approval transitions.
+This skill supplies template infrastructure and mode-aware scientific writing rules.
+The Stage and Writer own generation; the skill is not an orchestration implementation.
 
 - Resolve `ProjectConfig.template` with `resolve_template(root, config.template)`.
   A null selection uses `templates/default/` in this verified skill. Uploaded versions
@@ -47,5 +47,20 @@ Skill samples always verify structure/filling/immutability. If latexmk and kpsew
 are installed they also require a real successful compile. On systems without TeX,
 only the runtime compile portion is skipped; install TeX separately for runtime use.
 Later writing must use approved evidence, allowed citation keys, and real figure paths;
-only abstract-access literature cannot justify experimental details. Writer and evidence
-enforcement are deferred to later milestones.
+only abstract-access literature cannot justify experimental details.
+
+Evidence-bound writing (evidence_check=true):
+- Arrange assigned claim markers exactly once in their assigned section. Code inserts
+  immutable bound Claims; never create claim IDs, airval keys or numeric macro values.
+- Experimental numbers are code-resolved ValueRefs expanded through airval. Do not
+  handwrite experimental numbers outside bound claims or alter their semantics.
+- Results claims are observations. Interpretation claims require likely/possible
+  hedges; preserve negative and non-significant results and every approved hypothesis.
+- Use only allowed citation keys. Abstract/metadata-only literature may support main
+  conclusions, not experimental details; citation planning declares this scope.
+- Human surrounding-prose edits are permitted. Bound-claim changes require explicit
+  reconciliation; syntax repair must preserve every exact claim.
+- Deterministic verification is not semantic LLM review. No semantic review/revision
+  skill is provided in this version.
+Control writing (evidence_check=false) continues direct bundle-based prose without
+claims, value macros or deterministic claim review artifacts.

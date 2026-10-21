@@ -1,0 +1,15 @@
+{
+  "fig_id": "fig_c1",
+  "kind": "bar",
+  "aggregate_id": "C1",
+  "x": "method",
+  "hue": null,
+  "metric": "score",
+  "error": "ci95",
+  "title": "Comparison C1",
+  "xlabel": "method",
+  "ylabel": "Score (dimensionless)",
+  "scale": 1.0,
+  "log_x": false,
+  "caption": "n=3 ({\"method\":\"baseline\"}), n=3 ({\"method\":\"main\"}). Error bars: 95% CI."
+}

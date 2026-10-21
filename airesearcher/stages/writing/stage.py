@@ -14,15 +14,16 @@ from pydantic import ConfigDict
 from airesearcher.core.archive import dir_manifest, manifest_bytes
 from airesearcher.core.errors import AirError
 from airesearcher.core.fsutil import atomic_write_bytes, atomic_write_json, atomic_write_text, sha256_bytes, sha256_file
-from airesearcher.core.models.claim import CompileReport
+from airesearcher.core.models.claim import CheckReport, Claim, CompileReport
 from airesearcher.core.models.common import VersionRef
 from airesearcher.core.models.figure import Figure, FigureSpec
 from airesearcher.core.models.plan import parse_plan_md
 from airesearcher.core.models.question import Question, QuestionOption
 from airesearcher.engine.stage import Continue, Error, NeedsApproval, StageContext, StepResult, Stop
 from airesearcher.llm.gateway import LLMOutputError
-from airesearcher.services import literature, runs
+from airesearcher.services import evidence, literature, runs
 
+from . import claims as binding
 from ._latex import TemplateError, safe_path
 from .bundle import ApprovedSource, EvidenceBundle, _runtime_input, build_bundle, write_bundle
 from .compile import compile_paper
@@ -86,8 +87,6 @@ class WritingStage:
     name = "writing"
 
     def step(self, ctx: StageContext) -> StepResult:
-        if ctx.project.evidence_check:
-            return Error("Real Writing evidence_check=true is not implemented until Phase 2B.", retryable=False)
         try:
             return self._step(ctx)
         except (AirError, ValueError, OSError, KeyError, LLMOutputError) as exc:
@@ -95,7 +94,7 @@ class WritingStage:
 
     def _step(self, ctx):
         paper = _path(ctx, "paper")
-        if (
+        if not ctx.project.evidence_check and (
             (paper / "claims.jsonl").exists()
             or (paper / "air_values.tex").exists()
             or list((paper / "review").glob("review_v*.json"))
@@ -105,6 +104,14 @@ class WritingStage:
             )
         s = ctx.scratch.setdefault("writing", {})
         meta = _receipt(ctx, "runtime")
+        if meta and meta.get("evidence_check", False) != ctx.project.evidence_check:
+            raise ValueError("Writing mode changed in place; preserve history and use a fresh workspace")
+        meta["evidence_check"] = ctx.project.evidence_check
+        if ctx.project.evidence_check:
+            pending = _receipt(ctx, "pending-claims")
+            if pending and not pending.get("installed"):
+                self._finish_claim_install(ctx, pending)
+            self._guard_claim_files(ctx)
         # Establish existing provenance before any invalidation can reprovision files.
         self._validate_provisioned_figures(ctx, s)
         selected, basis, runtime = self._inputs(ctx)
@@ -134,14 +141,16 @@ class WritingStage:
         writing_config = _hash(
             {
                 "guidance": guidance,
-                "pins": ctx.project.prompt_pins,
-                "models": ctx.project.models,
+                "models": [
+                    {"alias": m.alias, "entry": m.entry.model_dump(mode="json")}
+                    for m in ctx.llm.resolve("writing.writer", PROMPT_ID, "strong", None)
+                ],
                 "skill": ctx.skills.load("latex-writing").instructions,
                 "prompt": sha256_file(ctx.llm.prompts.load(PROMPT_ID, ctx.project.prompt_pins.get(PROMPT_ID)).path),
             }
         )
         if s.get("writing_config") != writing_config:
-            if not new_basis and s.get("phase") in {"compile", "compile_fix", "submit"}:
+            if not new_basis and s.get("phase") in {"compile", "compile_fix", "verify", "submit"}:
                 s["phase"] = "write"
             s["writing_config"] = writing_config
         selection = ctx.project.template
@@ -190,17 +199,24 @@ class WritingStage:
             s["phase"] = "figures"
             return Continue("Figure dependencies changed; revalidate/regenerate figures before manuscript work")
         phase = s.setdefault("phase", "bundle")
-        index = _PHASES.index(phase) if phase in _PHASES else 4
+        phases = (
+            ("bundle", "figures", "template", "claims", "write", "compile", "verify", "submit")
+            if ctx.project.evidence_check
+            else _PHASES
+        )
+        index = phases.index(phase) if phase in phases else phases.index("compile")
         labels = {
             "bundle": "collecting evidence",
             "figures": "generating figures",
             "template": "validating template",
+            "claims": "binding experimental claims",
+            "verify": "checking deterministic evidence",
             "write": "preparing sections",
             "compile": "compiling",
             "compile_fix": "repairing compilation",
             "submit": "preparing manuscript approval",
         }
-        ctx.progress(f"Paper: {labels.get(phase, phase)}", index + 1, 6, "steps")
+        ctx.progress(f"Paper: {labels.get(phase, phase)}", index + 1, len(phases), "steps")
         if phase == "bundle":
             bundle = build_bundle(ctx.root, approved=ctx.approved, aggregate_refs=selected, include_runtime=True)
             if bundle.diagnostics:
@@ -215,6 +231,18 @@ class WritingStage:
             return self._figures(ctx, s, meta, bundle, figure_keys, figure_basis)
         if phase == "template":
             return self._template(ctx, s, meta)
+        claims = None
+        if ctx.project.evidence_check:
+            figures = binding.load_figures(ctx.root, {fid: _ref(raw) for fid, raw in s["figures"].items()})
+            claim_basis = self._claim_basis(ctx, s, bundle, figures)
+            if phase != "claims" and s.get("claim_basis") != claim_basis:
+                s["phase"] = "claims"
+                return Continue("Claim evidence/planning basis changed; bind claims before manuscript work")
+            if phase == "claims":
+                return self._claims(ctx, s, bundle, figures, claim_basis)
+            claims = self._guard_claim_files(ctx)
+            if claims is None:
+                raise ValueError("true Writing requires an installed bound claim set")
         writer = Writer(
             ctx.root,
             bundle,
@@ -222,6 +250,7 @@ class WritingStage:
             skills=ctx.skills,
             figures={fid: f"figures/{fid}.pdf" for fid in s["figures"]},
             guidance=guidance,
+            claims=claims,
         )
         if phase == "write":
             return self._write(ctx, s, meta, writer)
@@ -229,9 +258,258 @@ class WritingStage:
             return self._compile(ctx, s, meta, writer)
         if phase == "compile_fix":
             return self._repair(ctx, s, meta, writer)
+        if phase == "verify":
+            return self._verify(ctx, s, meta, writer)
         if phase == "submit":
             return self._submit(ctx, s, meta, writer)
         raise ValueError(f"unknown Writing phase {phase}")
+
+    def _claim_basis(self, ctx, s, bundle, figures):
+        prompt = ctx.llm.prompts.load(binding.PROMPT_ID, ctx.project.prompt_pins.get(binding.PROMPT_ID))
+        skill = ctx.skills.load("latex-writing")
+        return _hash(
+            {
+                "bundle_ref": s["bundle_ref"],
+                "bundle_sha": sha256_bytes(bundle.to_bytes()),
+                "figures": {fid: f.model_dump(mode="json") for fid, f in figures.items()},
+                "idea": bundle.idea_ref.model_dump(),
+                "plan": bundle.plan_ref.model_dump(),
+                "prompt": [prompt.id, prompt.version, sha256_file(prompt.path)],
+                "models": [
+                    {"alias": m.alias, "entry": m.entry.model_dump(mode="json")}
+                    for m in ctx.llm.resolve("writing.claims", binding.PROMPT_ID, "strong", prompt.tier)
+                ],
+                "skill": [skill.ref, skill.instructions],
+                "binding_rules": sha256_file(binding.__file__),
+            }
+        )
+
+    def _guard_claim_files(self, ctx):
+        receipt = _receipt(ctx, "bound-claims")
+        paths = [_path(ctx, "paper/claims.jsonl"), _path(ctx, "paper/air_values.tex")]
+        if not receipt:
+            if any(p.exists() for p in paths):
+                raise ValueError("unreceipted claim/value files require explicit reconciliation")
+            return None
+        claims = [Claim.model_validate(raw) for raw in receipt["claims"]]
+        for path, expected in zip(paths, (binding.claims_bytes(claims), binding.values_tex(claims)), strict=True):
+            if path.exists() and path.read_bytes() != expected:
+                raise ValueError(f"code-owned {path.name} changed; explicit reconciliation required")
+            if not path.exists():
+                atomic_write_bytes(path, expected)
+        return claims
+
+    def _install_claims(self, ctx, basis, claims):
+        # Compare old generated files before replacing them for an authorized new basis.
+        self._guard_claim_files(ctx)
+        previous = _receipt(ctx, "bound-claims")
+        expected = {"claims.jsonl": binding.claims_bytes(claims), "air_values.tex": binding.values_tex(claims)}
+        pending = {
+            "basis": basis,
+            "claims": [c.model_dump(mode="json") for c in claims],
+            "previous": previous,
+            "installed": False,
+        }
+        _save(ctx, "pending-claims", pending)
+        self._finish_claim_install(ctx, pending, expected)
+
+    def _finish_claim_install(self, ctx, pending, expected=None):
+        claims = [Claim.model_validate(raw) for raw in pending["claims"]]
+        expected = expected or {
+            "claims.jsonl": binding.claims_bytes(claims),
+            "air_values.tex": binding.values_tex(claims),
+        }
+        old = [Claim.model_validate(raw) for raw in pending.get("previous", {}).get("claims", [])]
+        old_bytes = {"claims.jsonl": binding.claims_bytes(old), "air_values.tex": binding.values_tex(old)}
+        for name, content in expected.items():
+            path = _path(ctx, "paper/" + name)
+            allowed = [content] + ([old_bytes[name]] if pending.get("previous") else [])
+            if path.exists() and path.read_bytes() not in allowed:
+                raise ValueError(f"pending {name} conflicts with an intervening edit; explicit reconciliation required")
+            if not path.exists() or path.read_bytes() != content:
+                atomic_write_bytes(path, content)
+        _save(ctx, "bound-claims", {"basis": pending["basis"], "claims": pending["claims"]})
+        pending["installed"] = True
+        _save(ctx, "pending-claims", pending)
+
+    def _claims(self, ctx, s, bundle, figures, basis):
+        installed = _receipt(ctx, "bound-claims")
+        if installed.get("basis") == basis:
+            s.update(claim_basis=basis, phase="write")
+            return Continue("Reusing exact bound claims")
+        name = "claim-plan-" + basis
+        receipt = _receipt(ctx, name)
+        responses = receipt.setdefault("responses", [])
+        claims, errors = binding.bind_plan(ctx.root, responses[-1]["plan"], bundle, figures) if responses else ([], [])
+        if not responses or (errors and len(responses) == 1):
+            response = ctx.llm.complete(
+                role="writing.claims",
+                prompt_id=binding.PROMPT_ID,
+                tier="strong",
+                max_retries=0,
+                response_schema=binding.ClaimPlan,
+                variables={
+                    "schema": binding.ClaimPlan.model_json_schema(),
+                    "evidence": ctx.llm.wrap_untrusted(
+                        json.dumps(binding.planning_context(bundle, figures)), "claim-evidence"
+                    ),
+                    "correction": ctx.llm.wrap_untrusted(
+                        json.dumps({"previous": responses[-1]["plan"], "errors": errors}), "claim-correction"
+                    )
+                    if responses
+                    else "null",
+                },
+            )
+            plan = binding.ClaimPlan.model_validate(response.parsed).model_dump(mode="json")
+            responses.append({"plan": plan, "call_id": response.call_id, "prompt_version": response.prompt_version})
+            receipt["errors"] = errors
+            _save(ctx, name, receipt)  # durable response before any binding/file installation
+            return Continue(
+                "Claim planning response persisted" if len(responses) == 1 else "One correction response persisted"
+            )
+        if len(responses) == 2 and len(responses[0]["plan"]["claims"]) != len(responses[1]["plan"]["claims"]):
+            raise ValueError("claim correction must preserve ordered claim slots/IDs")
+        receipt["dropped"] = errors
+        _save(ctx, name, receipt)
+        if any(e.startswith(("coverage:", "binding:")) for e in errors):
+            raise ValueError("claim coverage/binding failed after bounded correction: " + "; ".join(errors))
+        self._install_claims(ctx, basis, claims)
+        s.update(claim_basis=basis, phase="write")
+        return Continue("Claims bound to exact evidence; code-generated values installed")
+
+    def _finalize_claims(self, ctx, s, writer):
+        current = self._guard_claim_files(ctx)
+        located = binding.locate_claims(ctx.root, current)
+        if located != current:
+            self._install_claims(ctx, s["claim_basis"], located)
+        writer.claims = located
+        parents = self._paper_parents(s, include_claims=False)
+        ref = ctx.archive.put(
+            "paper/claims.jsonl", "claims", _path(ctx, "paper/claims.jsonl"), parents=parents, producer="agent:writing"
+        )
+        if ctx.archive.version_info(ref).parents != parents:
+            raise ValueError("identical claims retain stale evidence parents; explicit reconciliation required")
+        s["claims_ref"] = ref.model_dump()
+
+    def _paper_parents(self, s, *, include_claims=True):
+        return _refs(
+            [
+                _ref(s["bundle_ref"]),
+                *[_ref(r) for r in s["aggregates"]],
+                *[_ref(r) for r in s["figures"].values()],
+                *([_ref(s["claims_ref"])] if include_claims and s.get("claims_ref") else []),
+            ]
+        )
+
+    def _register_paper(self, ctx, s):
+        self._validate_provisioned_figures(ctx, s, complete=True)
+        if ctx.project.evidence_check:
+            self._guard_claim_files(ctx)
+            if not s.get("claims_ref"):
+                raise ValueError("bound claims must be registered before manuscript")
+        parents = self._paper_parents(s)
+        ref = ctx.archive.put(
+            "paper", "paper", _path(ctx, "paper"), parents=parents, producer="agent:writing", exclude=PAPER_EXCLUDE
+        )
+        if ctx.archive.version_info(ref).parents != parents:
+            raise ValueError("archived manuscript parents differ from validated provenance; reconcile explicitly")
+        return ref
+
+    def _register_build(self, ctx, paper):
+        report_path = _path(ctx, "paper/build/compile_report.json")
+        report = CompileReport.model_validate_json(report_path.read_bytes())
+        if not report.ok and not (not ctx.project.dev.compile and report.engine == "disabled"):
+            raise ValueError("unsuccessful compilation cannot be submitted")
+        paths = [("paper/build/compile_report.json", "other")]
+        if report.ok:
+            paths.append(("paper/build/main.pdf", "paper"))
+        refs = []
+        for path, kind in paths:
+            ref = ctx.archive.put(path, kind, _path(ctx, path), parents=[paper], producer="agent:writing")
+            if ctx.archive.version_info(ref).parents != [paper]:
+                raise ValueError("build artifact retains stale manuscript parent")
+            refs.append(ref)
+        return refs
+
+    def _verification_basis(self, ctx, s, paper):
+        bundle = EvidenceBundle.model_validate_json(ctx.archive.get(_ref(s["bundle_ref"])))
+        ids = sorted({rid for a in bundle.aggregates for row in a.data.rows for rid in row.run_ids})
+        views = []
+        for rid in ids:
+            try:
+                view = runs.load_run(ctx.root, rid)
+                views.append(
+                    {
+                        "id": rid,
+                        "metrics": [m.model_dump(mode="json") for m in view.metrics],
+                        "status": view.status.state.value,
+                        "kind": view.record.kind,
+                        "condition": view.record.eval_condition,
+                        "plan": view.record.plan_ref.model_dump(),
+                        "label": view.label.model_dump(mode="json") if view.label else None,
+                    }
+                )
+            except (AirError, ValueError, OSError):
+                views.append({"id": rid, "missing": True})
+        return _hash([paper.model_dump(), views, sha256_file(evidence.__file__), sha256_file(runs.__file__)])
+
+    def _verify(self, ctx, s, meta, writer):
+        self._validate_provisioned_figures(ctx, s, complete=True)
+        self._guard_claim_files(ctx)
+        if meta.get("compiled", {}).get("source_sha256") != self._source_sha(ctx):
+            s["phase"] = "write"
+            return Continue("Source changed before deterministic verification; refresh locations and compile")
+        paper = self._register_paper(ctx, s)
+        self._register_build(ctx, paper)
+        basis = self._verification_basis(ctx, s, paper)
+        name = "check-" + basis
+        receipt = _receipt(ctx, name)
+        if not receipt:
+            report = evidence.check(ctx.root, paper_ref=paper, mode="full")
+            numbers = [int(p.stem.removeprefix("review_v")) for p in _path(ctx, "paper/review").glob("review_v*.json")]
+            receipt = {"number": max(numbers, default=0) + 1, "report": report.model_dump(mode="json")}
+            _save(ctx, name, receipt)
+        report = CheckReport.model_validate(receipt["report"])
+        if report.paper_ref != paper:
+            raise ValueError("persisted check report has the wrong manuscript basis")
+        number = receipt["number"]
+        lines = [
+            f"# Deterministic evidence check v{number}",
+            "",
+            f"Paper: v{paper.version} ({paper.sha256})",
+            "",
+            "Deterministic checks only. Semantic LLM claim review was not run.",
+            f"Compile success: {report.compile_ok}",
+            f"Counts: {report.counts}",
+            "",
+        ]
+        for c in report.claims:
+            lines.append(f"- {c.claim_id}: {c.support}")
+            lines.extend(f"  - {i.severity} {i.code}: {i.detail}" for i in c.issues)
+        lines.extend(f"- {i.severity} {i.code} {i.location}: {i.detail}" for i in report.unbound_issues)
+        content = {
+            "json": binding.encoded(report.model_dump(mode="json")) + b"\n",
+            "md": ("\n".join(lines) + "\n").encode("utf-8"),
+        }
+        refs = {}
+        for suffix, data in content.items():
+            path = f"paper/review/review_v{number}.{suffix}"
+            target = _path(ctx, path)
+            if target.exists() and target.read_bytes() != data:
+                raise ValueError("historical review report changed; explicit reconciliation required")
+            atomic_write_bytes(target, data)
+            ref = ctx.archive.put(
+                path,
+                "review_report" if suffix == "json" else "other",
+                target,
+                parents=[paper, _ref(s["claims_ref"])],
+                producer="agent:writing/check",
+            )
+            if ctx.archive.version_info(ref).parents != [paper, _ref(s["claims_ref"])]:
+                raise ValueError("review report retains stale manuscript parents")
+            refs[suffix] = ref
+        s.update(review_ref=refs["json"].model_dump(), review_basis=basis, phase="submit")
+        return Continue("Deterministic check persisted; semantic review deferred")
 
     def _inputs(self, ctx):
         for kind, aid in (("idea", "idea/selected.md"), ("plan", "plan/experiment_plan.md")):
@@ -487,7 +765,7 @@ class WritingStage:
                     write_check(source, check)
                     ctx.log("Template structural inspection only; dev.compile=false skips minimal compilation")
                 meta["template_checked"] = cache
-            s.update(entry=check.entry, phase="write")
+            s.update(entry=check.entry, phase="claims" if ctx.project.evidence_check else "write")
             _save(ctx, "runtime", meta)
             return Continue("Template inspected; explicit selection retained")
         except (TemplateError, OSError) as exc:
@@ -505,7 +783,13 @@ class WritingStage:
 
     def _write(self, ctx, s, meta, writer):
         for section in GENERATION_ORDER:
-            fingerprint = _hash([writer.section_fingerprint(section), s["writing_config"], s["figures"]])
+            fingerprint = _hash(
+                [
+                    writer.section_fingerprint(section),
+                    s["writing_config"],
+                    s["figures"] if writer.claims is None else None,
+                ]
+            )
             receipt = _receipt(ctx, f"section-{section}")
             path = _path(ctx, f"paper/sections/{section}.tex")
             if not receipt and path.exists():
@@ -543,7 +827,12 @@ class WritingStage:
                 raise ValueError(
                     f"human-edited {section} has stale factual/writing inputs; reconcile the edit explicitly"
                 )
-            ctx.progress(f"Paper: writing {section.replace('_', ' ')}", 4, 6, "steps")
+            ctx.progress(
+                f"Paper: writing {section.replace('_', ' ')}",
+                5 if ctx.project.evidence_check else 4,
+                8 if ctx.project.evidence_check else 6,
+                "steps",
+            )
             generated = writer.generate_section(section)
             # Persist validated output before installing the file: a crash can replay this write for free.
             receipt = {
@@ -570,6 +859,8 @@ class WritingStage:
 
     def _assemble(self, ctx, s, meta, writer):
         self._validate_provisioned_figures(ctx, s, complete=True)
+        if writer.claims is not None:
+            self._finalize_claims(ctx, s, writer)
         receipts = [_receipt(ctx, f"section-{name}") for name in SECTIONS]
         calls = sorted({f"{r['prompt_id']} v{r['prompt_version']}" for r in receipts if r.get("call_id")})
         repairs = meta.get("repairs", [])
@@ -581,8 +872,14 @@ class WritingStage:
             "Runtime model backend: " + _tex(type(ctx.llm.backend).__name__) + ".",
             f"Writing roles: writing.writer. Recorded automatic compile-repair attempts: {len(repairs)}; "
             f"accepted: {accepted}.",
-            "Evidence checking is disabled (control arm, evidence\\_check=false). "
-            "Compilation and local offline citation checks do not establish scientific correctness.",
+            (
+                "Evidence checking is enabled (evidence\\_check=true). Claim planning used writing.claims; "
+                "experimental values were resolved by code. Deterministic evidence verification precedes submission. "
+                "Semantic LLM claim review was not run in Phase 2B-1."
+                if ctx.project.evidence_check
+                else "Evidence checking is disabled (control arm, evidence\\_check=false). "
+                "Compilation and local offline citation checks do not establish scientific correctness."
+            ),
             "Approved idea and plan versions were supplied. "
             f"Manuscript feedback items processed: {len(meta.get('guidance', []))}. "
             "This draft awaits manuscript approval; no publication authorization is implied.",
@@ -620,6 +917,8 @@ class WritingStage:
         main = _path(ctx, "paper/main.tex")
         manual_main = main.exists() and meta.get("main_sha256") and sha256_file(main) != meta["main_sha256"]
         if manual_main:
+            if writer.claims is not None:
+                binding.validate_preamble(main.read_text(encoding="utf-8"))
             writer.generate_references()
             ctx.log("Preserving human-edited main.tex; recompiling current source")
         else:
@@ -638,7 +937,12 @@ class WritingStage:
         # Identical rendered PDFs can have new Figure refs after a renderer change.
         # Include those refs so byte-deduplication cannot retain old paper parents.
         source_identity = _hash(
-            [dir_manifest(_path(ctx, "paper"), [*PAPER_EXCLUDE, "ai_use.tex"]), lines, s["figures"]]
+            [
+                dir_manifest(_path(ctx, "paper"), [*PAPER_EXCLUDE, "ai_use.tex"]),
+                lines,
+                s["figures"],
+                s.get("claims_ref"),
+            ]
         )
         atomic_write_text(
             _path(ctx, "paper/ai_use.tex"),
@@ -694,7 +998,7 @@ class WritingStage:
             if report.errors or report.undefined_citations or report.undefined_refs or report.overfull_boxes:
                 ctx.log("Paper compilation diagnostics: " + report.model_dump_json())
         if report.ok or (not ctx.project.dev.compile and report.engine == "disabled"):
-            s["phase"] = "submit"
+            s["phase"] = "verify" if ctx.project.evidence_check else "submit"
             meta.pop("manual_retry", None)
         elif meta.pop("manual_retry", False):
             _save(ctx, "runtime", meta)
@@ -828,23 +1132,30 @@ class WritingStage:
             _save(ctx, "runtime", meta)
             s["phase"] = "compile"
             return Continue("Build artifacts changed; recompile before registration")
-        parents = [
-            _ref(s["bundle_ref"]),
-            *[_ref(r) for r in s["aggregates"]],
-            *[_ref(r) for r in s["figures"].values()],
-        ]
-        paper = ctx.archive.put(
-            "paper",
-            "paper",
-            _path(ctx, "paper"),
-            parents=_refs(parents),
-            producer="agent:writing",
-            exclude=PAPER_EXCLUDE,
-        )
-        registered_parents = ctx.archive.version_info(paper).parents
-        if any(_ref(raw) not in registered_parents for raw in s["figures"].values()):
-            raise ValueError(
-                "archived manuscript Figure parents differ from validated provenance; reconcile explicitly"
+        paper = self._register_paper(ctx, s)
+        if ctx.project.evidence_check:
+            if s.get("review_basis") != self._verification_basis(ctx, s, paper):
+                s["phase"] = "verify"
+                return Continue("Exact manuscript/check basis changed; deterministic verification required")
+            ref = _ref(s["review_ref"])
+            report = CheckReport.model_validate_json(ctx.archive.get(ref))
+            if report.paper_ref != paper or paper not in ctx.archive.version_info(ref).parents:
+                raise ValueError("review report does not correspond to the exact manuscript")
+            extra = [ref, _ref(s["claims_ref"]), *self._register_build(ctx, paper)]
+            s["paper_ref"] = paper.model_dump()
+            s["extra_refs"] = [r.model_dump() for r in extra]
+            counts = report.counts
+            return NeedsApproval(
+                target=paper,
+                kind="manuscript",
+                extra_refs=extra,
+                summary=f"Manuscript v{paper.version}: {len(report.claims)} claims; deterministic check: "
+                f"{counts.get('supported', 0)} supported, {counts.get('partially_supported', 0)} partially supported, "
+                f"{counts.get('blocker', 0)} blockers, {counts.get('major', 0)} major issues; "
+                f"{'compiled' if report.compile_ok else 'compilation disabled'}. Semantic review not run.",
+                impact=(
+                    "Human approval required; inspect deterministic issues. Approval is not publication authorization."
+                ),
             )
         report = CompileReport.model_validate_json(_path(ctx, "paper/build/compile_report.json").read_bytes())
         if not report.ok and not (not ctx.project.dev.compile and report.engine == "disabled"):
