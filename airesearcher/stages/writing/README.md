@@ -357,6 +357,18 @@ comparisons take precedence. `runs.recompute_aggregate(..., version=N)` preserve
 exact supporting run set; omitting version retains its existing behavior. The shared
 private TeX lexer is now in `services/_tex.py`, re-exported from Writing `_latex.py`.
 
+Check and trace share one private Claim-level experimental evidence closure. It unions
+ValueRef rows, Aggregate EvidenceLink selectors (group/metric/condition; absent selector
+means the whole Aggregate), and archived Figure → exact Aggregate rows for the Figure
+metric. FigureSpec has no group filter. Exact Aggregate refs must belong to the frozen
+bundle; Figure directory bytes are checked against their archive manifest. Run identities,
+status/kind/labels, approved-plan reuse, conditions and required metrics are checked per
+Claim even when `values=[]`. Nodes, rows, run IDs and identical diagnostics are deduplicated.
+Literature/plan/log-only Claims acquire no experimental run requirement. Trace preserves
+per-ValueRef numeric briefs and adds exact ref/row provenance; a ValueRef-less Aggregate
+adds one provenance-only brief. Missing runs remain visible as unavailable briefs plus
+the deterministic ClaimCheck.
+
 Trace uses exact archived claim/Aggregate/Figure versions and selected supporting runs;
 modern bundles provide frozen safe runtime/Literature snapshots. Legacy fake bundles
 lack full Literature records and Figure versions, so their restricted local-ID/BibTeX
@@ -375,7 +387,11 @@ then `revise → assemble → compile → verify → review` when safe major iss
 and another review round is available, otherwise `submit`. False flow is unchanged.
 One round is an exact compiled manuscript, deterministic check, semantic review and
 one combined `review_vN`. `paper.max_review_rounds` defaults to 2, accepts integers
-1–20 (not booleans). Minor-only findings never trigger revision. Residual major or
+1–20 (not booleans). Current configuration is authoritative before each new reviser
+call, including after restart in `revise`; lowering the cap preserves the combined
+report and submits residual issues without spending another call. Already accepted
+transactions finish; persisted responses do not require another call. Increasing the
+cap preserves the existing counters. Minor-only findings never trigger revision. Residual major or
 blocker issues are prominent in the human approval summary, with no publication grant.
 
 `review.py` constructs exact units from archived section bytes. Every bound Claim is
@@ -396,8 +412,15 @@ model-free, and `audit()` remains NotImplemented.
 `writing/revise v1` / `writing.reviser` / strong receives one exact target, issues,
 bounded scope and VALUE/CITATION placeholders. Code checks placeholder multiplicities and
 restores the same macros, IDs, ValueRefs, Comparison and EvidenceLinks. Only wording,
-a more cautious hedge and code-computed locations change. A conservative lexical
-guard preserves explicit direction/negation; complete Writer validation follows.
+a more cautious hedge and code-computed locations change. For comparative Claims
+(Comparison present or type comparative), all factual prose remains byte-for-byte fixed.
+Only a terminal standalone shell from the finite `COMPARISON_SHELLS` vocabulary may
+change to one of `COMPARISON_QUALIFIERS`; the context supplies the immutable prefix,
+editable suffix and allowed suffixes. This permits scope/causality qualification without
+letting the model reorder entities, values or negative/non-significant facts, or append
+new factual assertions. Unrecognized or inseparable wording is left for human review
+without a reviser call. No general semantic-equivalence claim is made. The earlier
+lexical guard still applies to non-comparative Claims; complete Writer validation follows.
 Literal prose revisions cannot introduce TeX commands, citations, figures or numeric
 literals. Code preserves existing citation/reference commands via placeholders; other complex
 macro wording may require human editing.
@@ -412,8 +435,11 @@ Reviser receipts additionally bind exact targets/Claim representations and revis
 Reviewer-only changes rerun review without redoing figures, claims or sections. Responses
 are durable before normalization/artifact writes. Accepted revisions persist old/new
 section+claims bytes and all source hashes before installation. Startup recovers this
-transaction before normal Claim ownership checks. Only exact old/new target states are
-accepted; intervening human edits stop recovery. Completed responses are reused without
+transaction through assembly on its recorded basis before normal dependency invalidation.
+The receipt is marked assembled before the next tick revalidates/regenerates Figures
+and invalidates downstream claims/writing/review as needed; neither path can repeatedly
+reset the other's phase. Only exact old/new target states are accepted before installation;
+installed targets must still equal the accepted new bytes. Intervening human edits stop recovery. Completed responses are reused without
 new calls. A process loss before a returned response reaches its receipt still cannot
 guarantee exactly-once remote execution; no new external transaction system is added.
 

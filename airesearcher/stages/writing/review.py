@@ -279,6 +279,41 @@ def revision_targets(report, review_units):
     ]
 
 
+# A deliberately finite wording surface, not relation extraction. Unrecognized
+# prose stays entirely immutable: no heuristic can prove it is only qualification.
+COMPARISON_QUALIFIERS = (
+    "This observation is limited to the evaluated scope.",
+    "This observation is limited to the evaluated setting.",
+    "Further evaluation is needed to assess generalization.",
+    "These observations do not establish causality.",
+)
+COMPARISON_SHELLS = (
+    "This establishes universal superiority.",
+    "These results generalize to all settings.",
+    "This establishes a causal mechanism.",
+    *COMPARISON_QUALIFIERS,
+)
+
+
+def _comparison_surface(sentence):
+    for suffix in COMPARISON_SHELLS:
+        if sentence.endswith(suffix):
+            core = sentence[: -len(suffix)]
+            # Only a standalone terminal shell after complete prose; preserve all
+            # preceding bytes, including every factual sentence and its whitespace.
+            if re.search(r"[.!?]\s+$", core):
+                return core, suffix
+    return sentence, ""
+
+
+def comparison_revisable(unit, claim):
+    return (
+        not claim
+        or not (claim.comparison or claim.type == "comparative")
+        or bool(_comparison_surface(unit["sentence"])[1])
+    )
+
+
 def revision_context(unit, issues, claim):
     context = model_context(unit)
     sentence = unit["sentence"]
@@ -298,6 +333,9 @@ def revision_context(unit, issues, claim):
             sentence = sentence[: command.start] + placeholder + sentence[command.end :]
     # The reviser receives placeholders, never trusted macro identifiers.
     context["sentence"] = sentence
+    if claim and (claim.comparison or claim.type == "comparative"):
+        core, shell = _comparison_surface(sentence)
+        context.update(immutable_core=core, editable_suffix=shell, allowed_suffixes=list(COMPARISON_QUALIFIERS))
     context["scope"] = {k: v for k, v in context["scope"].items() if k not in {"values", "recomputed"}}
     context["allowed_placeholders"] = list(placeholders)
     context["issues"] = [{"code": i.code, "detail": i.detail, "suggestion": i.suggestion} for i in issues]
@@ -324,13 +362,22 @@ def validate_revision(context, placeholders, raw, claim):
     if claim:
         if not text.strip():
             raise ValueError("bound Claim cannot be removed")
-        # Conservative lexical guard supplements frozen Comparison identity: neither
-        # reverse a stated direction nor remove a negative/non-significant observation.
+        if claim.comparison or claim.type == "comparative":
+            # Recompute the boundary from the exact original, never from model fields.
+            core, shell = _comparison_surface(context["sentence"])
+            if text != context["sentence"] and (
+                not shell or not text.startswith(core) or text[len(core) :] not in COMPARISON_QUALIFIERS
+            ):
+                raise ValueError("revision changed immutable comparison facts or unsupported semantic shell")
+        # Retain the existing lexical defense for non-comparative Claims. Comparative
+        # facts are protected by exact bytes above, not by counts of direction words.
         direction = (
             r"\b(?:higher|lower|greater|less|larger|smaller|positive|negative|"
             r"increased?|decreased?|not|non-significant)\b"
         )
-        if Counter(re.findall(direction, context["sentence"].lower())) != Counter(re.findall(direction, text.lower())):
+        if not (claim.comparison or claim.type == "comparative") and Counter(
+            re.findall(direction, context["sentence"].lower())
+        ) != Counter(re.findall(direction, text.lower())):
             raise ValueError("revision changed comparison direction or negative-result wording")
         if {"none": 0, "likely": 1, "possible": 2}[response.hedge] < {"none": 0, "likely": 1, "possible": 2}[
             claim.hedge

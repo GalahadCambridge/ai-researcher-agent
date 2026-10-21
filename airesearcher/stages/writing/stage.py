@@ -115,7 +115,20 @@ class WritingStage:
             revision = _receipt(ctx, "pending-revision")
             if revision and not revision.get("assembled"):
                 self._finish_revision(ctx, revision)
-                s["phase"] = "revision_assemble"
+                # Complete the accepted transaction on its recorded basis before
+                # examining new dependencies. The next tick performs normal invalidation.
+                claims = self._guard_claim_files(ctx)
+                bundle = EvidenceBundle.model_validate_json(ctx.archive.get(_ref(s["bundle_ref"])))
+                writer = Writer(
+                    ctx.root,
+                    bundle,
+                    llm=ctx.llm,
+                    skills=ctx.skills,
+                    figures={fid: f"figures/{fid}.pdf" for fid in s["figures"]},
+                    guidance=meta.get("guidance", []),
+                    claims=claims,
+                )
+                return self._revision_assemble(ctx, s, meta, writer)
             pending = _receipt(ctx, "pending-claims")
             if pending and not pending.get("installed"):
                 self._finish_claim_install(ctx, pending)
@@ -641,6 +654,11 @@ class WritingStage:
         review = _receipt(ctx, "semantic-" + s["semantic_basis"])
         report = CheckReport.model_validate(review["report"])
         targets = semantic.revision_targets(report, review["units"])
+        targets = [
+            (u, issues)
+            for u, issues in targets
+            if semantic.comparison_revisable(u, next((c for c in writer.claims if c.claim_id == u["claim_id"]), None))
+        ]
         route = self._semantic_route(ctx, semantic.REVISE_PROMPT, "writing.reviser")
         basis = _hash(
             [
@@ -669,6 +687,10 @@ class WritingStage:
             claim = next((c for c in claims if c.claim_id == unit["claim_id"]), None)
             context, placeholders = semantic.revision_context(unit, issues, claim)
             if index == len(receipt["responses"]):
+                history = meta.get("semantic_rounds", {}).get(self._cycle(s), [])
+                if len(history) >= semantic.round_limit(ctx.project.paper.get("max_review_rounds", 2)):
+                    s["phase"] = "submit"
+                    return Continue("Current review-round budget exhausted; retain residual issues for human review")
                 try:
                     response = self._semantic_call(
                         ctx, semantic.REVISE_PROMPT, "writing.reviser", semantic.RevisionResponse, context
@@ -734,6 +756,10 @@ class WritingStage:
 
     def _finish_revision(self, ctx, pending):
         if pending.get("installed"):
+            for relative, new in pending["new"].items():
+                path = _path(ctx, relative)
+                if not path.exists() or path.read_bytes() != new.encode():
+                    raise ValueError("pending semantic revision conflicts with an intervening human edit: " + relative)
             return
         # Validate ALL targets before writing ANY: half-installed states allow only exact old/new bytes.
         for relative, new in pending["new"].items():

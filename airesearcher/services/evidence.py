@@ -118,6 +118,166 @@ def _rows(aggregate, value):
     return rows
 
 
+def _claim_evidence_closure(root, archive, bundle, claim, paper_ref):
+    """Exact experimental graph shared by check and trace, independent of numeric slots.
+
+    FigureSpec has no group filter: its metric spans all groups in the frozen
+    Aggregate. Aggregate selectors intersect group/metric; an absent selector
+    denotes the whole Aggregate. Nodes/rows and run diagnostics are deduplicated.
+    """
+    frozen = {a["aggregate_id"]: VersionRef.model_validate(a["ref"]) for a in bundle.get("aggregates", [])}
+    nodes, figures, diagnostics = {}, {}, []
+    unavailable = False
+
+    def issue(code, severity, detail):
+        item = (code, severity, detail)
+        if item not in diagnostics:
+            diagnostics.append(item)
+
+    def linked(aid, version):
+        infos = archive.versions(aid)
+        info = next((i for i in infos if i.ref.version == version), None)
+        if version is None and "schema_version" not in bundle:
+            parents = archive.version_info(paper_ref).parents if paper_ref.version else []
+            refs = [r for r in parents if r.artifact_id == aid]
+            info = archive.version_info(refs[0]) if len(refs) == 1 else (infos[-1] if infos else None)
+        if info is None:
+            raise ValueError("missing exact linked version")
+        content = archive.get(info.ref)
+        path = archive.stored_path(info.ref)
+        if info.is_dir and (path is None or manifest_bytes(dir_manifest(path, info.exclude)) != content):
+            raise ValueError("linked archive bytes differ")
+        return info, content, path
+
+    def aggregate(aid, version, selector=None, value=None, exact=None):
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", aid):
+            raise ValueError("unsafe Aggregate identity")
+        info, content, _ = linked(f"artifacts/aggregates/{aid}.json", version)
+        if exact is not None and exact != info.ref:
+            raise ValueError("Figure Aggregate ref differs from archive")
+        expected = frozen.get(aid)
+        if expected != info.ref:
+            raise ValueError("Aggregate is outside exact frozen bundle")
+        stored = Aggregate.model_validate_json(content)
+        if stored.aggregate_id != aid:
+            raise ValueError("Aggregate identity differs from link")
+        selector = selector or {}
+        if set(selector) - {"group", "metric", "eval_condition"}:
+            raise ValueError("unsupported experimental evidence selector")
+        if "eval_condition" in selector and selector["eval_condition"] != stored.eval_condition:
+            issue("CONDITION_MISMATCH", "major", "Evidence condition differs from exact Aggregate")
+        rows = (
+            _rows(stored, value)
+            if value
+            else [
+                row
+                for row in stored.rows
+                if ("group" not in selector or row.group == selector["group"])
+                and ("metric" not in selector or row.metric == selector["metric"])
+            ]
+        )
+        if not rows:
+            raise ValueError("exact supporting Aggregate rows are unavailable")
+        key = (info.ref.artifact_id, info.ref.version)
+        node = nodes.setdefault(key, {"ref": info.ref, "data": stored, "rows": []})
+        for row in rows:
+            if row not in node["rows"]:
+                node["rows"].append(row)
+        if (
+            stored.eval_condition == "explore"
+            and claim.importance == "major"
+            and not re.search(r"explor\w*|探索", active_text(claim.text), re.I)
+        ):
+            issue("CONDITION_MISMATCH", "major", "Major exploratory claim lacks explicit exploratory wording")
+        return rows
+
+    for value in claim.values:
+        try:
+            aggregate(value.aggregate_id, value.aggregate_version, value=value)
+        except (AirError, ValueError, OSError, TypeError, KeyError):
+            unavailable = True
+            issue(
+                "STALE_EVIDENCE",
+                "major",
+                f"Required exact Aggregate unavailable: {value.aggregate_id} v{value.aggregate_version}",
+            )
+    for link in claim.evidence:
+        if link.type not in {"aggregate", "figure"}:
+            continue
+        try:
+            if link.type == "aggregate":
+                aggregate(link.ref, link.version, link.selector)
+            else:
+                if not re.fullmatch(r"[A-Za-z0-9_-]+", link.ref) or link.selector:
+                    raise ValueError("unsafe Figure identity or unsupported selector")
+                info, _, path = linked(f"artifacts/figures/{link.ref}", link.version)
+                if not info.is_dir or path is None:
+                    raise ValueError("Figure must be an archived directory")
+                fig = Figure.model_validate(read_json(path / "figure.json"))
+                if (
+                    fig.fig_id != link.ref
+                    or fig.aggregate_ref.artifact_id != f"artifacts/aggregates/{fig.spec.aggregate_id}.json"
+                ):
+                    raise ValueError("Figure identity/aggregate mismatch")
+                figures[(info.ref.artifact_id, info.ref.version)] = {
+                    **fig.model_dump(mode="json"),
+                    "ref": info.ref.model_dump(),
+                }
+                aggregate(
+                    fig.spec.aggregate_id,
+                    fig.aggregate_ref.version,
+                    {"metric": fig.spec.metric},
+                    exact=fig.aggregate_ref,
+                )
+        except (AirError, ValueError, OSError, TypeError, KeyError):
+            unavailable = True
+            issue(
+                "STALE_EVIDENCE",
+                "major",
+                f"Required linked evidence unavailable: {link.type} {link.ref} v{link.version}",
+            )
+
+    for node in nodes.values():
+        stored, rows = node["data"], node["rows"]
+        try:
+            plan = parse_plan_md(archive.read_text(stored.plan_ref))
+        except (AirError, ValueError, OSError):
+            unavailable = True
+            issue("STALE_EVIDENCE", "major", "Supporting Aggregate plan unavailable: " + stored.aggregate_id)
+            plan = None
+        requirements = {}
+        for row in rows:
+            for rid in row.run_ids:
+                requirements.setdefault(rid, set()).add(row.metric)
+        for rid, metrics in sorted(requirements.items()):
+            try:
+                if not re.fullmatch(r"[A-Za-z0-9_-]+", rid):
+                    raise ValueError("unsafe run identity")
+                view = runs.load_run(root, rid)
+                missing = any(
+                    not (values := [m.value for m in view.metrics if m.name == metric]) or not math.isfinite(values[-1])
+                    for metric in metrics
+                )
+                wrong_plan = view.record.plan_ref.sha256 != stored.plan_ref.sha256 and (
+                    plan is None or rid not in plan.reuse_runs
+                )
+                unavailable = unavailable or missing
+                if (
+                    view.status.state.value != "succeeded"
+                    or view.record.kind in {"trial", "smoke"}
+                    or (view.label and view.label.label == "invalid")
+                    or wrong_plan
+                    or missing
+                ):
+                    issue("INVALID_RUN", "blocker", f"Invalid supporting run: {rid}")
+                if view.record.eval_condition != stored.eval_condition:
+                    issue("CONDITION_MISMATCH", "major", f"Run/Aggregate condition mismatch: {rid}")
+            except (AirError, ValueError, OSError):
+                unavailable = True
+                issue("INVALID_RUN", "blocker", f"Missing/unreadable supporting run: {rid}")
+    return list(nodes.values()), list(figures.values()), diagnostics, unavailable
+
+
 def _numeric_surface(text):
     clean = list(active_text(text))
     for command in commands(text):
@@ -209,6 +369,10 @@ def check(root: Path, paper_ref: VersionRef | None = None, mode: str = "full") -
             if item not in issues:
                 issues.append(item)
 
+        closure, _, diagnostics, unavailable = _claim_evidence_closure(root, archive, bundle, claim, paper_ref)
+        selected_rows = [row for node in closure for row in node["rows"]]
+        for code, severity, detail in diagnostics:
+            issue(code, severity, detail)
         for value in claim.values:
             if not macro_shape_ok or macros.get(value.key) != [value.rendered]:
                 issue("NUM_MISMATCH", "blocker", f"Missing, duplicate or altered air_values macro: {value.key}")
@@ -223,33 +387,6 @@ def check(root: Path, paper_ref: VersionRef | None = None, mode: str = "full") -
                 stored, recalculated = aggregate(value.aggregate_id, value.aggregate_version)
                 if expected and expected.version == value.aggregate_version:
                     archive.get(expected)
-                plan = parse_plan_md(archive.read_text(stored.plan_ref))
-                rows = _rows(stored, value)
-                selected_rows.extend(rows)
-                for rid in sorted({rid for row in rows for rid in row.run_ids}):
-                    try:
-                        if not re.fullmatch(r"[A-Za-z0-9_-]+", rid):
-                            raise ValueError("unsafe run identity")
-                        view = runs.load_run(root, rid)
-                        metrics = [m.value for m in view.metrics if m.name == value.metric]
-                        wrong_plan = (
-                            view.record.plan_ref.sha256 != stored.plan_ref.sha256 and rid not in plan.reuse_runs
-                        )
-                        missing_metric = not metrics or not math.isfinite(metrics[-1])
-                        unavailable = unavailable or missing_metric
-                        if (
-                            view.status.state.value != "succeeded"
-                            or view.record.kind in {"trial", "smoke"}
-                            or (view.label and view.label.label == "invalid")
-                            or wrong_plan
-                            or missing_metric
-                        ):
-                            issue("INVALID_RUN", "blocker", f"Invalid supporting run: {rid}")
-                        if view.record.eval_condition != stored.eval_condition:
-                            issue("CONDITION_MISMATCH", "major", f"Run/Aggregate condition mismatch: {rid}")
-                    except (AirError, ValueError, OSError):
-                        unavailable = True
-                        issue("INVALID_RUN", "blocker", f"Missing/unreadable supporting run: {rid}")
                 number = runs.resolve_value(
                     root,
                     value.aggregate_id,
@@ -340,14 +477,8 @@ def check(root: Path, paper_ref: VersionRef | None = None, mode: str = "full") -
                 except (AirError, ValueError, OSError):
                     unavailable = True
                     issue("INVALID_RUN", "blocker", f"Missing linked run: {link.ref}")
-            elif link.type in {"aggregate", "figure", "plan", "log"}:
-                aid = (
-                    f"artifacts/aggregates/{link.ref}.json"
-                    if link.type == "aggregate"
-                    else f"artifacts/figures/{link.ref}"
-                    if link.type == "figure"
-                    else link.ref
-                )
+            elif link.type in {"plan", "log"}:
+                aid = link.ref
                 try:
                     infos = archive.versions(aid)
                     info = next((i for i in infos if i.ref.version == link.version), None)
@@ -360,20 +491,6 @@ def check(root: Path, paper_ref: VersionRef | None = None, mode: str = "full") -
                         path = archive.stored_path(info.ref)
                         if path is None or manifest_bytes(dir_manifest(path, info.exclude)) != content:
                             raise ValueError("linked archive bytes differ")
-                    if link.type == "aggregate":
-                        expected = frozen.get(link.ref)
-                        if expected and expected != info.ref:
-                            issue("STALE_EVIDENCE", "major", "Aggregate link differs from frozen bundle")
-                        stored = Aggregate.model_validate_json(content)
-                        condition = (link.selector or {}).get("eval_condition")
-                        if condition and condition != stored.eval_condition:
-                            issue("CONDITION_MISMATCH", "major", "Evidence condition differs from exact Aggregate")
-                        if (
-                            stored.eval_condition == "explore"
-                            and claim.importance == "major"
-                            and not re.search(r"explor\w*|探索", active_text(claim.text), re.I)
-                        ):
-                            issue("CONDITION_MISMATCH", "major", "Major exploratory claim lacks exploratory wording")
                 except (AirError, ValueError, OSError, TypeError):
                     unavailable = True
                     issue("STALE_EVIDENCE", "major", f"Required linked evidence unavailable: {aid}")
@@ -469,35 +586,41 @@ def trace(root: Path, claim_id: str) -> EvidenceTrace:
     claim = claims[claim_id]
     bundle = _bundle(source)
     frozen_runtime = {r["run_id"]: r for r in (bundle.get("runtime") or {}).get("runs", [])}
-    aggregates, ids, figures = [], set(), []
-    for value in claim.values:
-        stored = runs.load_aggregate(root, value.aggregate_id, version=value.aggregate_version)
-        rec = runs.recompute_aggregate(root, value.aggregate_id, version=value.aggregate_version)
-        number = runs.resolve_value(
-            root, value.aggregate_id, value.group, value.metric, value.stat, value.contrast, aggregate=rec
-        )
-        aggregates.append(
-            {**value.model_dump(), "version": value.aggregate_version, "recomputed": render_value(number, value.fmt)}
-        )
-        ids.update(rid for row in _rows(stored, value) for rid in row.run_ids)
+    closure, figures, _, _ = _claim_evidence_closure(root, archive, bundle, claim, paper_ref)
+    aggregates, ids = [], set()
+    for node in closure:
+        ref, stored = node["ref"], node["data"]
+        values = []
+        for value in claim.values:
+            if (value.aggregate_id, value.aggregate_version) != (stored.aggregate_id, ref.version):
+                continue
+            rendered = None
+            try:
+                rec = runs.recompute_aggregate(root, value.aggregate_id, version=value.aggregate_version)
+                number = runs.resolve_value(
+                    root, value.aggregate_id, value.group, value.metric, value.stat, value.contrast, aggregate=rec
+                )
+                rendered = render_value(number, value.fmt)
+            except (AirError, ValueError, OSError, KeyError):
+                pass  # The ClaimCheck carries the unavailable/invalid evidence diagnosis.
+            values.append({**value.model_dump(), "recomputed": rendered})
+        # Preserve the public per-ValueRef brief shape. An experimental link without
+        # numeric slots adds one provenance-only brief; repeated paths add none.
+        for value in values or [{}]:
+            brief = {
+                **value,
+                "aggregate_id": stored.aggregate_id,
+                "version": ref.version,
+                "ref": ref.model_dump(),
+                "rows": [r.model_dump() for r in node["rows"]],
+            }
+            if brief not in aggregates:
+                aggregates.append(brief)
+        ids.update(rid for row in node["rows"] for rid in row.run_ids)
     papers = _papers(root, source, bundle)
     cited = []
     for link in claim.evidence:
-        if link.type == "figure":
-            aid = f"artifacts/figures/{link.ref}"
-            info = next((v for v in archive.versions(aid) if v.ref.version == link.version), None)
-            if info is None and link.version is None:  # legacy fake claims did not bind a version
-                paper_info = archive.version_info(paper_ref) if paper_ref.version else None
-                candidates = [r for r in paper_info.parents if r.artifact_id == aid] if paper_info else []
-                info = archive.version_info(candidates[0]) if len(candidates) == 1 else archive.latest_version(aid)
-            if info:
-                manifest = archive.get(info.ref)
-                path = archive.stored_path(info.ref)
-                if path is None or manifest_bytes(dir_manifest(path, info.exclude)) != manifest:
-                    raise ValueError("Figure archive differs from exact linked version")
-                fig = Figure.model_validate(read_json(path / "figure.json"))
-                figures.append({**fig.model_dump(mode="json"), "ref": info.ref.model_dump()})
-        elif link.type == "paper" and link.ref in papers:
+        if link.type == "paper" and link.ref in papers:
             record = papers[link.ref]
             cited.append(
                 {
@@ -514,15 +637,22 @@ def trace(root: Path, claim_id: str) -> EvidenceTrace:
             raw = frozen_runtime[rid]
             brief = {k: raw.get(k) for k in ("run_id", "status", "code_commit", "config_sha256", "environment")}
         else:
-            view = runs.load_run(root, rid, with_metrics=False)
-            env = view.environment or {}
-            brief = {
-                "run_id": rid,
-                "state": view.status.state.value,
-                "code_commit": view.record.code_commit,
-                "config_sha256": view.record.config_sha256,
-                "environment": {k: env[k] for k in ("os", "python", "hardware", "frameworks", "unknown") if k in env},
-            }
+            try:
+                if not re.fullmatch(r"[A-Za-z0-9_-]+", rid):
+                    raise ValueError("unsafe run identity")
+                view = runs.load_run(root, rid, with_metrics=False)
+                env = view.environment or {}
+                brief = {
+                    "run_id": rid,
+                    "state": view.status.state.value,
+                    "code_commit": view.record.code_commit,
+                    "config_sha256": view.record.config_sha256,
+                    "environment": {
+                        k: env[k] for k in ("os", "python", "hardware", "frameworks", "unknown") if k in env
+                    },
+                }
+            except (AirError, ValueError, OSError):
+                brief = {"run_id": rid, "state": "unavailable", "environment": {}}
         env = brief.get("environment") or {}
         brief["environment"] = {k: env[k] for k in ("os", "python", "hardware", "frameworks", "unknown") if k in env}
         run_briefs.append(_safe_runtime(brief))
