@@ -6,7 +6,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from .fsutil import append_jsonl, now, read_jsonl
+from .fsutil import append_jsonl, iter_jsonl_reverse, now, read_jsonl
 from .models.common import VersionRef
 from .models.event import Event
 
@@ -60,19 +60,33 @@ class Events:
         text: str | None = None,
         after_seq: int = 0,
         limit: int = 200,
+        tail: int | None = None,
     ) -> list[Event]:
+        """按条件查事件，按 seq 正序返回。
+
+        默认从 after_seq 之后往后取前 limit 条；给了 tail 时改为取符合条件的最后 tail 条
+        （从文件末尾往前读，读够就停，不扫全量），此时忽略 limit。
+        """
         # 本期没有 SQLite 索引（见详细设计 1 第 3.9 节的说明）：直接顺序扫描文件，几千条以内足够快
-        out: list[Event] = []
-        for raw in read_jsonl(self.path):
-            if raw.get("seq", 0) <= after_seq:
-                continue
+        def ok(raw: dict) -> bool:
             if types and not any(_type_matches(raw.get("type", ""), t) for t in types):
-                continue
+                return False
             if run_id and raw.get("run_id") != run_id:
-                continue
+                return False
             if artifact_id and not any(r.get("artifact_id") == artifact_id for r in raw.get("refs", [])):
-                continue
-            if text and text.lower() not in raw.get("summary", "").lower():
+                return False
+            return not (text and text.lower() not in raw.get("summary", "").lower())
+
+        out: list[Event] = []
+        if tail is not None:
+            for raw in iter_jsonl_reverse(self.path):
+                if len(out) >= tail or raw.get("seq", 0) <= after_seq:  # seq 单调递增，再往前都更旧
+                    break
+                if ok(raw):
+                    out.append(Event.model_validate(raw))
+            return out[::-1]
+        for raw in read_jsonl(self.path):
+            if raw.get("seq", 0) <= after_seq or not ok(raw):
                 continue
             out.append(Event.model_validate(raw))
             if len(out) >= limit:

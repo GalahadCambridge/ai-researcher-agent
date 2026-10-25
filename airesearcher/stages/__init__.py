@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import os
 from typing import Any
 
@@ -35,6 +36,19 @@ BACKGROUND_STATES = {
 }
 STAGE_NAMES = ("idea", "plan", "experiment", "writing")
 DEFAULT_IMPL = "fake"
+
+
+def real_stage_names() -> list[str]:
+    """已经有真实实现（stages/<name>/stage.py）的阶段；“真实模式”建项目时只给它们选 real。"""
+    out = []
+    for name in STAGE_NAMES:
+        try:
+            found = importlib.util.find_spec(f"airesearcher.stages.{name}.stage") is not None
+        except ModuleNotFoundError:  # 连 stages/<name>/ 包都还没有
+            found = False
+        if found:
+            out.append(name)
+    return out
 
 
 def stage_impl(name: str, config: ProjectConfig | None = None) -> str:

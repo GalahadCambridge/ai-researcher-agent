@@ -5,6 +5,7 @@ D1 的落点：LLM 只能“请求”转换（Advance / NeedsApproval），能�
 
 from __future__ import annotations
 
+from airesearcher.core.i18n import DEFAULT_LANG, MESSAGES
 from airesearcher.core.models.common import ProjectState as S
 
 ACTIVE_STATES = frozenset({S.IdeaDrafting, S.PlanDrafting, S.Executing, S.Analyzing, S.Writing})
@@ -54,14 +55,9 @@ PAUSABLE = ACTIVE_STATES
 RESUMABLE = frozenset({S.Paused, S.BudgetExhausted, S.Failed})
 REOPENABLE = frozenset({S.Completed})
 
-# 中文显示（与详细设计 5 第 7 节一致）
-STATE_LABELS = {
-    S.IdeaDrafting: "选题中", S.IdeaPending: "等待审批 idea", S.PlanDrafting: "制定实验计划",
-    S.PlanPending: "等待审批计划", S.Executing: "实验执行中", S.Analyzing: "分析结果",
-    S.LogPending: "等待审批过程日志", S.Writing: "撰写论文", S.ManuscriptPending: "等待审批最终手稿",
-    S.Completed: "已完成", S.Paused: "已暂停", S.BudgetExhausted: "预算已用尽", S.Failed: "出错停止",
-}
-KIND_LABELS = {"idea": "idea", "plan": "实验计划", "log": "过程日志", "manuscript": "最终手稿"}
+# 中文显示（与详细设计 5 第 7 节一致）；文字登记在 core/i18n.py，给界面的英文也在那里
+STATE_LABELS = {s: MESSAGES[f"state.{s.value}"][DEFAULT_LANG] for s in S}
+KIND_LABELS = {k: MESSAGES[f"kind.{k}"][DEFAULT_LANG] for k in PENDING_FOR_KIND}
 
 
 def advance_allowed(frm: S, to: S) -> bool:

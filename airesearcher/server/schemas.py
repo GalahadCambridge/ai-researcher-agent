@@ -7,9 +7,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from airesearcher.core.i18n import Msg
 from airesearcher.core.models.approval import Approval, ApprovalBrief
 from airesearcher.core.models.budget import BudgetStatus
 from airesearcher.core.models.common import ProjectState
+from airesearcher.core.models.project import Limit
 from airesearcher.core.models.question import Question
 from airesearcher.core.models.run import RunSummary
 
@@ -38,9 +40,10 @@ class ProjectStatus(BaseModel):
     title: str
     state: ProjectState
     stage: str | None
-    stage_label: str
+    stage_label: str  # 按请求语言（阶段自己上报的进度文字除外，见详细设计 1 第 9.6 节）
     progress: dict
-    blocking_reason: str | None
+    blocking_reason: str | None  # blocking 按请求语言显示的文字
+    blocking: Msg | None = None  # 卡在哪里：消息代码 + 参数，界面可以自己翻译
     pending_approvals: list[ApprovalBrief]
     pending_question: Question | None
     active_runs: list[RunSummary]
@@ -55,10 +58,25 @@ class CreateProject(BaseModel):
     idea_text: str
     constraints: dict[str, Any] = Field(default_factory=dict)
     task: str = "tasks/smoke"
+    # 只覆盖传入的类别（整类替换），没传的类别用默认值；默认值见 GET /api/defaults
     budget: dict[str, dict] | None = None
     evidence_check: bool = True
-    dev: dict[str, Any] | None = None  # 开发用：假实现开关与参数（project.yaml 的 dev）
+    # fake：各阶段用假实现（默认，不花钱）；real：已有真实实现的阶段用 real，并设 experiment.llm_backend: api
+    mode: Literal["fake", "real"] = "fake"
+    # 允许在本机真的跑训练（experiment.allow_local_execution）；只能和 mode=real 一起用，须明确打开
+    allow_local_execution: bool = False
+    dev: dict[str, Any] | None = None  # 开发用：假实现开关与参数（project.yaml 的 dev），优先于 mode
     request_id: str = ""
+
+
+class ProjectDefaults(BaseModel):
+    """新建项目页的默认值（GET /api/defaults）。"""
+
+    task: str
+    mode: Literal["fake", "real"]
+    real_stages: list[str]  # mode=real 时会用真实实现的阶段；其余阶段仍是假实现
+    allow_local_execution: bool
+    budget: dict[str, Limit]
 
 
 class ActionRequest(BaseModel):

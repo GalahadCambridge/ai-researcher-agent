@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+from .i18n import DEFAULT_LANG, Msg, t
+
 
 class AirError(Exception):
     code = "INTERNAL"
     http_status = 500
 
-    def __init__(self, message: str, detail: dict | None = None):
+    def __init__(self, message: str = "", detail: dict | None = None, *, msg: Msg | None = None):
+        """msg：可翻译的提示（代码 + 参数），API 按请求语言显示；没给时 message 原样返回。"""
+        if msg is not None and not message:
+            message = t(msg.code, DEFAULT_LANG, **msg.params)
         super().__init__(message)
         self.message = message
         self.detail = detail or {}
+        self.msg = msg
 
 
 class StaleApproval(AirError):

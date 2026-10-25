@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import yaml
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from airesearcher.core.errors import ValidationFailed
+from airesearcher.core.i18n import Msg
 from airesearcher.core.models.budget import BudgetStatus
 from airesearcher.core.models.event import Event
 from airesearcher.core.models.project import Limit
@@ -15,12 +16,13 @@ from airesearcher.engine import checkpoint as ckpt
 from airesearcher.engine.checkpoint import CheckpointBrief
 
 from ..deps import manager
-from ..manager import ProjectManager
+from ..manager import ProjectManager, localize_question, project_defaults
 from ..schemas import (
     ActionRequest,
     AnswerRequest,
     BudgetPatch,
     CreateProject,
+    ProjectDefaults,
     ProjectStatus,
     ProjectSummary,
     RollbackRequest,
@@ -40,6 +42,12 @@ def list_tasks() -> list[TaskInfo]:
     return out
 
 
+@router.get("/defaults", response_model=ProjectDefaults)
+def get_defaults() -> ProjectDefaults:
+    """新建项目页用的默认值：任务、运行模式、预算（建项目时 budget 只需传要改的类别）。"""
+    return project_defaults()
+
+
 @router.get("/projects", response_model=list[ProjectSummary])
 def list_projects(m: ProjectManager = Depends(manager)) -> list[ProjectSummary]:
     rows = [m.summary(pid) for pid in list(m.projects)]
@@ -49,7 +57,7 @@ def list_projects(m: ProjectManager = Depends(manager)) -> list[ProjectSummary]:
 @router.post("/projects", response_model=ProjectSummary)
 def create_project(body: CreateProject, m: ProjectManager = Depends(manager)) -> ProjectSummary:
     if not body.idea_text.strip():
-        raise ValidationFailed("请填写研究想法（idea_text）")
+        raise ValidationFailed(msg=Msg(code="error.need_idea"))
     try:
         p = m.create(body)
     except FileNotFoundError as e:
@@ -83,7 +91,7 @@ def rollback(pid: str, body: RollbackRequest, m: ProjectManager = Depends(manage
 
 @router.get("/projects/{pid}/question", response_model=Question | None)
 def get_question(pid: str, m: ProjectManager = Depends(manager)) -> Question | None:
-    return m.get(pid).questions.pending()
+    return localize_question(m.get(pid).questions.pending())
 
 
 @router.post("/projects/{pid}/question/answer", response_model=ProjectStatus)
@@ -111,7 +119,9 @@ def patch_budget(pid: str, body: BudgetPatch, m: ProjectManager = Depends(manage
 @router.get("/projects/{pid}/events", response_model=list[Event])
 def list_events(pid: str, after_seq: int = 0, type: str | None = None, run_id: str | None = None,
                 q: str | None = None, artifact_id: str | None = None, limit: int = 200,
+                tail: int | None = Query(None, ge=1, le=1000,
+                                         description="只取符合条件的最新 N 条（仍按时间正序返回）；给了它就忽略 limit"),
                 m: ProjectManager = Depends(manager)) -> list[Event]:
     types = [t for t in (type or "").split(",") if t] or None
     return m.get(pid).events.query(types=types, run_id=run_id, artifact_id=artifact_id, text=q,
-                                   after_seq=after_seq, limit=limit)
+                                   after_seq=after_seq, limit=limit, tail=tail)

@@ -8,6 +8,7 @@ import os
 import secrets
 import tempfile
 import time
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -122,3 +123,36 @@ def read_jsonl(path: Path) -> list[dict]:
                 # 崩溃时最后一行可能写了一半：跳过，不影响其他记录
                 continue
     return out
+
+
+def iter_jsonl_reverse(path: Path, chunk_size: int = 1 << 16) -> Iterator[dict]:
+    """从文件末尾往前逐行读 JSONL（取最新几条时不用读全量）。坏行同 read_jsonl 一样跳过。"""
+    path = Path(path)
+    if not path.exists():
+        return
+    with open(path, "rb") as f:
+        pos = f.seek(0, os.SEEK_END)
+        rest = b""
+        while pos > 0:
+            n = min(chunk_size, pos)
+            pos -= n
+            f.seek(pos)
+            lines = (f.read(n) + rest).split(b"\n")
+            rest = lines[0]  # 可能是半行，留到下一块拼上
+            for line in reversed(lines[1:]):
+                obj = _parse_jsonl_line(line)
+                if obj is not None:
+                    yield obj
+        obj = _parse_jsonl_line(rest)
+        if obj is not None:
+            yield obj
+
+
+def _parse_jsonl_line(line: bytes) -> dict | None:
+    line = line.strip()
+    if not line:
+        return None
+    try:
+        return json.loads(line.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
