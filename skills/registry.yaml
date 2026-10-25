@@ -1,3 +1,4 @@
 # 每个 skill 当前启用的版本（详细设计 1 第 7.3 节）。
 # 不要手改：改了 skill.yaml 的版本号后运行 air skills verify <名字>，验证通过会自动更新这里。
 example-skill: 0.1.0
+experiment-planning: 0.1.0

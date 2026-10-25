@@ -1,0 +1,11 @@
+# 保留现有 CUDA 版 PyTorch；缺失时按 PyTorch 官方选择对应 CUDA 的 wheel。
+torch>=2.6
+transformers>=4.46,<6
+peft>=0.13,<1
+datasets>=3,<5
+huggingface-hub>=0.26,<2
+scikit-learn>=1.5,<2
+numpy>=1.26,<3
+PyYAML>=6
+jsonschema>=4.20
+safetensors>=0.4

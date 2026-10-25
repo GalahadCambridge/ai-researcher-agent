@@ -25,6 +25,8 @@ class FakeToolCalls:
 
 
 class FakeLLM:
+    simulation = True
+
     def __init__(self, script: dict[str, list[Any]] | None = None, bad_json_once: bool = False,
                  default: Any = None):
         self.script = {k: list(v) for k, v in (script or {}).items()}

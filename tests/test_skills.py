@@ -40,6 +40,7 @@ def test_repo_skills_are_verified_and_enabled():
 
 def test_new_version_needs_verify(skills_root, monkeypatch):
     loader = SkillLoader()
+    original_registry = loader.registry()
     bump(skills_root)
     with pytest.raises(SkillNotVerified, match="air skills verify example-skill"):
         loader.load("example-skill")
@@ -51,18 +52,19 @@ def test_new_version_needs_verify(skills_root, monkeypatch):
 
     rep = loader.verify("example-skill")
     assert rep.ok and rep.registry_changed == ("0.1.0", "0.2.0")
-    assert loader.registry() == {"example-skill": "0.2.0"} and loader.problems() == []
+    assert loader.registry() == {**original_registry, "example-skill": "0.2.0"} and loader.problems() == []
     assert loader.load("example-skill").ref == "example-skill@0.2.0"
     assert "不要手改" in (skills_root / "registry.yaml").read_text(encoding="utf-8")
 
 
 def test_failed_verify_keeps_old_version(skills_root):
     loader = SkillLoader()
+    original_registry = loader.registry()
     bump(skills_root)
     (skills_root / "example-skill/sample/expected/summary.md").write_text("# 摘要\n\n- 别的内容\n", encoding="utf-8")
     rep = loader.verify("example-skill")
     assert not rep.ok and any(label == "比对结果" and not ok for label, ok, _ in rep.steps)
-    assert loader.registry() == {"example-skill": "0.1.0"}
+    assert loader.registry() == original_registry
 
     shutil.rmtree(skills_root / "example-skill/sample")
     rep = loader.verify("example-skill")

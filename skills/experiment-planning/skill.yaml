@@ -1,0 +1,8 @@
+name: experiment-planning
+version: 0.1.0
+description: Planning rules from detailed design 3 section 4
+owner: 实验
+inputs: {idea: SelectedIdea, task: TaskConfig}
+outputs: {plan: ExperimentPlan}
+requires: []
+validators: []

@@ -1,0 +1,62 @@
+# 依据：实验开工指南第 1 项；详细设计 3 第 3.1–3.3、5.3 节。
+name: text_cls_lowres
+domain: nlp
+description: "Low-resource SST-2 classification: TF-IDF, DistilBERT full fine-tuning, and LoRA"
+template_dir: tasks/text_cls_lowres/template
+entrypoint: ["{python}", "run.py", "--config", "{config}", "--out", "{out_dir}"]
+trial_args: ["--trial"]
+# 放在模板内，复制到项目 src/ 后仍可独立校验。
+config_schema: tasks/text_cls_lowres/config_schema.json
+metrics:
+  - {name: accuracy, direction: higher, required: true}
+  - {name: macro_f1, direction: higher, required: true}
+  - {name: train_seconds, direction: lower, required: true}
+splits:
+  train: {role: train}
+  dev: {role: explore}
+  test: {role: final}
+data:
+  - name: sst2
+    source: huggingface:stanfordnlp/sst2
+    license: "unknown (not specified in the dataset card; unverified)"
+    prepare: ["{python}", "tasks/text_cls_lowres/prepare_data.py", "--out", "{data_dir}"]
+    # 实际哈希由准备脚本写入数据目录 manifest.json，不填写虚构参考值。
+    files: [{path: train.jsonl}, {path: dev.jsonl}, {path: test.jsonl}]
+models: [distilbert/distilbert-base-uncased]
+methods_available: [tfidf_lr, full_ft, lora]
+method_aliases:
+  full fine-tuning: full_ft
+  full fine tuning: full_ft
+  full fine-tuning (distilbert): full_ft
+  全量微调: full_ft
+  tf-idf + lr: tfidf_lr
+  tf-idf+lr: tfidf_lr
+  tfidf + lr: tfidf_lr
+  tf-idf + logistic regression: tfidf_lr
+method_resources:
+  tfidf_lr: {gpu: false}
+  full_ft: {gpu: true}
+  lora: {gpu: true}
+trial_overrides: {train_size: 50, epochs: 1}
+semantic_keys:
+  - method
+  - model_name
+  - train_size
+  - seed
+  - eval_split
+  - max_length
+  - epochs
+  - learning_rate
+  - weight_decay
+  - max_features
+  - classifier_c
+  - lora_rank
+  - lora_alpha
+  - lora_dropout
+repair_tunable: [batch_size, grad_accum_steps]
+protected_files: [air_report.py, data.py, evaluate.py, config_schema.json]
+# 暂用设计稿告警值，后续成本试点时校准。
+sanity:
+  accuracy: {max_expected: 0.97}
+  max_gain_over_baseline: 0.15
+resources: {est_minutes_per_run: 5, gpu: optional}

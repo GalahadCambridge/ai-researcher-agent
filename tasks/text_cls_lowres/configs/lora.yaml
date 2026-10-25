@@ -1,0 +1,16 @@
+method: lora
+seed: 0
+train_size: 500
+eval_split: dev
+model_name: distilbert/distilbert-base-uncased
+device: cuda
+epochs: 3
+learning_rate: 0.0003
+batch_size: 8
+eval_batch_size: 32
+grad_accum_steps: 2
+max_length: 128
+lora_rank: 8
+lora_alpha: 16
+lora_dropout: 0.1
+save_model: false
