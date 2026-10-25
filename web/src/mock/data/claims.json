@@ -1,0 +1,481 @@
+{
+  "claims": [
+    {
+      "claim_id": "CL1",
+      "section": "results",
+      "text": "\\claim{CL1}{With 3 seeds each, main reaches a mean score of \\airval{C1.main.score.mean}\\% compared with \\airval{C1.baseline.score.mean}\\% for baseline.}",
+      "type": "numeric",
+      "statement_kind": "observation",
+      "hedge": "none",
+      "importance": "major",
+      "hypothesis": "H1",
+      "values": [
+        {
+          "key": "C1.main.score.mean",
+          "aggregate_id": "C1",
+          "aggregate_version": 1,
+          "group": {
+            "method": "main"
+          },
+          "metric": "score",
+          "stat": "mean",
+          "contrast": null,
+          "fmt": {
+            "scale": 100,
+            "decimals": 1,
+            "suffix": ""
+          },
+          "rendered": "78.0"
+        },
+        {
+          "key": "C1.baseline.score.mean",
+          "aggregate_id": "C1",
+          "aggregate_version": 1,
+          "group": {
+            "method": "baseline"
+          },
+          "metric": "score",
+          "stat": "mean",
+          "contrast": null,
+          "fmt": {
+            "scale": 100,
+            "decimals": 1,
+            "suffix": ""
+          },
+          "rendered": "69.4"
+        }
+      ],
+      "comparison": null,
+      "evidence": [
+        {
+          "type": "aggregate",
+          "ref": "C1",
+          "version": 1,
+          "selector": {
+            "metric": "score"
+          },
+          "note": ""
+        },
+        {
+          "type": "figure",
+          "ref": "fig_c1",
+          "version": null,
+          "selector": null,
+          "note": ""
+        }
+      ],
+      "location": null
+    },
+    {
+      "claim_id": "CL2",
+      "section": "results",
+      "text": "\\claim{CL2}{The mean difference is \\airval{C1.main-vs-baseline.score.diff_mean} percentage points (main higher than baseline; Welch p = 0.0017, reported for reference only).}",
+      "type": "comparative",
+      "statement_kind": "observation",
+      "hedge": "none",
+      "importance": "major",
+      "hypothesis": null,
+      "values": [
+        {
+          "key": "C1.main-vs-baseline.score.diff_mean",
+          "aggregate_id": "C1",
+          "aggregate_version": 1,
+          "group": {},
+          "metric": "score",
+          "stat": "diff_mean",
+          "contrast": {
+            "a": {
+              "method": "main"
+            },
+            "b": {
+              "method": "baseline"
+            }
+          },
+          "fmt": {
+            "scale": 100,
+            "decimals": 1,
+            "suffix": ""
+          },
+          "rendered": "8.6"
+        }
+      ],
+      "comparison": {
+        "a": {
+          "method": "main"
+        },
+        "b": {
+          "method": "baseline"
+        },
+        "metric": "score",
+        "asserted": "a>b"
+      },
+      "evidence": [
+        {
+          "type": "aggregate",
+          "ref": "C1",
+          "version": 1,
+          "selector": {
+            "metric": "score"
+          },
+          "note": ""
+        },
+        {
+          "type": "figure",
+          "ref": "fig_c1",
+          "version": null,
+          "selector": null,
+          "note": ""
+        }
+      ],
+      "location": null
+    },
+    {
+      "claim_id": "CL3",
+      "section": "results",
+      "text": "\\claim{CL3}{With 3 seeds each, main reaches a mean score of \\airval{C2.main.score.mean}\\% compared with \\airval{C2.ablation.score.mean}\\% for ablation.}",
+      "type": "numeric",
+      "statement_kind": "observation",
+      "hedge": "none",
+      "importance": "major",
+      "hypothesis": null,
+      "values": [
+        {
+          "key": "C2.main.score.mean",
+          "aggregate_id": "C2",
+          "aggregate_version": 1,
+          "group": {
+            "method": "main"
+          },
+          "metric": "score",
+          "stat": "mean",
+          "contrast": null,
+          "fmt": {
+            "scale": 100,
+            "decimals": 1,
+            "suffix": ""
+          },
+          "rendered": "78.0"
+        },
+        {
+          "key": "C2.ablation.score.mean",
+          "aggregate_id": "C2",
+          "aggregate_version": 1,
+          "group": {
+            "method": "ablation"
+          },
+          "metric": "score",
+          "stat": "mean",
+          "contrast": null,
+          "fmt": {
+            "scale": 100,
+            "decimals": 1,
+            "suffix": ""
+          },
+          "rendered": "73.7"
+        }
+      ],
+      "comparison": null,
+      "evidence": [
+        {
+          "type": "aggregate",
+          "ref": "C2",
+          "version": 1,
+          "selector": {
+            "metric": "score"
+          },
+          "note": ""
+        },
+        {
+          "type": "figure",
+          "ref": "fig_c2",
+          "version": null,
+          "selector": null,
+          "note": ""
+        }
+      ],
+      "location": null
+    },
+    {
+      "claim_id": "CL4",
+      "section": "results",
+      "text": "\\claim{CL4}{The mean difference is \\airval{C2.main-vs-ablation.score.diff_mean} percentage points (main higher than ablation; Welch p = 0.0343, reported for reference only).}",
+      "type": "comparative",
+      "statement_kind": "observation",
+      "hedge": "none",
+      "importance": "major",
+      "hypothesis": null,
+      "values": [
+        {
+          "key": "C2.main-vs-ablation.score.diff_mean",
+          "aggregate_id": "C2",
+          "aggregate_version": 1,
+          "group": {},
+          "metric": "score",
+          "stat": "diff_mean",
+          "contrast": {
+            "a": {
+              "method": "main"
+            },
+            "b": {
+              "method": "ablation"
+            }
+          },
+          "fmt": {
+            "scale": 100,
+            "decimals": 1,
+            "suffix": ""
+          },
+          "rendered": "4.3"
+        }
+      ],
+      "comparison": {
+        "a": {
+          "method": "main"
+        },
+        "b": {
+          "method": "ablation"
+        },
+        "metric": "score",
+        "asserted": "a>b"
+      },
+      "evidence": [
+        {
+          "type": "aggregate",
+          "ref": "C2",
+          "version": 1,
+          "selector": {
+            "metric": "score"
+          },
+          "note": ""
+        },
+        {
+          "type": "figure",
+          "ref": "fig_c2",
+          "version": null,
+          "selector": null,
+          "note": ""
+        }
+      ],
+      "location": null
+    },
+    {
+      "claim_id": "CL5",
+      "section": "introduction",
+      "text": "\\claim{CL5}{We compare a baseline with a main method and an ablation, following common fine-tuning practice~\\cite{hu2022lora,devlin2019bert}.}",
+      "type": "citation",
+      "statement_kind": "observation",
+      "hedge": "none",
+      "importance": "minor",
+      "hypothesis": null,
+      "values": [],
+      "comparison": null,
+      "evidence": [
+        {
+          "type": "paper",
+          "ref": "arxiv:2106.09685",
+          "version": null,
+          "selector": null,
+          "note": ""
+        },
+        {
+          "type": "paper",
+          "ref": "arxiv:1810.04805",
+          "version": null,
+          "selector": null,
+          "note": ""
+        }
+      ],
+      "location": null
+    },
+    {
+      "claim_id": "CL6",
+      "section": "results",
+      "text": "\\claim{CL6}{The best single run of main reaches \\airval{C1.main.score.max}\\%.}",
+      "type": "numeric",
+      "statement_kind": "observation",
+      "hedge": "none",
+      "importance": "major",
+      "hypothesis": null,
+      "values": [
+        {
+          "key": "C1.main.score.max",
+          "aggregate_id": "C1",
+          "aggregate_version": 1,
+          "group": {
+            "method": "main"
+          },
+          "metric": "score",
+          "stat": "max",
+          "contrast": null,
+          "fmt": {
+            "scale": 100,
+            "decimals": 1,
+            "suffix": ""
+          },
+          "rendered": "95.0"
+        }
+      ],
+      "comparison": null,
+      "evidence": [
+        {
+          "type": "aggregate",
+          "ref": "C1",
+          "version": 1,
+          "selector": {
+            "metric": "score"
+          },
+          "note": ""
+        },
+        {
+          "type": "figure",
+          "ref": "fig_c1",
+          "version": null,
+          "selector": null,
+          "note": ""
+        }
+      ],
+      "location": null
+    },
+    {
+      "claim_id": "CL7",
+      "section": "discussion",
+      "text": "\\claim{CL7}{Overall, main performs worse than baseline.}",
+      "type": "comparative",
+      "statement_kind": "observation",
+      "hedge": "none",
+      "importance": "major",
+      "hypothesis": null,
+      "values": [
+        {
+          "key": "C1.main-vs-baseline.score.diff_mean",
+          "aggregate_id": "C1",
+          "aggregate_version": 1,
+          "group": {},
+          "metric": "score",
+          "stat": "diff_mean",
+          "contrast": {
+            "a": {
+              "method": "main"
+            },
+            "b": {
+              "method": "baseline"
+            }
+          },
+          "fmt": {
+            "scale": 100,
+            "decimals": 1,
+            "suffix": ""
+          },
+          "rendered": "8.6"
+        }
+      ],
+      "comparison": {
+        "a": {
+          "method": "main"
+        },
+        "b": {
+          "method": "baseline"
+        },
+        "metric": "score",
+        "asserted": "a<b"
+      },
+      "evidence": [
+        {
+          "type": "aggregate",
+          "ref": "C1",
+          "version": 1,
+          "selector": {
+            "metric": "score"
+          },
+          "note": ""
+        },
+        {
+          "type": "figure",
+          "ref": "fig_c1",
+          "version": null,
+          "selector": null,
+          "note": ""
+        }
+      ],
+      "location": null
+    }
+  ],
+  "checks": {
+    "CL1": {
+      "claim_id": "CL1",
+      "support": "supported",
+      "issues": [],
+      "recomputed": {
+        "C1.main.score.mean": "78.0",
+        "C1.baseline.score.mean": "69.4"
+      }
+    },
+    "CL2": {
+      "claim_id": "CL2",
+      "support": "supported",
+      "issues": [],
+      "recomputed": {
+        "C1.main-vs-baseline.score.diff_mean": "8.6"
+      }
+    },
+    "CL3": {
+      "claim_id": "CL3",
+      "support": "supported",
+      "issues": [],
+      "recomputed": {
+        "C2.main.score.mean": "78.0",
+        "C2.ablation.score.mean": "73.7"
+      }
+    },
+    "CL4": {
+      "claim_id": "CL4",
+      "support": "supported",
+      "issues": [],
+      "recomputed": {
+        "C2.main-vs-ablation.score.diff_mean": "4.3"
+      }
+    },
+    "CL5": {
+      "claim_id": "CL5",
+      "support": "supported",
+      "issues": [],
+      "recomputed": {}
+    },
+    "CL6": {
+      "claim_id": "CL6",
+      "support": "unsupported",
+      "issues": [
+        {
+          "code": "NUM_MISMATCH",
+          "severity": "blocker",
+          "claim_id": "CL6",
+          "location": {},
+          "sentence": "\\claim{CL6}{The best single run of main reaches \\airval{C1.main.score.max}\\%.}",
+          "detail": "文中 95.0，重算为 78.9（C1.main.score.max）",
+          "suggestion": ""
+        }
+      ],
+      "recomputed": {
+        "C1.main.score.max": "78.9"
+      }
+    },
+    "CL7": {
+      "claim_id": "CL7",
+      "support": "contradicted",
+      "issues": [
+        {
+          "code": "CONTRADICTED",
+          "severity": "blocker",
+          "claim_id": "CL7",
+          "location": {},
+          "sentence": "\\claim{CL7}{Overall, main performs worse than baseline.}",
+          "detail": "论断 a<b，但均值差为 +0.0857",
+          "suggestion": ""
+        }
+      ],
+      "recomputed": {
+        "C1.main-vs-baseline.score.diff_mean": "8.6"
+      }
+    }
+  }
+}

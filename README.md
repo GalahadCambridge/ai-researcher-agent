@@ -169,6 +169,12 @@ air answer skip
 
 （也可以 `air answer retry` 重试，或 `air answer end` 结束项目。）
 
+### 2.3 用网页做同样的事
+
+上面每一步都可以在网页里点按钮完成（和命令行共用同一个后台，两边看到的状态一样）。
+第一次需要 Node.js，在 `web/` 目录运行一次 `npm install` 和 `npm run build`，然后重启 `air serve`，
+浏览器打开 <http://127.0.0.1:8765/>。详见 [web/README.md](web/README.md)。
+
 ## 3. 命令一览
 
 | 命令 | 作用 |
@@ -269,7 +275,7 @@ air dev check /tmp/ws
 | 文献检索、选题、实验计划、编码 Agent、分析决策、论文写作 | **假实现**（固定内容，不调用大模型） |
 | 测试替身 `FakeLLM`、`FakeExecutor`、`FakeLiterature`；skill 版本登记与 `air skills verify` | **真实**（给组员写测试用） |
 | SQLite 索引 | **没做**：目前直接读文件（数据量小，够用） |
-| GUI | 不在本仓库这部分（GUI 同学负责），接口见 http://127.0.0.1:8765/docs |
+| GUI（`web/`，Vue 3 + Element Plus） | **真实**：P1~P14 全部页面、SSE 实时更新、审批防重复与过期处理；用法见 [web/README.md](web/README.md) |
 
 ## 7. 常见问题
 

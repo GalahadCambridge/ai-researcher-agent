@@ -1,0 +1,79 @@
+{
+  "approval": {
+    "approval_id": "ap-0006",
+    "kind": "manuscript",
+    "target": {
+      "artifact_id": "paper",
+      "version": 2,
+      "sha256": "738f6a713d9d6d73a85853ec4bbd2b5475066751ec88bdac358d5765ecbc6875"
+    },
+    "previous": null,
+    "summary": "论文草稿 v2：7 条论断，2 个 blocker（样例：故意加入的错误论断）",
+    "impact": "批准后项目标记为完成；有 blocker 时批准必须填写意见",
+    "extra_refs": [
+      {
+        "artifact_id": "paper/review/review_v2.json",
+        "version": 1,
+        "sha256": "df3c4203fdae505942b5e7ac899023e52551400c60992b9e3d4cc65bb305c185"
+      },
+      {
+        "artifact_id": "paper/build/compile_report.json",
+        "version": 2,
+        "sha256": "c53b40f8884eced817304e1912dde0d60ba509d5f333947a680361b70a000fec"
+      },
+      {
+        "artifact_id": "paper/claims.jsonl",
+        "version": 2,
+        "sha256": "e98fb5aeceb957f1a7059b2450f29cbebad9c7fce68c7284c067dc058143b455"
+      },
+      {
+        "artifact_id": "paper/build/main.pdf",
+        "version": 2,
+        "sha256": "86e2d83013f33bd528980155b7b92a599152d44d20d600c9b9144b6d79efbb8f"
+      }
+    ],
+    "status": "pending",
+    "created_at": "2026-10-10T11:38:17.851054+08:00",
+    "decided_at": null,
+    "decision_comment": "",
+    "decided_by": null,
+    "request_ids": []
+  },
+  "target_content": "7d594a557e12fb8686d25fbdb3dd2468cfa61e41e142b65f62e54049ed2c5ab0  air_values.tex\ne98fb5aeceb957f1a7059b2450f29cbebad9c7fce68c7284c067dc058143b455  claims.jsonl\n98d8d97dd741f3a5f69519b49159b94a617a58068fd0739949dfb0661b4c2e33  evidence_bundle.json\n00dfd9c316705e8def6f3db3378a6205af126970224ec06f053b121f8467d12f  main.tex\n369a71d0615ebf3337415a7ea364878855c808bb57b527f590da8e66019de4d4  references.bib\nfb894287e06f6f40013a0bcf68337eaec1e7d2a006d6cf443d58daa3d9e61df2  sections/abstract.tex\n14a023a064207d3657f7d4b7dcdbb0a3907044bdfe0f70c292557fb611cc9cb9  sections/conclusion.tex\n5dc14d4933e851bc3587adcde94a1e04d996139de15c58781a8f2788b3b73fcd  sections/introduction.tex\n682dd27d12e4602d6ae74e98216bb0225e23fef9aa20bb992790396b19ed4965  sections/method.tex\nd8e93de7fb37792a20914c6c240df4099fc99d196c53a4aab6597c8412dda40f  sections/results.tex\n",
+  "previous_content": null,
+  "target_path": "~/air-sample/paper",
+  "extra": [
+    {
+      "artifact_id": "paper/review/review_v2.json",
+      "version": 1,
+      "sha256": "df3c4203fdae505942b5e7ac899023e52551400c60992b9e3d4cc65bb305c185",
+      "title": "review_v2.json",
+      "url": "/api/projects/p-20261010-0b26/artifacts/content?artifact_id=paper/review/review_v2.json&version=1",
+      "content": "{\n  \"paper_ref\": {\n    \"artifact_id\": \"paper\",\n    \"version\": 2,\n    \"sha256\": \"738f6a713d9d6d73a85853ec4bbd2b5475066751ec88bdac358d5765ecbc6875\"\n  },\n  \"mode\": \"full\",\n  \"claims\": [\n    {\n      \"claim_id\": \"CL1\",\n      \"support\": \"supported\",\n      \"issues\": [],\n      \"recomputed\": {\n        \"C1.main.score.mean\": \"78.0\",\n        \"C1.baseline.score.mean\": \"69.4\"\n      }\n    },\n    {\n      \"claim_id\": \"CL2\",\n      \"support\": \"supported\",\n      \"issues\": [],\n      \"recomputed\": {\n        \"C1.main-vs-baseline.score.diff_mean\": \"8.6\"\n      }\n    },\n    {\n      \"claim_id\": \"CL3\",\n      \"support\": \"supported\",\n      \"issues\": [],\n      \"recomputed\": {\n        \"C2.main.score.mean\": \"78.0\",\n        \"C2.ablation.score.mean\": \"73.7\"\n      }\n    },\n    {\n      \"claim_id\": \"CL4\",\n      \"support\": \"supported\",\n      \"issues\": [],\n      \"recomputed\": {\n        \"C2.main-vs-ablation.score.diff_mean\": \"4.3\"\n      }\n    },\n    {\n      \"claim_id\": \"CL5\",\n      \"support\": \"supported\",\n      \"issues\": [],\n      \"recomputed\": {}\n    },\n    {\n      \"claim_id\": \"CL6\",\n      \"support\": \"unsupported\",\n      \"issues\": [\n        {\n          \"code\": \"NUM_MISMATCH\",\n          \"severity\": \"blocker\",\n          \"claim_id\": \"CL6\",\n          \"location\": {},\n          \"sentence\": \"\\\\claim{CL6}{The best single run of main reaches \\\\airval{C1.main.score.max}\\\\%.}\",\n          \"detail\": \"文中 95.0，重算为 78.9（C1.main.score.max）\",\n          \"suggestion\": \"\"\n        }\n      ],\n      \"recomputed\": {\n        \"C1.main.score.max\": \"78.9\"\n      }\n    },\n    {\n      \"claim_id\": \"CL7\",\n      \"support\": \"contradicted\",\n      \"issues\": [\n        {\n          \"code\": \"CONTRADICTED\",\n          \"severity\": \"blocker\",\n          \"claim_id\": \"CL7\",\n          \"location\": {},\n          \"sentence\": \"\\\\claim{CL7}{Overall, main performs worse than baseline.}\",\n          \"detail\": \"论断 a<b，但均值差为 +0.0857\",\n          \"suggestion\": \"\"\n        }\n      ],\n      \"recomputed\": {\n        \"C1.main-vs-baseline.score.diff_mean\": \"8.6\"\n      }\n    }\n  ],\n  \"unbound_issues\": [],\n  \"counts\": {\n    \"blocker\": 2,\n    \"major\": 0,\n    \"minor\": 0,\n    \"supported\": 5,\n    \"unsupported\": 1,\n    \"contradicted\": 1\n  },\n  \"compile_ok\": true,\n  \"created_at\": \"2026-10-10T11:38:17.849958+08:00\"\n}"
+    },
+    {
+      "artifact_id": "paper/build/compile_report.json",
+      "version": 2,
+      "sha256": "c53b40f8884eced817304e1912dde0d60ba509d5f333947a680361b70a000fec",
+      "title": "compile_report.json",
+      "url": "/api/projects/p-20261010-0b26/artifacts/content?artifact_id=paper/build/compile_report.json&version=2",
+      "content": "{\n  \"ok\": true,\n  \"engine\": \"latexmk -pdf\",\n  \"entry\": \"main.tex\",\n  \"errors\": [],\n  \"undefined_citations\": [],\n  \"undefined_refs\": [],\n  \"missing_files\": [],\n  \"overfull_boxes\": 0,\n  \"pages\": 2,\n  \"log_path\": \"paper/build/main.log\",\n  \"seconds\": 0.36\n}"
+    },
+    {
+      "artifact_id": "paper/claims.jsonl",
+      "version": 2,
+      "sha256": "e98fb5aeceb957f1a7059b2450f29cbebad9c7fce68c7284c067dc058143b455",
+      "title": "claims.jsonl",
+      "url": "/api/projects/p-20261010-0b26/artifacts/content?artifact_id=paper/claims.jsonl&version=2",
+      "content": "{\"claim_id\":\"CL1\",\"section\":\"results\",\"text\":\"\\\\claim{CL1}{With 3 seeds each, main reaches a mean score of \\\\airval{C1.main.score.mean}\\\\% compared with \\\\airval{C1.baseline.score.mean}\\\\% for baseline.}\",\"type\":\"numeric\",\"statement_kind\":\"observation\",\"hedge\":\"none\",\"importance\":\"major\",\"hypothesis\":\"H1\",\"values\":[{\"key\":\"C1.main.score.mean\",\"aggregate_id\":\"C1\",\"aggregate_version\":1,\"group\":{\"method\":\"main\"},\"metric\":\"score\",\"stat\":\"mean\",\"contrast\":null,\"fmt\":{\"scale\":100,\"decimals\":1,\"suffix\":\"\"},\"rendered\":\"78.0\"},{\"key\":\"C1.baseline.score.mean\",\"aggregate_id\":\"C1\",\"aggregate_version\":1,\"group\":{\"method\":\"baseline\"},\"metric\":\"score\",\"stat\":\"mean\",\"contrast\":null,\"fmt\":{\"scale\":100,\"decimals\":1,\"suffix\":\"\"},\"rendered\":\"69.4\"}],\"comparison\":null,\"evidence\":[{\"type\":\"aggregate\",\"ref\":\"C1\",\"version\":1,\"selector\":{\"metric\":\"score\"},\"note\":\"\"},{\"type\":\"figure\",\"ref\":\"fig_c1\",\"version\":null,\"selector\":null,\"note\":\"\"}],\"location\":null}\n{\"claim_id\":\"CL2\",\"section\":\"results\",\"text\":\"\\\\claim{CL2}{The mean difference is \\\\airval{C1.main-vs-baseline.score.diff_mean} percentage points (main higher than baseline; Welch p = 0.0017, reported for reference only).}\",\"type\":\"comparative\",\"statement_kind\":\"observation\",\"hedge\":\"none\",\"importance\":\"major\",\"hypothesis\":null,\"values\":[{\"key\":\"C1.main-vs-baseline.score.diff_mean\",\"aggregate_id\":\"C1\",\"aggregate_version\":1,\"group\":{},\"metric\":\"score\",\"stat\":\"diff_mean\",\"contrast\":{\"a\":{\"method\":\"main\"},\"b\":{\"method\":\"baseline\"}},\"fmt\":{\"scale\":100,\"decimals\":1,\"suffix\":\"\"},\"rendered\":\"8.6\"}],\"comparison\":{\"a\":{\"method\":\"main\"},\"b\":{\"method\":\"baseline\"},\"metric\":\"score\",\"asserted\":\"a>b\"},\"evidence\":[{\"type\":\"aggregate\",\"ref\":\"C1\",\"version\":1,\"selector\":{\"metric\":\"score\"},\"note\":\"\"},{\"type\":\"figure\",\"ref\":\"fig_c1\",\"version\":null,\"selector\":null,\"note\":\"\"}],\"location\":null}\n{\"claim_id\":\"CL3\",\"section\":\"results\",\"text\":\"\\\\claim{CL3}{With 3 seeds each, main reaches a mean score of \\\\airval{C2.main.score.mean}\\\\% compared with \\\\airval{C2.ablation.score.mean}\\\\% for ablation.}\",\"type\":\"numeric\",\"statement_kind\":\"observation\",\"hedge\":\"none\",\"importance\":\"major\",\"hypothesis\":null,\"values\":[{\"key\":\"C2.main.score.mean\",\"aggregate_id\":\"C2\",\"aggregate_version\":1,\"group\":{\"method\":\"main\"},\"metric\":\"score\",\"stat\":\"mean\",\"contrast\":null,\"fmt\":{\"scale\":100,\"decimals\":1,\"suffix\":\"\"},\"rendered\":\"78.0\"},{\"key\":\"C2.ablation.score.mean\",\"aggregate_id\":\"C2\",\"aggregate_version\":1,\"group\":{\"method\":\"ablation\"},\"metric\":\"score\",\"stat\":\"mean\",\"contrast\":null,\"fmt\":{\"scale\":100,\"decimals\":1,\"suffix\":\"\"},\"rendered\":\"73.7\"}],\"comparison\":null,\"evidence\":[{\"type\":\"aggregate\",\"ref\":\"C2\",\"version\":1,\"selector\":{\"metric\":\"score\"},\"note\":\"\"},{\"type\":\"figure\",\"ref\":\"fig_c2\",\"version\":null,\"selector\":null,\"note\":\"\"}],\"location\":null}\n{\"claim_id\":\"CL4\",\"section\":\"results\",\"text\":\"\\\\claim{CL4}{The mean difference is \\\\airval{C2.main-vs-ablation.score.diff_mean} percentage points (main higher than ablation; Welch p = 0.0343, reported for reference only).}\",\"type\":\"comparative\",\"statement_kind\":\"observation\",\"hedge\":\"none\",\"importance\":\"major\",\"hypothesis\":null,\"values\":[{\"key\":\"C2.main-vs-ablation.score.diff_mean\",\"aggregate_id\":\"C2\",\"aggregate_version\":1,\"group\":{},\"metric\":\"score\",\"stat\":\"diff_mean\",\"contrast\":{\"a\":{\"method\":\"main\"},\"b\":{\"method\":\"ablation\"}},\"fmt\":{\"scale\":100,\"decimals\":1,\"suffix\":\"\"},\"rendered\":\"4.3\"}],\"comparison\":{\"a\":{\"method\":\"main\"},\"b\":{\"method\":\"ablation\"},\"metric\":\"score\",\"asserted\":\"a>b\"},\"evidence\":[{\"type\":\"aggregate\",\"ref\":\"C2\",\"version\":1,\"selector\":{\"metric\":\"score\"},\"note\":\"\"},{\"type\":\"figure\",\"ref\":\"fig_c2\",\"version\":null,\"selector\":null,\"note\":\"\"}],\"location\":null}\n{\"claim_id\":\"CL5\",\"section\":\"introduction\",\"text\":\"\\\\claim{CL5}{We compare a baseline with a main method and an ablation, following common fine-tuning practice~\\\\cite{hu2022lora,devlin2019bert}.}\",\"type\":\"citation\",\"statement_kind\":\"observation\",\"hedge\":\"none\",\"importance\":\"minor\",\"hypothesis\":null,\"values\":[],\"comparison\":null,\"evidence\":[{\"type\":\"paper\",\"ref\":\"arxiv:2106.09685\",\"version\":null,\"selector\":null,\"note\":\"\"},{\"type\":\"paper\",\"ref\":\"arxiv:1810.04805\",\"version\":null,\"selector\":null,\"note\":\"\"}],\"location\":null}\n{\"claim_id\":\"CL6\",\"section\":\"results\",\"text\":\"\\\\claim{CL6}{The best single run of main reaches \\\\airval{C1.main.score.max}\\\\%.}\",\"type\":\"numeric\",\"statement_kind\":\"observation\",\"hedge\":\"none\",\"importance\":\"major\",\"hypothesis\":null,\"values\":[{\"key\":\"C1.main.score.max\",\"aggregate_id\":\"C1\",\"aggregate_version\":1,\"group\":{\"method\":\"main\"},\"metric\":\"score\",\"stat\":\"max\",\"contrast\":null,\"fmt\":{\"scale\":100,\"decimals\":1,\"suffix\":\"\"},\"rendered\":\"95.0\"}],\"comparison\":null,\"evidence\":[{\"type\":\"aggregate\",\"ref\":\"C1\",\"version\":1,\"selector\":{\"metric\":\"score\"},\"note\":\"\"},{\"type\":\"figure\",\"ref\":\"fig_c1\",\"version\":null,\"selector\":null,\"note\":\"\"}],\"location\":null}\n{\"claim_id\":\"CL7\",\"section\":\"discussion\",\"text\":\"\\\\claim{CL7}{Overall, main performs worse than baseline.}\",\"type\":\"comparative\",\"statement_kind\":\"observation\",\"hedge\":\"none\",\"importance\":\"major\",\"hypothesis\":null,\"values\":[{\"key\":\"C1.main-vs-baseline.score.diff_mean\",\"aggregate_id\":\"C1\",\"aggregate_version\":1,\"group\":{},\"metric\":\"score\",\"stat\":\"diff_mean\",\"contrast\":{\"a\":{\"method\":\"main\"},\"b\":{\"method\":\"baseline\"}},\"fmt\":{\"scale\":100,\"decimals\":1,\"suffix\":\"\"},\"rendered\":\"8.6\"}],\"comparison\":{\"a\":{\"method\":\"main\"},\"b\":{\"method\":\"baseline\"},\"metric\":\"score\",\"asserted\":\"a<b\"},\"evidence\":[{\"type\":\"aggregate\",\"ref\":\"C1\",\"version\":1,\"selector\":{\"metric\":\"score\"},\"note\":\"\"},{\"type\":\"figure\",\"ref\":\"fig_c1\",\"version\":null,\"selector\":null,\"note\":\"\"}],\"location\":null}\n"
+    },
+    {
+      "artifact_id": "paper/build/main.pdf",
+      "version": 2,
+      "sha256": "86e2d83013f33bd528980155b7b92a599152d44d20d600c9b9144b6d79efbb8f",
+      "title": "main.pdf",
+      "url": "/api/projects/p-20261010-0b26/artifacts/content?artifact_id=paper/build/main.pdf&version=2",
+      "content": null
+    }
+  ]
+}

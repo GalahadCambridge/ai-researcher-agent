@@ -1,0 +1,1587 @@
+[
+  {
+    "seq": 1,
+    "ts": "2026-10-10T11:38:07.491340+08:00",
+    "type": "artifact.created",
+    "actor": "system",
+    "refs": [
+      {
+        "artifact_id": "project.yaml",
+        "version": 1,
+        "sha256": "415d64421e292c5a864588bd510b1cfe0f76e5dd7fe0d315ad4307da62db3e65"
+      }
+    ],
+    "run_id": null,
+    "summary": "project.yaml 新版本 v1：创建项目",
+    "data": {
+      "kind": "project"
+    }
+  },
+  {
+    "seq": 2,
+    "ts": "2026-10-10T11:38:07.491442+08:00",
+    "type": "project.created",
+    "actor": "user",
+    "refs": [],
+    "run_id": null,
+    "summary": "创建项目：小样本分类：基线、主方法与消融的比较（样例项目）",
+    "data": {
+      "project_id": "p-20261010-0b26",
+      "task": "tasks/smoke"
+    }
+  },
+  {
+    "seq": 3,
+    "ts": "2026-10-10T11:38:07.510113+08:00",
+    "type": "artifact.created",
+    "actor": "agent:idea/search",
+    "refs": [
+      {
+        "artifact_id": "idea/search_snapshots/ss-fake-0001.json",
+        "version": 1,
+        "sha256": "54326c21dd7ccc4d3ef2a04c9c7dd0865ed50ff0446a4f135e8a2915d75a4503"
+      }
+    ],
+    "run_id": null,
+    "summary": "idea/search_snapshots/ss-fake-0001.json 新版本 v1",
+    "data": {
+      "kind": "search_snapshot"
+    }
+  },
+  {
+    "seq": 4,
+    "ts": "2026-10-10T11:38:07.510665+08:00",
+    "type": "artifact.created",
+    "actor": "agent:idea/search",
+    "refs": [
+      {
+        "artifact_id": "idea/literature.jsonl",
+        "version": 1,
+        "sha256": "2efefb6ac4933e3480d803fa4597981a35c6712453403c9c88fcc1a70f092ca5"
+      }
+    ],
+    "run_id": null,
+    "summary": "idea/literature.jsonl 新版本 v1：检索 3 篇论文",
+    "data": {
+      "kind": "literature"
+    }
+  },
+  {
+    "seq": 5,
+    "ts": "2026-10-10T11:38:07.510713+08:00",
+    "type": "stage.decision",
+    "actor": "agent:idea",
+    "refs": [],
+    "run_id": null,
+    "summary": "（假实现）检索到 3 篇固定论文",
+    "data": {}
+  },
+  {
+    "seq": 6,
+    "ts": "2026-10-10T11:38:07.512448+08:00",
+    "type": "artifact.created",
+    "actor": "agent:idea/scorer",
+    "refs": [
+      {
+        "artifact_id": "idea/scores.json",
+        "version": 1,
+        "sha256": "789f8acaf574aa0a542dd05a748d3bf637bd9a339c0b640000af4d16821119f5"
+      }
+    ],
+    "run_id": null,
+    "summary": "idea/scores.json 新版本 v1",
+    "data": {
+      "kind": "scores"
+    }
+  },
+  {
+    "seq": 7,
+    "ts": "2026-10-10T11:38:07.512898+08:00",
+    "type": "artifact.created",
+    "actor": "agent:idea/gap",
+    "refs": [
+      {
+        "artifact_id": "idea/gap_table.md",
+        "version": 1,
+        "sha256": "aa6f91ebbab37d4a3c6f586022082e15192af824c090f10785ee48bdd04c304a"
+      }
+    ],
+    "run_id": null,
+    "summary": "idea/gap_table.md 新版本 v1",
+    "data": {
+      "kind": "gap_table"
+    }
+  },
+  {
+    "seq": 8,
+    "ts": "2026-10-10T11:38:07.513339+08:00",
+    "type": "artifact.created",
+    "actor": "agent:idea/refine",
+    "refs": [
+      {
+        "artifact_id": "idea/selected.json",
+        "version": 1,
+        "sha256": "73c3740ffd2192d312745d253b2cb0cd996764e7cdc997cde0e2df1ede558e23"
+      }
+    ],
+    "run_id": null,
+    "summary": "idea/selected.json 新版本 v1",
+    "data": {
+      "kind": "idea"
+    }
+  },
+  {
+    "seq": 9,
+    "ts": "2026-10-10T11:38:07.515167+08:00",
+    "type": "artifact.created",
+    "actor": "agent:idea/writer",
+    "refs": [
+      {
+        "artifact_id": "idea/selected.md",
+        "version": 1,
+        "sha256": "d3e6aaf8fbd333a905dda08d2f5902e655e6aa453a6dfe1bcc9a725ac17c00c7"
+      }
+    ],
+    "run_id": null,
+    "summary": "idea/selected.md 新版本 v1：初版",
+    "data": {
+      "kind": "idea"
+    }
+  },
+  {
+    "seq": 10,
+    "ts": "2026-10-10T11:38:07.515959+08:00",
+    "type": "approval.requested",
+    "actor": "engine",
+    "refs": [
+      {
+        "artifact_id": "idea/selected.md",
+        "version": 1,
+        "sha256": "d3e6aaf8fbd333a905dda08d2f5902e655e6aa453a6dfe1bcc9a725ac17c00c7"
+      }
+    ],
+    "run_id": null,
+    "summary": "请求审批 idea：idea/selected.md v1",
+    "data": {
+      "approval_id": "ap-0001",
+      "kind": "idea"
+    }
+  },
+  {
+    "seq": 11,
+    "ts": "2026-10-10T11:38:07.516019+08:00",
+    "type": "state.changed",
+    "actor": "engine",
+    "refs": [],
+    "run_id": null,
+    "summary": "IdeaDrafting → IdeaPending：提交idea审批 ap-0001",
+    "data": {
+      "from": "IdeaDrafting",
+      "to": "IdeaPending",
+      "reason": "提交idea审批 ap-0001"
+    }
+  },
+  {
+    "seq": 12,
+    "ts": "2026-10-10T11:38:07.516676+08:00",
+    "type": "approval.decided",
+    "actor": "user",
+    "refs": [
+      {
+        "artifact_id": "idea/selected.md",
+        "version": 1,
+        "sha256": "d3e6aaf8fbd333a905dda08d2f5902e655e6aa453a6dfe1bcc9a725ac17c00c7"
+      }
+    ],
+    "run_id": null,
+    "summary": "退回修改审批 ap-0001（idea）：研究问题请写明每类样本数和主要指标",
+    "data": {
+      "approval_id": "ap-0001",
+      "decision": "changes_requested"
+    }
+  },
+  {
+    "seq": 13,
+    "ts": "2026-10-10T11:38:07.516765+08:00",
+    "type": "state.changed",
+    "actor": "user",
+    "refs": [],
+    "run_id": null,
+    "summary": "IdeaPending → IdeaDrafting：idea审批结果：changes_requested",
+    "data": {
+      "from": "IdeaPending",
+      "to": "IdeaDrafting",
+      "reason": "idea审批结果：changes_requested"
+    }
+  },
+  {
+    "seq": 14,
+    "ts": "2026-10-10T11:38:07.519883+08:00",
+    "type": "artifact.created",
+    "actor": "agent:idea/writer",
+    "refs": [
+      {
+        "artifact_id": "idea/selected.md",
+        "version": 2,
+        "sha256": "da042f112a87fd48fd901fff41188f5cc94dd1e70975bba04e66ac0ebcabef7f"
+      }
+    ],
+    "run_id": null,
+    "summary": "idea/selected.md 新版本 v2：按用户意见修改（退回修改）：研究问题请写明每类样本数和主要指标",
+    "data": {
+      "kind": "idea"
+    }
+  },
+  {
+    "seq": 15,
+    "ts": "2026-10-10T11:38:07.520668+08:00",
+    "type": "approval.requested",
+    "actor": "engine",
+    "refs": [
+      {
+        "artifact_id": "idea/selected.md",
+        "version": 2,
+        "sha256": "da042f112a87fd48fd901fff41188f5cc94dd1e70975bba04e66ac0ebcabef7f"
+      }
+    ],
+    "run_id": null,
+    "summary": "请求审批 idea：idea/selected.md v2",
+    "data": {
+      "approval_id": "ap-0002",
+      "kind": "idea"
+    }
+  },
+  {
+    "seq": 16,
+    "ts": "2026-10-10T11:38:07.520711+08:00",
+    "type": "state.changed",
+    "actor": "engine",
+    "refs": [],
+    "run_id": null,
+    "summary": "IdeaDrafting → IdeaPending：提交idea审批 ap-0002",
+    "data": {
+      "from": "IdeaDrafting",
+      "to": "IdeaPending",
+      "reason": "提交idea审批 ap-0002"
+    }
+  },
+  {
+    "seq": 17,
+    "ts": "2026-10-10T11:38:07.521304+08:00",
+    "type": "approval.decided",
+    "actor": "user",
+    "refs": [
+      {
+        "artifact_id": "idea/selected.md",
+        "version": 2,
+        "sha256": "da042f112a87fd48fd901fff41188f5cc94dd1e70975bba04e66ac0ebcabef7f"
+      }
+    ],
+    "run_id": null,
+    "summary": "批准审批 ap-0002（idea）",
+    "data": {
+      "approval_id": "ap-0002",
+      "decision": "approved"
+    }
+  },
+  {
+    "seq": 18,
+    "ts": "2026-10-10T11:38:07.521389+08:00",
+    "type": "state.changed",
+    "actor": "user",
+    "refs": [],
+    "run_id": null,
+    "summary": "IdeaPending → PlanDrafting：idea审批结果：approved",
+    "data": {
+      "from": "IdeaPending",
+      "to": "PlanDrafting",
+      "reason": "idea审批结果：approved"
+    }
+  },
+  {
+    "seq": 19,
+    "ts": "2026-10-10T11:38:07.526960+08:00",
+    "type": "artifact.created",
+    "actor": "agent:plan/expand",
+    "refs": [
+      {
+        "artifact_id": "plan/tasks.json",
+        "version": 1,
+        "sha256": "a4ad91d2026434bf9949aa5a0dc36e59f6ff368c1c1301776a4d95cf7742c74c"
+      }
+    ],
+    "run_id": null,
+    "summary": "plan/tasks.json 新版本 v1",
+    "data": {
+      "kind": "plan"
+    }
+  },
+  {
+    "seq": 20,
+    "ts": "2026-10-10T11:38:07.527397+08:00",
+    "type": "artifact.created",
+    "actor": "agent:plan/precheck",
+    "refs": [
+      {
+        "artifact_id": "plan/precheck.json",
+        "version": 1,
+        "sha256": "8de1a5c36edfe73e6631c0de22512bfabbfa6b36d36c275372efd2ec8b2dba75"
+      }
+    ],
+    "run_id": null,
+    "summary": "plan/precheck.json 新版本 v1",
+    "data": {
+      "kind": "precheck"
+    }
+  },
+  {
+    "seq": 21,
+    "ts": "2026-10-10T11:38:07.527814+08:00",
+    "type": "artifact.created",
+    "actor": "agent:plan/writer",
+    "refs": [
+      {
+        "artifact_id": "plan/experiment_plan.md",
+        "version": 1,
+        "sha256": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2"
+      }
+    ],
+    "run_id": null,
+    "summary": "plan/experiment_plan.md 新版本 v1：初版",
+    "data": {
+      "kind": "plan"
+    }
+  },
+  {
+    "seq": 22,
+    "ts": "2026-10-10T11:38:07.529998+08:00",
+    "type": "approval.requested",
+    "actor": "engine",
+    "refs": [
+      {
+        "artifact_id": "plan/experiment_plan.md",
+        "version": 1,
+        "sha256": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2"
+      }
+    ],
+    "run_id": null,
+    "summary": "请求审批 plan：plan/experiment_plan.md v1",
+    "data": {
+      "approval_id": "ap-0003",
+      "kind": "plan"
+    }
+  },
+  {
+    "seq": 23,
+    "ts": "2026-10-10T11:38:07.530043+08:00",
+    "type": "state.changed",
+    "actor": "engine",
+    "refs": [],
+    "run_id": null,
+    "summary": "PlanDrafting → PlanPending：提交实验计划审批 ap-0003",
+    "data": {
+      "from": "PlanDrafting",
+      "to": "PlanPending",
+      "reason": "提交实验计划审批 ap-0003"
+    }
+  },
+  {
+    "seq": 24,
+    "ts": "2026-10-10T11:38:07.530769+08:00",
+    "type": "approval.decided",
+    "actor": "user",
+    "refs": [
+      {
+        "artifact_id": "plan/experiment_plan.md",
+        "version": 1,
+        "sha256": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2"
+      }
+    ],
+    "run_id": null,
+    "summary": "批准审批 ap-0003（plan）",
+    "data": {
+      "approval_id": "ap-0003",
+      "decision": "approved"
+    }
+  },
+  {
+    "seq": 25,
+    "ts": "2026-10-10T11:38:07.530892+08:00",
+    "type": "state.changed",
+    "actor": "user",
+    "refs": [],
+    "run_id": null,
+    "summary": "PlanPending → Executing：实验计划审批结果：approved",
+    "data": {
+      "from": "PlanPending",
+      "to": "Executing",
+      "reason": "实验计划审批结果：approved"
+    }
+  },
+  {
+    "seq": 26,
+    "ts": "2026-10-10T11:38:07.583164+08:00",
+    "type": "stage.decision",
+    "actor": "agent:experiment",
+    "refs": [],
+    "run_id": null,
+    "summary": "（假实现）准备执行计划 v1：9 个运行",
+    "data": {}
+  },
+  {
+    "seq": 27,
+    "ts": "2026-10-10T11:38:07.585074+08:00",
+    "type": "permission.granted",
+    "actor": "executor",
+    "refs": [],
+    "run_id": null,
+    "summary": "允许 write runs/r-20261010-113807-acb2",
+    "data": {
+      "action": "write",
+      "target": "runs/r-20261010-113807-acb2"
+    }
+  },
+  {
+    "seq": 28,
+    "ts": "2026-10-10T11:38:07.598030+08:00",
+    "type": "permission.granted",
+    "actor": "executor",
+    "refs": [],
+    "run_id": null,
+    "summary": "允许 exec local",
+    "data": {
+      "action": "exec",
+      "target": "local"
+    }
+  },
+  {
+    "seq": 29,
+    "ts": "2026-10-10T11:38:08.214651+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/executor",
+    "refs": [
+      {
+        "artifact_id": "runs/r-20261010-113807-acb2",
+        "version": 1,
+        "sha256": "c71b554ceaacb122286f3a8023a7b47d469e0c31fa09df6ad394771955416c6f"
+      }
+    ],
+    "run_id": null,
+    "summary": "runs/r-20261010-113807-acb2 新版本 v1：运行结束：succeeded",
+    "data": {
+      "kind": "run"
+    }
+  },
+  {
+    "seq": 30,
+    "ts": "2026-10-10T11:38:08.215329+08:00",
+    "type": "run.created",
+    "actor": "agent:experiment",
+    "refs": [],
+    "run_id": "r-20261010-113807-acb2",
+    "summary": "试运行 r-20261010-113807-acb2",
+    "data": {}
+  },
+  {
+    "seq": 31,
+    "ts": "2026-10-10T11:38:08.243483+08:00",
+    "type": "run.created",
+    "actor": "agent:experiment",
+    "refs": [],
+    "run_id": "r-20261010-113808-e173",
+    "summary": "提交运行 E1-seed=0：r-20261010-113808-e173",
+    "data": {
+      "task_key": "E1-seed=0",
+      "experiment_id": "E1"
+    }
+  },
+  {
+    "seq": 32,
+    "ts": "2026-10-10T11:38:08.261759+08:00",
+    "type": "run.created",
+    "actor": "agent:experiment",
+    "refs": [],
+    "run_id": "r-20261010-113808-6128",
+    "summary": "提交运行 E1-seed=1：r-20261010-113808-6128",
+    "data": {
+      "task_key": "E1-seed=1",
+      "experiment_id": "E1"
+    }
+  },
+  {
+    "seq": 33,
+    "ts": "2026-10-10T11:38:09.797752+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/executor",
+    "refs": [
+      {
+        "artifact_id": "runs/r-20261010-113808-e173",
+        "version": 1,
+        "sha256": "37018ceb93675e42693e755c0e6876e3a90aa064f4f0719d91fdc799ef519ce3"
+      }
+    ],
+    "run_id": null,
+    "summary": "runs/r-20261010-113808-e173 新版本 v1：运行结束：succeeded",
+    "data": {
+      "kind": "run"
+    }
+  },
+  {
+    "seq": 34,
+    "ts": "2026-10-10T11:38:09.798408+08:00",
+    "type": "run.status_changed",
+    "actor": "agent:experiment/executor",
+    "refs": [],
+    "run_id": "r-20261010-113808-e173",
+    "summary": "运行 r-20261010-113808-e173 结束：succeeded",
+    "data": {
+      "state": "succeeded",
+      "failure_reason": null
+    }
+  },
+  {
+    "seq": 35,
+    "ts": "2026-10-10T11:38:09.801029+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/executor",
+    "refs": [
+      {
+        "artifact_id": "runs/r-20261010-113808-6128",
+        "version": 1,
+        "sha256": "3bc9653c8d93b8114eda11c6a57101fedcc9ca3ec08a92657d943bdc2c128f04"
+      }
+    ],
+    "run_id": null,
+    "summary": "runs/r-20261010-113808-6128 新版本 v1：运行结束：succeeded",
+    "data": {
+      "kind": "run"
+    }
+  },
+  {
+    "seq": 36,
+    "ts": "2026-10-10T11:38:09.801408+08:00",
+    "type": "run.status_changed",
+    "actor": "agent:experiment/executor",
+    "refs": [],
+    "run_id": "r-20261010-113808-6128",
+    "summary": "运行 r-20261010-113808-6128 结束：succeeded",
+    "data": {
+      "state": "succeeded",
+      "failure_reason": null
+    }
+  },
+  {
+    "seq": 37,
+    "ts": "2026-10-10T11:38:09.832453+08:00",
+    "type": "run.created",
+    "actor": "agent:experiment",
+    "refs": [],
+    "run_id": "r-20261010-113809-6926",
+    "summary": "提交运行 E1-seed=2：r-20261010-113809-6926",
+    "data": {
+      "task_key": "E1-seed=2",
+      "experiment_id": "E1"
+    }
+  },
+  {
+    "seq": 38,
+    "ts": "2026-10-10T11:38:09.851163+08:00",
+    "type": "run.created",
+    "actor": "agent:experiment",
+    "refs": [],
+    "run_id": "r-20261010-113809-0426",
+    "summary": "提交运行 E2-seed=0：r-20261010-113809-0426",
+    "data": {
+      "task_key": "E2-seed=0",
+      "experiment_id": "E2"
+    }
+  },
+  {
+    "seq": 39,
+    "ts": "2026-10-10T11:38:11.389674+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/executor",
+    "refs": [
+      {
+        "artifact_id": "runs/r-20261010-113809-6926",
+        "version": 1,
+        "sha256": "36f922951a073715e8c36dc0fc5fba73964443f59bf4769d5cfee316ada61125"
+      }
+    ],
+    "run_id": null,
+    "summary": "runs/r-20261010-113809-6926 新版本 v1：运行结束：succeeded",
+    "data": {
+      "kind": "run"
+    }
+  },
+  {
+    "seq": 40,
+    "ts": "2026-10-10T11:38:11.390216+08:00",
+    "type": "run.status_changed",
+    "actor": "agent:experiment/executor",
+    "refs": [],
+    "run_id": "r-20261010-113809-6926",
+    "summary": "运行 r-20261010-113809-6926 结束：succeeded",
+    "data": {
+      "state": "succeeded",
+      "failure_reason": null
+    }
+  },
+  {
+    "seq": 41,
+    "ts": "2026-10-10T11:38:11.392389+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/executor",
+    "refs": [
+      {
+        "artifact_id": "runs/r-20261010-113809-0426",
+        "version": 1,
+        "sha256": "72ad3e19556ccd1d10ae0f8056c04306553ce156ef976727b0b59ce42eda7496"
+      }
+    ],
+    "run_id": null,
+    "summary": "runs/r-20261010-113809-0426 新版本 v1：运行结束：succeeded",
+    "data": {
+      "kind": "run"
+    }
+  },
+  {
+    "seq": 42,
+    "ts": "2026-10-10T11:38:11.392768+08:00",
+    "type": "run.status_changed",
+    "actor": "agent:experiment/executor",
+    "refs": [],
+    "run_id": "r-20261010-113809-0426",
+    "summary": "运行 r-20261010-113809-0426 结束：succeeded",
+    "data": {
+      "state": "succeeded",
+      "failure_reason": null
+    }
+  },
+  {
+    "seq": 43,
+    "ts": "2026-10-10T11:38:11.425554+08:00",
+    "type": "run.created",
+    "actor": "agent:experiment",
+    "refs": [],
+    "run_id": "r-20261010-113811-02ea",
+    "summary": "提交运行 E2-seed=1：r-20261010-113811-02ea",
+    "data": {
+      "task_key": "E2-seed=1",
+      "experiment_id": "E2"
+    }
+  },
+  {
+    "seq": 44,
+    "ts": "2026-10-10T11:38:11.444606+08:00",
+    "type": "run.created",
+    "actor": "agent:experiment",
+    "refs": [],
+    "run_id": "r-20261010-113811-67d8",
+    "summary": "提交运行 E2-seed=2：r-20261010-113811-67d8",
+    "data": {
+      "task_key": "E2-seed=2",
+      "experiment_id": "E2"
+    }
+  },
+  {
+    "seq": 45,
+    "ts": "2026-10-10T11:38:12.472098+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/executor",
+    "refs": [
+      {
+        "artifact_id": "runs/r-20261010-113811-67d8",
+        "version": 1,
+        "sha256": "180d080f627ace35689559463e1ce56ce295815dc22c40f6407e42daa094bf53"
+      }
+    ],
+    "run_id": null,
+    "summary": "runs/r-20261010-113811-67d8 新版本 v1：运行结束：failed",
+    "data": {
+      "kind": "run"
+    }
+  },
+  {
+    "seq": 46,
+    "ts": "2026-10-10T11:38:12.472590+08:00",
+    "type": "run.status_changed",
+    "actor": "agent:experiment/executor",
+    "refs": [],
+    "run_id": "r-20261010-113811-67d8",
+    "summary": "运行 r-20261010-113811-67d8 结束：failed（nonzero_exit）",
+    "data": {
+      "state": "failed",
+      "failure_reason": "nonzero_exit"
+    }
+  },
+  {
+    "seq": 47,
+    "ts": "2026-10-10T11:38:12.474148+08:00",
+    "type": "question.asked",
+    "actor": "agent:experiment",
+    "refs": [
+      {
+        "artifact_id": "runs/r-20261010-113811-67d8",
+        "version": 1,
+        "sha256": "180d080f627ace35689559463e1ce56ce295815dc22c40f6407e42daa094bf53"
+      }
+    ],
+    "run_id": null,
+    "summary": "[experiment] 运行 **E2-seed=2**（r-20261010-113811-67d8）失败：nonzero_exit。",
+    "data": {
+      "question_id": "q-0001",
+      "options": [
+        "skip",
+        "retry",
+        "end"
+      ]
+    }
+  },
+  {
+    "seq": 48,
+    "ts": "2026-10-10T11:38:12.474405+08:00",
+    "type": "state.changed",
+    "actor": "agent:experiment",
+    "refs": [],
+    "run_id": null,
+    "summary": "Executing → Paused：运行 E2-seed=2 失败（nonzero_exit）",
+    "data": {
+      "from": "Executing",
+      "to": "Paused",
+      "reason": "运行 E2-seed=2 失败（nonzero_exit）"
+    }
+  },
+  {
+    "seq": 49,
+    "ts": "2026-10-10T11:38:12.476389+08:00",
+    "type": "question.answered",
+    "actor": "user",
+    "refs": [],
+    "run_id": null,
+    "summary": "回答问题 q-0001：retry 已检查代码，重试一次",
+    "data": {
+      "question_id": "q-0001",
+      "choice": "retry"
+    }
+  },
+  {
+    "seq": 50,
+    "ts": "2026-10-10T11:38:12.476694+08:00",
+    "type": "state.changed",
+    "actor": "user",
+    "refs": [],
+    "run_id": null,
+    "summary": "Paused → Executing：收到回答：retry",
+    "data": {
+      "from": "Paused",
+      "to": "Executing",
+      "reason": "收到回答：retry"
+    }
+  },
+  {
+    "seq": 51,
+    "ts": "2026-10-10T11:38:12.479222+08:00",
+    "type": "stage.decision",
+    "actor": "agent:experiment",
+    "refs": [],
+    "run_id": null,
+    "summary": "失败运行 E2-seed=2 的处理：retry",
+    "data": {}
+  },
+  {
+    "seq": 52,
+    "ts": "2026-10-10T11:38:12.508994+08:00",
+    "type": "run.created",
+    "actor": "agent:experiment",
+    "refs": [],
+    "run_id": "r-20261010-113812-86a1",
+    "summary": "提交运行 E2-seed=2：r-20261010-113812-86a1",
+    "data": {
+      "task_key": "E2-seed=2",
+      "experiment_id": "E2"
+    }
+  },
+  {
+    "seq": 53,
+    "ts": "2026-10-10T11:38:13.025939+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/executor",
+    "refs": [
+      {
+        "artifact_id": "runs/r-20261010-113811-02ea",
+        "version": 1,
+        "sha256": "2b193bf57c6df46cf63a8b393fbdffaadd99ad8225eb7ea162ef2938e2adfc78"
+      }
+    ],
+    "run_id": null,
+    "summary": "runs/r-20261010-113811-02ea 新版本 v1：运行结束：succeeded",
+    "data": {
+      "kind": "run"
+    }
+  },
+  {
+    "seq": 54,
+    "ts": "2026-10-10T11:38:13.026339+08:00",
+    "type": "run.status_changed",
+    "actor": "agent:experiment/executor",
+    "refs": [],
+    "run_id": "r-20261010-113811-02ea",
+    "summary": "运行 r-20261010-113811-02ea 结束：succeeded",
+    "data": {
+      "state": "succeeded",
+      "failure_reason": null
+    }
+  },
+  {
+    "seq": 55,
+    "ts": "2026-10-10T11:38:13.059870+08:00",
+    "type": "run.created",
+    "actor": "agent:experiment",
+    "refs": [],
+    "run_id": "r-20261010-113813-5303",
+    "summary": "提交运行 E3-seed=0：r-20261010-113813-5303",
+    "data": {
+      "task_key": "E3-seed=0",
+      "experiment_id": "E3"
+    }
+  },
+  {
+    "seq": 56,
+    "ts": "2026-10-10T11:38:14.087070+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/executor",
+    "refs": [
+      {
+        "artifact_id": "runs/r-20261010-113812-86a1",
+        "version": 1,
+        "sha256": "12174f6f6313a3e1731c7c2057a8543e6fcec01a09a472b6ebc69736a157f9aa"
+      }
+    ],
+    "run_id": null,
+    "summary": "runs/r-20261010-113812-86a1 新版本 v1：运行结束：succeeded",
+    "data": {
+      "kind": "run"
+    }
+  },
+  {
+    "seq": 57,
+    "ts": "2026-10-10T11:38:14.087549+08:00",
+    "type": "run.status_changed",
+    "actor": "agent:experiment/executor",
+    "refs": [],
+    "run_id": "r-20261010-113812-86a1",
+    "summary": "运行 r-20261010-113812-86a1 结束：succeeded",
+    "data": {
+      "state": "succeeded",
+      "failure_reason": null
+    }
+  },
+  {
+    "seq": 58,
+    "ts": "2026-10-10T11:38:14.120741+08:00",
+    "type": "run.created",
+    "actor": "agent:experiment",
+    "refs": [],
+    "run_id": "r-20261010-113814-a639",
+    "summary": "提交运行 E3-seed=1：r-20261010-113814-a639",
+    "data": {
+      "task_key": "E3-seed=1",
+      "experiment_id": "E3"
+    }
+  },
+  {
+    "seq": 59,
+    "ts": "2026-10-10T11:38:14.637510+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/executor",
+    "refs": [
+      {
+        "artifact_id": "runs/r-20261010-113813-5303",
+        "version": 1,
+        "sha256": "b64c7bbdc902c9b481d2435f590a3a0004b30e72b90e537a7eb3b1f49fb0fa27"
+      }
+    ],
+    "run_id": null,
+    "summary": "runs/r-20261010-113813-5303 新版本 v1：运行结束：succeeded",
+    "data": {
+      "kind": "run"
+    }
+  },
+  {
+    "seq": 60,
+    "ts": "2026-10-10T11:38:14.637944+08:00",
+    "type": "run.status_changed",
+    "actor": "agent:experiment/executor",
+    "refs": [],
+    "run_id": "r-20261010-113813-5303",
+    "summary": "运行 r-20261010-113813-5303 结束：succeeded",
+    "data": {
+      "state": "succeeded",
+      "failure_reason": null
+    }
+  },
+  {
+    "seq": 61,
+    "ts": "2026-10-10T11:38:14.671800+08:00",
+    "type": "run.created",
+    "actor": "agent:experiment",
+    "refs": [],
+    "run_id": "r-20261010-113814-daa4",
+    "summary": "提交运行 E3-seed=2：r-20261010-113814-daa4",
+    "data": {
+      "task_key": "E3-seed=2",
+      "experiment_id": "E3"
+    }
+  },
+  {
+    "seq": 62,
+    "ts": "2026-10-10T11:38:15.703513+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/executor",
+    "refs": [
+      {
+        "artifact_id": "runs/r-20261010-113814-a639",
+        "version": 1,
+        "sha256": "e5ac7407d3f9971120741966c4daddb74bd0aa880d0bc59411cdd29b5906d1ec"
+      }
+    ],
+    "run_id": null,
+    "summary": "runs/r-20261010-113814-a639 新版本 v1：运行结束：succeeded",
+    "data": {
+      "kind": "run"
+    }
+  },
+  {
+    "seq": 63,
+    "ts": "2026-10-10T11:38:15.703969+08:00",
+    "type": "run.status_changed",
+    "actor": "agent:experiment/executor",
+    "refs": [],
+    "run_id": "r-20261010-113814-a639",
+    "summary": "运行 r-20261010-113814-a639 结束：succeeded",
+    "data": {
+      "state": "succeeded",
+      "failure_reason": null
+    }
+  },
+  {
+    "seq": 64,
+    "ts": "2026-10-10T11:38:16.220766+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/executor",
+    "refs": [
+      {
+        "artifact_id": "runs/r-20261010-113814-daa4",
+        "version": 1,
+        "sha256": "129bb4604c75e0ff00b2f294b5fcf99aa4183521112af397707773099919abd9"
+      }
+    ],
+    "run_id": null,
+    "summary": "runs/r-20261010-113814-daa4 新版本 v1：运行结束：succeeded",
+    "data": {
+      "kind": "run"
+    }
+  },
+  {
+    "seq": 65,
+    "ts": "2026-10-10T11:38:16.221219+08:00",
+    "type": "run.status_changed",
+    "actor": "agent:experiment/executor",
+    "refs": [],
+    "run_id": "r-20261010-113814-daa4",
+    "summary": "运行 r-20261010-113814-daa4 结束：succeeded",
+    "data": {
+      "state": "succeeded",
+      "failure_reason": null
+    }
+  },
+  {
+    "seq": 66,
+    "ts": "2026-10-10T11:38:16.221582+08:00",
+    "type": "state.changed",
+    "actor": "agent:experiment",
+    "refs": [],
+    "run_id": null,
+    "summary": "Executing → Analyzing：第 1 轮运行全部结束",
+    "data": {
+      "from": "Executing",
+      "to": "Analyzing",
+      "reason": "第 1 轮运行全部结束"
+    }
+  },
+  {
+    "seq": 67,
+    "ts": "2026-10-10T11:38:16.237417+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/aggregate",
+    "refs": [
+      {
+        "artifact_id": "artifacts/aggregates/C1.json",
+        "version": 1,
+        "sha256": "579765f917f1261ed5df6bb60d4f53435dcba11fc0c52443f09d6a94db606fc8"
+      }
+    ],
+    "run_id": null,
+    "summary": "artifacts/aggregates/C1.json 新版本 v1",
+    "data": {
+      "kind": "aggregate"
+    }
+  },
+  {
+    "seq": 68,
+    "ts": "2026-10-10T11:38:16.238771+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/aggregate",
+    "refs": [
+      {
+        "artifact_id": "artifacts/aggregates/C1.csv",
+        "version": 1,
+        "sha256": "fc9a91ec02525339cef6d14d91fa57624a5b2a0c2a6e163809df93955e6d111e"
+      }
+    ],
+    "run_id": null,
+    "summary": "artifacts/aggregates/C1.csv 新版本 v1",
+    "data": {
+      "kind": "aggregate"
+    }
+  },
+  {
+    "seq": 69,
+    "ts": "2026-10-10T11:38:16.239931+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/aggregate",
+    "refs": [
+      {
+        "artifact_id": "artifacts/aggregates/C1.md",
+        "version": 1,
+        "sha256": "876f02e12aa531bc4394baa5cafb3598b7bfcd59b77a632a7d587348fd8701a4"
+      }
+    ],
+    "run_id": null,
+    "summary": "artifacts/aggregates/C1.md 新版本 v1",
+    "data": {
+      "kind": "aggregate"
+    }
+  },
+  {
+    "seq": 70,
+    "ts": "2026-10-10T11:38:16.246566+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/aggregate",
+    "refs": [
+      {
+        "artifact_id": "artifacts/aggregates/C2.json",
+        "version": 1,
+        "sha256": "7bab00803be48cd81d63454d88cc5bf041ba8feb91f43edd34b66d1814c80b5f"
+      }
+    ],
+    "run_id": null,
+    "summary": "artifacts/aggregates/C2.json 新版本 v1",
+    "data": {
+      "kind": "aggregate"
+    }
+  },
+  {
+    "seq": 71,
+    "ts": "2026-10-10T11:38:16.247476+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/aggregate",
+    "refs": [
+      {
+        "artifact_id": "artifacts/aggregates/C2.csv",
+        "version": 1,
+        "sha256": "f6ba67bea95fdf8c3aa265c723fd4bc55f51e9e12d94e603e4437deaeb078de9"
+      }
+    ],
+    "run_id": null,
+    "summary": "artifacts/aggregates/C2.csv 新版本 v1",
+    "data": {
+      "kind": "aggregate"
+    }
+  },
+  {
+    "seq": 72,
+    "ts": "2026-10-10T11:38:16.248645+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/aggregate",
+    "refs": [
+      {
+        "artifact_id": "artifacts/aggregates/C2.md",
+        "version": 1,
+        "sha256": "5074d7f02c8b2fbd6bc0e42a2d1a18b580408de37b2cf733c88bb06a6a66dd0a"
+      }
+    ],
+    "run_id": null,
+    "summary": "artifacts/aggregates/C2.md 新版本 v1",
+    "data": {
+      "kind": "aggregate"
+    }
+  },
+  {
+    "seq": 73,
+    "ts": "2026-10-10T11:38:16.255391+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/aggregate",
+    "refs": [
+      {
+        "artifact_id": "artifacts/aggregates/all.json",
+        "version": 1,
+        "sha256": "e53729d7b0e70bc44791d26868b21ec203a96982823b92e02d2d6469687ccf37"
+      }
+    ],
+    "run_id": null,
+    "summary": "artifacts/aggregates/all.json 新版本 v1",
+    "data": {
+      "kind": "aggregate"
+    }
+  },
+  {
+    "seq": 74,
+    "ts": "2026-10-10T11:38:16.256194+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/aggregate",
+    "refs": [
+      {
+        "artifact_id": "artifacts/aggregates/all.csv",
+        "version": 1,
+        "sha256": "f943a9e05343b7a823e69ce8ad30f00c2bcee87dcea8bfe7035e55e7d65964e5"
+      }
+    ],
+    "run_id": null,
+    "summary": "artifacts/aggregates/all.csv 新版本 v1",
+    "data": {
+      "kind": "aggregate"
+    }
+  },
+  {
+    "seq": 75,
+    "ts": "2026-10-10T11:38:16.257028+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/aggregate",
+    "refs": [
+      {
+        "artifact_id": "artifacts/aggregates/all.md",
+        "version": 1,
+        "sha256": "365dd702eab03fe20c43e164c247bc0bea436b075141e41a0453b71c04833cce"
+      }
+    ],
+    "run_id": null,
+    "summary": "artifacts/aggregates/all.md 新版本 v1",
+    "data": {
+      "kind": "aggregate"
+    }
+  },
+  {
+    "seq": 76,
+    "ts": "2026-10-10T11:38:16.259301+08:00",
+    "type": "artifact.created",
+    "actor": "agent:experiment/analysis",
+    "refs": [
+      {
+        "artifact_id": "logs/round_1.md",
+        "version": 1,
+        "sha256": "ce3c61acdb3efbdb4997bf1aac24b617adf64630e2fc80e24f0e15b3e3b3ea7e"
+      }
+    ],
+    "run_id": null,
+    "summary": "logs/round_1.md 新版本 v1：初版",
+    "data": {
+      "kind": "process_log"
+    }
+  },
+  {
+    "seq": 77,
+    "ts": "2026-10-10T11:38:16.259378+08:00",
+    "type": "stage.decision",
+    "actor": "agent:experiment",
+    "refs": [],
+    "run_id": null,
+    "summary": "（假实现）分析决定：stop_and_write（计划内实验全部完成）",
+    "data": {
+      "decision": "stop_and_write"
+    }
+  },
+  {
+    "seq": 78,
+    "ts": "2026-10-10T11:38:16.261563+08:00",
+    "type": "approval.requested",
+    "actor": "engine",
+    "refs": [
+      {
+        "artifact_id": "logs/round_1.md",
+        "version": 1,
+        "sha256": "ce3c61acdb3efbdb4997bf1aac24b617adf64630e2fc80e24f0e15b3e3b3ea7e"
+      }
+    ],
+    "run_id": null,
+    "summary": "请求审批 log：logs/round_1.md v1",
+    "data": {
+      "approval_id": "ap-0004",
+      "kind": "log"
+    }
+  },
+  {
+    "seq": 79,
+    "ts": "2026-10-10T11:38:16.261649+08:00",
+    "type": "state.changed",
+    "actor": "engine",
+    "refs": [],
+    "run_id": null,
+    "summary": "Analyzing → LogPending：提交过程日志审批 ap-0004",
+    "data": {
+      "from": "Analyzing",
+      "to": "LogPending",
+      "reason": "提交过程日志审批 ap-0004"
+    }
+  },
+  {
+    "seq": 80,
+    "ts": "2026-10-10T11:38:16.262834+08:00",
+    "type": "approval.decided",
+    "actor": "user",
+    "refs": [
+      {
+        "artifact_id": "logs/round_1.md",
+        "version": 1,
+        "sha256": "ce3c61acdb3efbdb4997bf1aac24b617adf64630e2fc80e24f0e15b3e3b3ea7e"
+      }
+    ],
+    "run_id": null,
+    "summary": "批准审批 ap-0004（log）",
+    "data": {
+      "approval_id": "ap-0004",
+      "decision": "approved"
+    }
+  },
+  {
+    "seq": 81,
+    "ts": "2026-10-10T11:38:16.262963+08:00",
+    "type": "state.changed",
+    "actor": "user",
+    "refs": [],
+    "run_id": null,
+    "summary": "LogPending → Analyzing：过程日志审批结果：approved",
+    "data": {
+      "from": "LogPending",
+      "to": "Analyzing",
+      "reason": "过程日志审批结果：approved"
+    }
+  },
+  {
+    "seq": 82,
+    "ts": "2026-10-10T11:38:16.263361+08:00",
+    "type": "state.changed",
+    "actor": "agent:experiment",
+    "refs": [],
+    "run_id": null,
+    "summary": "Analyzing → Writing：过程日志已批准；计划内实验全部完成，达到停止条件",
+    "data": {
+      "from": "Analyzing",
+      "to": "Writing",
+      "reason": "过程日志已批准；计划内实验全部完成，达到停止条件"
+    }
+  },
+  {
+    "seq": 83,
+    "ts": "2026-10-10T11:38:16.269985+08:00",
+    "type": "artifact.created",
+    "actor": "agent:writing/figures",
+    "refs": [
+      {
+        "artifact_id": "artifacts/figures/fig_c1",
+        "version": 1,
+        "sha256": "32c2b6dd00a671c8cb63b46acc61f99a2943d3c4c99958f045a4983ad7fe642d"
+      }
+    ],
+    "run_id": null,
+    "summary": "artifacts/figures/fig_c1 新版本 v1",
+    "data": {
+      "kind": "figure"
+    }
+  },
+  {
+    "seq": 84,
+    "ts": "2026-10-10T11:38:16.271748+08:00",
+    "type": "artifact.created",
+    "actor": "agent:writing/figures",
+    "refs": [
+      {
+        "artifact_id": "artifacts/figures/fig_c2",
+        "version": 1,
+        "sha256": "f4d21d47e2ae6e542000193ad991d40d9b60d3081d685e70225b79935c4158b0"
+      }
+    ],
+    "run_id": null,
+    "summary": "artifacts/figures/fig_c2 新版本 v1",
+    "data": {
+      "kind": "figure"
+    }
+  },
+  {
+    "seq": 85,
+    "ts": "2026-10-10T11:38:17.457817+08:00",
+    "type": "artifact.created",
+    "actor": "agent:writing",
+    "refs": [
+      {
+        "artifact_id": "paper",
+        "version": 1,
+        "sha256": "4ca04907d61d34effc0de20adb94ca5e1ba67b4c088466b37ce94e4353a84e98"
+      }
+    ],
+    "run_id": null,
+    "summary": "paper 新版本 v1：初稿",
+    "data": {
+      "kind": "paper"
+    }
+  },
+  {
+    "seq": 86,
+    "ts": "2026-10-10T11:38:17.458192+08:00",
+    "type": "artifact.created",
+    "actor": "agent:writing",
+    "refs": [
+      {
+        "artifact_id": "paper/claims.jsonl",
+        "version": 1,
+        "sha256": "344c1acdc191be5791c94120adae37e844893b303ae5acbeffcfc84b1680a642"
+      }
+    ],
+    "run_id": null,
+    "summary": "paper/claims.jsonl 新版本 v1",
+    "data": {
+      "kind": "claims"
+    }
+  },
+  {
+    "seq": 87,
+    "ts": "2026-10-10T11:38:17.458612+08:00",
+    "type": "artifact.created",
+    "actor": "agent:writing",
+    "refs": [
+      {
+        "artifact_id": "paper/build/main.pdf",
+        "version": 1,
+        "sha256": "0f2cb40c94cb7c19c4adcb5a37474fdc70a550b9998d03c0b90362a45d1664bc"
+      }
+    ],
+    "run_id": null,
+    "summary": "paper/build/main.pdf 新版本 v1",
+    "data": {
+      "kind": "paper"
+    }
+  },
+  {
+    "seq": 88,
+    "ts": "2026-10-10T11:38:17.458935+08:00",
+    "type": "artifact.created",
+    "actor": "agent:writing",
+    "refs": [
+      {
+        "artifact_id": "paper/build/compile_report.json",
+        "version": 1,
+        "sha256": "9a0573eb55bfbecacf881c4ac772d04b7b150e8a81209f7fdb3129750c5fd97b"
+      }
+    ],
+    "run_id": null,
+    "summary": "paper/build/compile_report.json 新版本 v1",
+    "data": {
+      "kind": "other"
+    }
+  },
+  {
+    "seq": 89,
+    "ts": "2026-10-10T11:38:17.468915+08:00",
+    "type": "artifact.created",
+    "actor": "agent:writing/review",
+    "refs": [
+      {
+        "artifact_id": "paper/review/review_v1.json",
+        "version": 1,
+        "sha256": "43cbe36a985eb102e476dfe266b390ae5b53d335d854710c6a297d989e59fcf7"
+      }
+    ],
+    "run_id": null,
+    "summary": "paper/review/review_v1.json 新版本 v1",
+    "data": {
+      "kind": "review_report"
+    }
+  },
+  {
+    "seq": 90,
+    "ts": "2026-10-10T11:38:17.468975+08:00",
+    "type": "stage.decision",
+    "actor": "agent:writing",
+    "refs": [
+      {
+        "artifact_id": "paper",
+        "version": 1,
+        "sha256": "4ca04907d61d34effc0de20adb94ca5e1ba67b4c088466b37ce94e4353a84e98"
+      }
+    ],
+    "run_id": null,
+    "summary": "（假实现）论文 v1 核验完成：{'blocker': 0, 'major': 0, 'minor': 0, 'supported': 5}",
+    "data": {}
+  },
+  {
+    "seq": 91,
+    "ts": "2026-10-10T11:38:17.471597+08:00",
+    "type": "approval.requested",
+    "actor": "engine",
+    "refs": [
+      {
+        "artifact_id": "paper",
+        "version": 1,
+        "sha256": "4ca04907d61d34effc0de20adb94ca5e1ba67b4c088466b37ce94e4353a84e98"
+      }
+    ],
+    "run_id": null,
+    "summary": "请求审批 manuscript：paper v1",
+    "data": {
+      "approval_id": "ap-0005",
+      "kind": "manuscript"
+    }
+  },
+  {
+    "seq": 92,
+    "ts": "2026-10-10T11:38:17.471660+08:00",
+    "type": "state.changed",
+    "actor": "engine",
+    "refs": [],
+    "run_id": null,
+    "summary": "Writing → ManuscriptPending：提交最终手稿审批 ap-0005",
+    "data": {
+      "from": "Writing",
+      "to": "ManuscriptPending",
+      "reason": "提交最终手稿审批 ap-0005"
+    }
+  },
+  {
+    "seq": 93,
+    "ts": "2026-10-10T11:38:17.839392+08:00",
+    "type": "artifact.created",
+    "actor": "system",
+    "refs": [
+      {
+        "artifact_id": "paper",
+        "version": 2,
+        "sha256": "738f6a713d9d6d73a85853ec4bbd2b5475066751ec88bdac358d5765ecbc6875"
+      }
+    ],
+    "run_id": null,
+    "summary": "paper 新版本 v2：样例项目：故意加入 2 条错误论断（CL6、CL7）",
+    "data": {
+      "kind": "paper"
+    }
+  },
+  {
+    "seq": 94,
+    "ts": "2026-10-10T11:38:17.839838+08:00",
+    "type": "artifact.created",
+    "actor": "system",
+    "refs": [
+      {
+        "artifact_id": "paper/claims.jsonl",
+        "version": 2,
+        "sha256": "e98fb5aeceb957f1a7059b2450f29cbebad9c7fce68c7284c067dc058143b455"
+      }
+    ],
+    "run_id": null,
+    "summary": "paper/claims.jsonl 新版本 v2",
+    "data": {
+      "kind": "claims"
+    }
+  },
+  {
+    "seq": 95,
+    "ts": "2026-10-10T11:38:17.840237+08:00",
+    "type": "artifact.created",
+    "actor": "system",
+    "refs": [
+      {
+        "artifact_id": "paper/build/main.pdf",
+        "version": 2,
+        "sha256": "86e2d83013f33bd528980155b7b92a599152d44d20d600c9b9144b6d79efbb8f"
+      }
+    ],
+    "run_id": null,
+    "summary": "paper/build/main.pdf 新版本 v2",
+    "data": {
+      "kind": "paper"
+    }
+  },
+  {
+    "seq": 96,
+    "ts": "2026-10-10T11:38:17.840534+08:00",
+    "type": "artifact.created",
+    "actor": "system",
+    "refs": [
+      {
+        "artifact_id": "paper/build/compile_report.json",
+        "version": 2,
+        "sha256": "c53b40f8884eced817304e1912dde0d60ba509d5f333947a680361b70a000fec"
+      }
+    ],
+    "run_id": null,
+    "summary": "paper/build/compile_report.json 新版本 v2",
+    "data": {
+      "kind": "other"
+    }
+  },
+  {
+    "seq": 97,
+    "ts": "2026-10-10T11:38:17.850451+08:00",
+    "type": "artifact.created",
+    "actor": "system",
+    "refs": [
+      {
+        "artifact_id": "paper/review/review_v2.json",
+        "version": 1,
+        "sha256": "df3c4203fdae505942b5e7ac899023e52551400c60992b9e3d4cc65bb305c185"
+      }
+    ],
+    "run_id": null,
+    "summary": "paper/review/review_v2.json 新版本 v1",
+    "data": {
+      "kind": "review_report"
+    }
+  },
+  {
+    "seq": 98,
+    "ts": "2026-10-10T11:38:17.850852+08:00",
+    "type": "approval.superseded",
+    "actor": "system",
+    "refs": [
+      {
+        "artifact_id": "paper",
+        "version": 1,
+        "sha256": "4ca04907d61d34effc0de20adb94ca5e1ba67b4c088466b37ce94e4353a84e98"
+      }
+    ],
+    "run_id": null,
+    "summary": "审批 ap-0005 已被取代：同一产物提交了新的审批请求",
+    "data": {
+      "approval_id": "ap-0005"
+    }
+  },
+  {
+    "seq": 99,
+    "ts": "2026-10-10T11:38:17.851182+08:00",
+    "type": "approval.requested",
+    "actor": "engine",
+    "refs": [
+      {
+        "artifact_id": "paper",
+        "version": 2,
+        "sha256": "738f6a713d9d6d73a85853ec4bbd2b5475066751ec88bdac358d5765ecbc6875"
+      }
+    ],
+    "run_id": null,
+    "summary": "请求审批 manuscript：paper v2",
+    "data": {
+      "approval_id": "ap-0006",
+      "kind": "manuscript"
+    }
+  }
+]

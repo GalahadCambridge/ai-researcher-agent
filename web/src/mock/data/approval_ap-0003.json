@@ -1,0 +1,55 @@
+{
+  "approval": {
+    "approval_id": "ap-0003",
+    "kind": "plan",
+    "target": {
+      "artifact_id": "plan/experiment_plan.md",
+      "version": 1,
+      "sha256": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2"
+    },
+    "previous": null,
+    "summary": "（假实现）3 个实验（基线/主方法/消融），9 次运行；执行前检查 0 项 warn/fail",
+    "impact": "首次提交",
+    "extra_refs": [
+      {
+        "artifact_id": "plan/precheck.json",
+        "version": 1,
+        "sha256": "8de1a5c36edfe73e6631c0de22512bfabbfa6b36d36c275372efd2ec8b2dba75"
+      },
+      {
+        "artifact_id": "plan/tasks.json",
+        "version": 1,
+        "sha256": "a4ad91d2026434bf9949aa5a0dc36e59f6ff368c1c1301776a4d95cf7742c74c"
+      }
+    ],
+    "status": "approved",
+    "created_at": "2026-10-10T11:38:07.529858+08:00",
+    "decided_at": "2026-10-10T11:38:07.530613+08:00",
+    "decision_comment": "",
+    "decided_by": "user",
+    "request_ids": [
+      "sample-ap-0003"
+    ]
+  },
+  "target_content": "---\nplan_id: plan-001\nidea_ref:\n  artifact_id: idea/selected.md\n  version: 2\n  sha256: da042f112a87fd48fd901fff41188f5cc94dd1e70975bba04e66ac0ebcabef7f\ntask_config: tasks/smoke\nexperiments:\n- id: E1\n  kind: baseline\n  purpose: 基线 baseline\n  hypotheses:\n  - H1\n  method: baseline\n  variables: {}\n  fixed:\n    seconds: 1.0\n  seeds:\n  - 0\n  - 1\n  - 2\n  eval_condition: final\n  depends_on: []\n  target_env: local\n  needs_code: false\n  est_minutes_per_run: 0.017\n  success_criteria: 3 个种子均完成\n  failure_criteria: 任一种子修复后仍失败\n- id: E2\n  kind: main\n  purpose: 主方法 main 与基线比较\n  hypotheses:\n  - H1\n  method: main\n  variables: {}\n  fixed:\n    seconds: 1.0\n  seeds:\n  - 0\n  - 1\n  - 2\n  eval_condition: final\n  depends_on: []\n  target_env: local\n  needs_code: false\n  est_minutes_per_run: 0.017\n  success_criteria: ''\n  failure_criteria: ''\n- id: E3\n  kind: ablation\n  purpose: 消融 ablation\n  hypotheses: []\n  method: ablation\n  variables: {}\n  fixed:\n    seconds: 1.0\n  seeds:\n  - 0\n  - 1\n  - 2\n  eval_condition: final\n  depends_on: []\n  target_env: local\n  needs_code: false\n  est_minutes_per_run: 0.017\n  success_criteria: ''\n  failure_criteria: ''\ncomparisons:\n- id: C1\n  question: main 是否优于基线 baseline\n  experiments:\n  - E1\n  - E2\n  group_by:\n  - method\n  metric: score\n  filter: {}\n- id: C2\n  question: 消融：ablation 与 main 的差别\n  experiments:\n  - E2\n  - E3\n  group_by:\n  - method\n  metric: score\n  filter: {}\nreplication_policy:\n  max_extra_seeds_per_group: 3\n  trigger: ''\nstopping_conditions:\n  max_rounds: 3\n  no_progress_rounds: 2\n  budget_fraction: 0.9\nbudget_estimate:\n  runs: 9\n  wall_hours: 0.0025\n  gpu_hours: 0\napproval_points:\n- 每轮结束的重要过程日志\n- 计划外实验\n- 最终手稿\nreuse_runs: []\n---\n\n# 目的与假设\n依据 idea：`idea/selected.md` v2。\n\n# 实验矩阵\n| ID | 类型 | 方法 | 变量 | 种子 | 评价条件 |\n|---|---|---|---|---|---|\n| E1 | baseline | baseline | — | [0, 1, 2] | final |\n| E2 | main | main | — | [0, 1, 2] | final |\n| E3 | ablation | ablation | — | [0, 1, 2] | final |\n\n# 变量与控制\n固定参数：{'seconds': 1.0}；共 9 次运行。\n\n# 比较与统计方法\n- C1：main 是否优于基线 baseline（['E1', 'E2']，按 ['method'] 分组，指标 score）\n- C2：消融：ablation 与 main 的差别（['E2', 'E3']，按 ['method'] 分组，指标 score）\n- 每组报告均值、样本标准差、t 分布 95% 区间；组间用 Welch t 检验（仅供参考）。\n\n# 资源估计\n{'runs': 9, 'wall_hours': 0.0025, 'gpu_hours': 0}\n\n# 停止条件\n{'max_rounds': 3, 'no_progress_rounds': 2, 'budget_fraction': 0.9}\n\n# 执行前检查结果\n- license：pass（任务没有外部数据）\n- leakage_split：pass（所有实验都在 final 划分上评价，没有探索性实验）\n- metric：pass（主要指标 score）\n- fairness：pass（各实验的变量取值与种子数相同）\n- repeats：pass（每个实验 3 个种子）\n- coverage：pass（覆盖假设 ['H1']）\n- budget：pass（估计 0.0025 小时，预算 6.0 小时）\n\n# 审批点\n- 每轮结束的重要过程日志\n- 计划外实验\n- 最终手稿\n",
+  "previous_content": null,
+  "target_path": "~/air-sample/plan/experiment_plan.md",
+  "extra": [
+    {
+      "artifact_id": "plan/precheck.json",
+      "version": 1,
+      "sha256": "8de1a5c36edfe73e6631c0de22512bfabbfa6b36d36c275372efd2ec8b2dba75",
+      "title": "precheck.json",
+      "url": "/api/projects/p-20261010-0b26/artifacts/content?artifact_id=plan/precheck.json&version=1",
+      "content": "[\n  {\n    \"check\": \"license\",\n    \"status\": \"pass\",\n    \"detail\": \"任务没有外部数据\"\n  },\n  {\n    \"check\": \"leakage_split\",\n    \"status\": \"pass\",\n    \"detail\": \"所有实验都在 final 划分上评价，没有探索性实验\"\n  },\n  {\n    \"check\": \"metric\",\n    \"status\": \"pass\",\n    \"detail\": \"主要指标 score\"\n  },\n  {\n    \"check\": \"fairness\",\n    \"status\": \"pass\",\n    \"detail\": \"各实验的变量取值与种子数相同\"\n  },\n  {\n    \"check\": \"repeats\",\n    \"status\": \"pass\",\n    \"detail\": \"每个实验 3 个种子\"\n  },\n  {\n    \"check\": \"coverage\",\n    \"status\": \"pass\",\n    \"detail\": \"覆盖假设 ['H1']\"\n  },\n  {\n    \"check\": \"budget\",\n    \"status\": \"pass\",\n    \"detail\": \"估计 0.0025 小时，预算 6.0 小时\"\n  }\n]"
+    },
+    {
+      "artifact_id": "plan/tasks.json",
+      "version": 1,
+      "sha256": "a4ad91d2026434bf9949aa5a0dc36e59f6ff368c1c1301776a4d95cf7742c74c",
+      "title": "tasks.json",
+      "url": "/api/projects/p-20261010-0b26/artifacts/content?artifact_id=plan/tasks.json&version=1",
+      "content": "[\n  {\n    \"task_key\": \"E1-seed=0\",\n    \"experiment_id\": \"E1\",\n    \"kind\": \"baseline\",\n    \"config\": {\n      \"method\": \"baseline\",\n      \"seconds\": 1.0,\n      \"seed\": 0,\n      \"fail_mode\": \"none\"\n    },\n    \"eval_condition\": \"final\",\n    \"depends_on\": [],\n    \"expected_metrics\": [\n      \"score\"\n    ]\n  },\n  {\n    \"task_key\": \"E1-seed=1\",\n    \"experiment_id\": \"E1\",\n    \"kind\": \"baseline\",\n    \"config\": {\n      \"method\": \"baseline\",\n      \"seconds\": 1.0,\n      \"seed\": 1,\n      \"fail_mode\": \"none\"\n    },\n    \"eval_condition\": \"final\",\n    \"depends_on\": [],\n    \"expected_metrics\": [\n      \"score\"\n    ]\n  },\n  {\n    \"task_key\": \"E1-seed=2\",\n    \"experiment_id\": \"E1\",\n    \"kind\": \"baseline\",\n    \"config\": {\n      \"method\": \"baseline\",\n      \"seconds\": 1.0,\n      \"seed\": 2,\n      \"fail_mode\": \"none\"\n    },\n    \"eval_condition\": \"final\",\n    \"depends_on\": [],\n    \"expected_metrics\": [\n      \"score\"\n    ]\n  },\n  {\n    \"task_key\": \"E2-seed=0\",\n    \"experiment_id\": \"E2\",\n    \"kind\": \"main\",\n    \"config\": {\n      \"method\": \"main\",\n      \"seconds\": 1.0,\n      \"seed\": 0,\n      \"fail_mode\": \"none\"\n    },\n    \"eval_condition\": \"final\",\n    \"depends_on\": [],\n    \"expected_metrics\": [\n      \"score\"\n    ]\n  },\n  {\n    \"task_key\": \"E2-seed=1\",\n    \"experiment_id\": \"E2\",\n    \"kind\": \"main\",\n    \"config\": {\n      \"method\": \"main\",\n      \"seconds\": 1.0,\n      \"seed\": 1,\n      \"fail_mode\": \"none\"\n    },\n    \"eval_condition\": \"final\",\n    \"depends_on\": [],\n    \"expected_metrics\": [\n      \"score\"\n    ]\n  },\n  {\n    \"task_key\": \"E2-seed=2\",\n    \"experiment_id\": \"E2\",\n    \"kind\": \"main\",\n    \"config\": {\n      \"method\": \"main\",\n      \"seconds\": 1.0,\n      \"seed\": 2,\n      \"fail_mode\": \"exit1\"\n    },\n    \"eval_condition\": \"final\",\n    \"depends_on\": [],\n    \"expected_metrics\": [\n      \"score\"\n    ]\n  },\n  {\n    \"task_key\": \"E3-seed=0\",\n    \"experiment_id\": \"E3\",\n    \"kind\": \"ablation\",\n    \"config\": {\n      \"method\": \"ablation\",\n      \"seconds\": 1.0,\n      \"seed\": 0,\n      \"fail_mode\": \"none\"\n    },\n    \"eval_condition\": \"final\",\n    \"depends_on\": [],\n    \"expected_metrics\": [\n      \"score\"\n    ]\n  },\n  {\n    \"task_key\": \"E3-seed=1\",\n    \"experiment_id\": \"E3\",\n    \"kind\": \"ablation\",\n    \"config\": {\n      \"method\": \"ablation\",\n      \"seconds\": 1.0,\n      \"seed\": 1,\n      \"fail_mode\": \"none\"\n    },\n    \"eval_condition\": \"final\",\n    \"depends_on\": [],\n    \"expected_metrics\": [\n      \"score\"\n    ]\n  },\n  {\n    \"task_key\": \"E3-seed=2\",\n    \"experiment_id\": \"E3\",\n    \"kind\": \"ablation\",\n    \"config\": {\n      \"method\": \"ablation\",\n      \"seconds\": 1.0,\n      \"seed\": 2,\n      \"fail_mode\": \"none\"\n    },\n    \"eval_condition\": \"final\",\n    \"depends_on\": [],\n    \"expected_metrics\": [\n      \"score\"\n    ]\n  }\n]"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "text": "smoke: method=main seed=2 seconds=1.0 fail_mode=exit1\nstep 1/2\n",
+  "next_offset": 63,
+  "eof": true
+}

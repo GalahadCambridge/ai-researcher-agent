@@ -1,0 +1,187 @@
+{
+  "claim": {
+    "claim_id": "CL1",
+    "section": "results",
+    "text": "\\claim{CL1}{With 3 seeds each, main reaches a mean score of \\airval{C1.main.score.mean}\\% compared with \\airval{C1.baseline.score.mean}\\% for baseline.}",
+    "type": "numeric",
+    "statement_kind": "observation",
+    "hedge": "none",
+    "importance": "major",
+    "hypothesis": "H1",
+    "values": [
+      {
+        "key": "C1.main.score.mean",
+        "aggregate_id": "C1",
+        "aggregate_version": 1,
+        "group": {
+          "method": "main"
+        },
+        "metric": "score",
+        "stat": "mean",
+        "contrast": null,
+        "fmt": {
+          "scale": 100,
+          "decimals": 1,
+          "suffix": ""
+        },
+        "rendered": "78.0"
+      },
+      {
+        "key": "C1.baseline.score.mean",
+        "aggregate_id": "C1",
+        "aggregate_version": 1,
+        "group": {
+          "method": "baseline"
+        },
+        "metric": "score",
+        "stat": "mean",
+        "contrast": null,
+        "fmt": {
+          "scale": 100,
+          "decimals": 1,
+          "suffix": ""
+        },
+        "rendered": "69.4"
+      }
+    ],
+    "comparison": null,
+    "evidence": [
+      {
+        "type": "aggregate",
+        "ref": "C1",
+        "version": 1,
+        "selector": {
+          "metric": "score"
+        },
+        "note": ""
+      },
+      {
+        "type": "figure",
+        "ref": "fig_c1",
+        "version": null,
+        "selector": null,
+        "note": ""
+      }
+    ],
+    "location": null
+  },
+  "figures": [
+    {
+      "fig_id": "fig_c1",
+      "spec": {
+        "fig_id": "fig_c1",
+        "kind": "bar",
+        "aggregate_id": "C1",
+        "x": "method",
+        "hue": null,
+        "metric": "score",
+        "error": "ci95",
+        "title": "main 是否优于基线 baseline",
+        "xlabel": "method",
+        "ylabel": "score (%)",
+        "scale": 100,
+        "log_x": false,
+        "caption": "score 的均值，误差条为 95% 置信区间（每组 n 见 data.csv）。"
+      },
+      "aggregate_ref": {
+        "artifact_id": "artifacts/aggregates/C1.json",
+        "version": 1,
+        "sha256": "579765f917f1261ed5df6bb60d4f53435dcba11fc0c52443f09d6a94db606fc8"
+      },
+      "run_ids": [
+        "r-20261010-113808-e173",
+        "r-20261010-113808-6128",
+        "r-20261010-113809-6926",
+        "r-20261010-113809-0426",
+        "r-20261010-113811-02ea",
+        "r-20261010-113812-86a1"
+      ],
+      "skill_ref": "fake-plotting@0",
+      "script_sha256": "e53690e5251d59c4ad4c0f305615d74d98945c26aceba0f8cd92a09f4ddc78bf",
+      "outputs": [
+        "artifacts/figures/fig_c1/fig_c1.svg"
+      ],
+      "n_per_group": {
+        "baseline": 3,
+        "main": 3
+      },
+      "created_at": "2026-10-10T11:38:16.268635+08:00"
+    }
+  ],
+  "aggregates": [
+    {
+      "aggregate_id": "C1",
+      "version": 1,
+      "key": "C1.main.score.mean",
+      "rendered": "78.0",
+      "recomputed": "78.0"
+    },
+    {
+      "aggregate_id": "C1",
+      "version": 1,
+      "key": "C1.baseline.score.mean",
+      "rendered": "69.4",
+      "recomputed": "69.4"
+    }
+  ],
+  "runs": [
+    {
+      "run_id": "r-20261010-113809-0426",
+      "state": "succeeded",
+      "code_commit": "f078444692d435d222b936823ca1a88eaa8ec4b8",
+      "config_sha256": "97168f47f026db56ef9a98db4e54632e0b0faf9dbbefacfee1b417225a0b429d",
+      "config_path": "runs/r-20261010-113809-0426/config.yaml",
+      "environment": "runs/r-20261010-113809-0426/environment.json"
+    },
+    {
+      "run_id": "r-20261010-113811-02ea",
+      "state": "succeeded",
+      "code_commit": "f078444692d435d222b936823ca1a88eaa8ec4b8",
+      "config_sha256": "e6756379c69e323be4365c2924bdbb34e6928520930d6a44629f424159ef6b37",
+      "config_path": "runs/r-20261010-113811-02ea/config.yaml",
+      "environment": "runs/r-20261010-113811-02ea/environment.json"
+    },
+    {
+      "run_id": "r-20261010-113812-86a1",
+      "state": "succeeded",
+      "code_commit": "f078444692d435d222b936823ca1a88eaa8ec4b8",
+      "config_sha256": "f9e04e137076949f7762dfa7562840b67d0de1a8b12acc01d1623e5099b7a2e3",
+      "config_path": "runs/r-20261010-113812-86a1/config.yaml",
+      "environment": "runs/r-20261010-113812-86a1/environment.json"
+    },
+    {
+      "run_id": "r-20261010-113808-e173",
+      "state": "succeeded",
+      "code_commit": "f078444692d435d222b936823ca1a88eaa8ec4b8",
+      "config_sha256": "51928a0fee1c3f1bdf2cab277e3c4657a5fdf04946d3f79e25a67fd533ac7977",
+      "config_path": "runs/r-20261010-113808-e173/config.yaml",
+      "environment": "runs/r-20261010-113808-e173/environment.json"
+    },
+    {
+      "run_id": "r-20261010-113808-6128",
+      "state": "succeeded",
+      "code_commit": "f078444692d435d222b936823ca1a88eaa8ec4b8",
+      "config_sha256": "7d67c34d154a37b0fb3ad562e03909a6966fba13a559191af6a083a65614ac3b",
+      "config_path": "runs/r-20261010-113808-6128/config.yaml",
+      "environment": "runs/r-20261010-113808-6128/environment.json"
+    },
+    {
+      "run_id": "r-20261010-113809-6926",
+      "state": "succeeded",
+      "code_commit": "f078444692d435d222b936823ca1a88eaa8ec4b8",
+      "config_sha256": "86053263ff48089e3001ab5a57690a8ca9463dd0fb959abeed1f8b5b4059a1db",
+      "config_path": "runs/r-20261010-113809-6926/config.yaml",
+      "environment": "runs/r-20261010-113809-6926/environment.json"
+    }
+  ],
+  "papers": [],
+  "check": {
+    "claim_id": "CL1",
+    "support": "supported",
+    "issues": [],
+    "recomputed": {
+      "C1.main.score.mean": "78.0",
+      "C1.baseline.score.mean": "69.4"
+    }
+  }
+}

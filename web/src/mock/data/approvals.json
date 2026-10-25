@@ -1,0 +1,225 @@
+[
+  {
+    "approval_id": "ap-0001",
+    "kind": "idea",
+    "target": {
+      "artifact_id": "idea/selected.md",
+      "version": 1,
+      "sha256": "d3e6aaf8fbd333a905dda08d2f5902e655e6aa453a6dfe1bcc9a725ac17c00c7"
+    },
+    "previous": null,
+    "summary": "（假实现）selected.md v1：1 个假设，基线 B1、方法 M1，3 篇参考文献",
+    "impact": "首次提交，无下游影响",
+    "extra_refs": [
+      {
+        "artifact_id": "idea/scores.json",
+        "version": 1,
+        "sha256": "789f8acaf574aa0a542dd05a748d3bf637bd9a339c0b640000af4d16821119f5"
+      },
+      {
+        "artifact_id": "idea/gap_table.md",
+        "version": 1,
+        "sha256": "aa6f91ebbab37d4a3c6f586022082e15192af824c090f10785ee48bdd04c304a"
+      },
+      {
+        "artifact_id": "idea/literature.jsonl",
+        "version": 1,
+        "sha256": "2efefb6ac4933e3480d803fa4597981a35c6712453403c9c88fcc1a70f092ca5"
+      }
+    ],
+    "status": "changes_requested",
+    "created_at": "2026-10-10T11:38:07.515794+08:00",
+    "decided_at": "2026-10-10T11:38:07.516502+08:00",
+    "decision_comment": "研究问题请写明每类样本数和主要指标",
+    "decided_by": "user",
+    "request_ids": [
+      "sample-ap-0001"
+    ]
+  },
+  {
+    "approval_id": "ap-0002",
+    "kind": "idea",
+    "target": {
+      "artifact_id": "idea/selected.md",
+      "version": 2,
+      "sha256": "da042f112a87fd48fd901fff41188f5cc94dd1e70975bba04e66ac0ebcabef7f"
+    },
+    "previous": null,
+    "summary": "（假实现）selected.md v2：1 个假设，基线 B1、方法 M1，3 篇参考文献；已按意见修改",
+    "impact": "首次提交，无下游影响",
+    "extra_refs": [
+      {
+        "artifact_id": "idea/scores.json",
+        "version": 1,
+        "sha256": "789f8acaf574aa0a542dd05a748d3bf637bd9a339c0b640000af4d16821119f5"
+      },
+      {
+        "artifact_id": "idea/gap_table.md",
+        "version": 1,
+        "sha256": "aa6f91ebbab37d4a3c6f586022082e15192af824c090f10785ee48bdd04c304a"
+      },
+      {
+        "artifact_id": "idea/literature.jsonl",
+        "version": 1,
+        "sha256": "2efefb6ac4933e3480d803fa4597981a35c6712453403c9c88fcc1a70f092ca5"
+      }
+    ],
+    "status": "approved",
+    "created_at": "2026-10-10T11:38:07.520527+08:00",
+    "decided_at": "2026-10-10T11:38:07.521158+08:00",
+    "decision_comment": "",
+    "decided_by": "user",
+    "request_ids": [
+      "sample-ap-0002"
+    ]
+  },
+  {
+    "approval_id": "ap-0003",
+    "kind": "plan",
+    "target": {
+      "artifact_id": "plan/experiment_plan.md",
+      "version": 1,
+      "sha256": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2"
+    },
+    "previous": null,
+    "summary": "（假实现）3 个实验（基线/主方法/消融），9 次运行；执行前检查 0 项 warn/fail",
+    "impact": "首次提交",
+    "extra_refs": [
+      {
+        "artifact_id": "plan/precheck.json",
+        "version": 1,
+        "sha256": "8de1a5c36edfe73e6631c0de22512bfabbfa6b36d36c275372efd2ec8b2dba75"
+      },
+      {
+        "artifact_id": "plan/tasks.json",
+        "version": 1,
+        "sha256": "a4ad91d2026434bf9949aa5a0dc36e59f6ff368c1c1301776a4d95cf7742c74c"
+      }
+    ],
+    "status": "approved",
+    "created_at": "2026-10-10T11:38:07.529858+08:00",
+    "decided_at": "2026-10-10T11:38:07.530613+08:00",
+    "decision_comment": "",
+    "decided_by": "user",
+    "request_ids": [
+      "sample-ap-0003"
+    ]
+  },
+  {
+    "approval_id": "ap-0004",
+    "kind": "log",
+    "target": {
+      "artifact_id": "logs/round_1.md",
+      "version": 1,
+      "sha256": "ce3c61acdb3efbdb4997bf1aac24b617adf64630e2fc80e24f0e15b3e3b3ea7e"
+    },
+    "previous": null,
+    "summary": "第 1 轮总结（假实现）：计划内实验全部完成；建议进入论文撰写",
+    "impact": "批准后进入论文撰写（Writing）",
+    "extra_refs": [
+      {
+        "artifact_id": "artifacts/aggregates/C1.json",
+        "version": 1,
+        "sha256": "579765f917f1261ed5df6bb60d4f53435dcba11fc0c52443f09d6a94db606fc8"
+      },
+      {
+        "artifact_id": "artifacts/aggregates/C2.json",
+        "version": 1,
+        "sha256": "7bab00803be48cd81d63454d88cc5bf041ba8feb91f43edd34b66d1814c80b5f"
+      },
+      {
+        "artifact_id": "artifacts/aggregates/all.json",
+        "version": 1,
+        "sha256": "e53729d7b0e70bc44791d26868b21ec203a96982823b92e02d2d6469687ccf37"
+      }
+    ],
+    "status": "approved",
+    "created_at": "2026-10-10T11:38:16.261323+08:00",
+    "decided_at": "2026-10-10T11:38:16.262613+08:00",
+    "decision_comment": "",
+    "decided_by": "user",
+    "request_ids": [
+      "sample-ap-0004"
+    ]
+  },
+  {
+    "approval_id": "ap-0005",
+    "kind": "manuscript",
+    "target": {
+      "artifact_id": "paper",
+      "version": 1,
+      "sha256": "4ca04907d61d34effc0de20adb94ca5e1ba67b4c088466b37ce94e4353a84e98"
+    },
+    "previous": null,
+    "summary": "（假实现）论文草稿 v1：5 条论断（5 supported），0 个 blocker；编译成功",
+    "impact": "批准后项目标记为完成；批准不等于授权投稿",
+    "extra_refs": [
+      {
+        "artifact_id": "paper/review/review_v1.json",
+        "version": 1,
+        "sha256": "43cbe36a985eb102e476dfe266b390ae5b53d335d854710c6a297d989e59fcf7"
+      },
+      {
+        "artifact_id": "paper/build/compile_report.json",
+        "version": 1,
+        "sha256": "9a0573eb55bfbecacf881c4ac772d04b7b150e8a81209f7fdb3129750c5fd97b"
+      },
+      {
+        "artifact_id": "paper/claims.jsonl",
+        "version": 1,
+        "sha256": "344c1acdc191be5791c94120adae37e844893b303ae5acbeffcfc84b1680a642"
+      },
+      {
+        "artifact_id": "paper/build/main.pdf",
+        "version": 1,
+        "sha256": "0f2cb40c94cb7c19c4adcb5a37474fdc70a550b9998d03c0b90362a45d1664bc"
+      }
+    ],
+    "status": "superseded",
+    "created_at": "2026-10-10T11:38:17.471427+08:00",
+    "decided_at": "2026-10-10T11:38:17.850671+08:00",
+    "decision_comment": "同一产物提交了新的审批请求",
+    "decided_by": "system",
+    "request_ids": []
+  },
+  {
+    "approval_id": "ap-0006",
+    "kind": "manuscript",
+    "target": {
+      "artifact_id": "paper",
+      "version": 2,
+      "sha256": "738f6a713d9d6d73a85853ec4bbd2b5475066751ec88bdac358d5765ecbc6875"
+    },
+    "previous": null,
+    "summary": "论文草稿 v2：7 条论断，2 个 blocker（样例：故意加入的错误论断）",
+    "impact": "批准后项目标记为完成；有 blocker 时批准必须填写意见",
+    "extra_refs": [
+      {
+        "artifact_id": "paper/review/review_v2.json",
+        "version": 1,
+        "sha256": "df3c4203fdae505942b5e7ac899023e52551400c60992b9e3d4cc65bb305c185"
+      },
+      {
+        "artifact_id": "paper/build/compile_report.json",
+        "version": 2,
+        "sha256": "c53b40f8884eced817304e1912dde0d60ba509d5f333947a680361b70a000fec"
+      },
+      {
+        "artifact_id": "paper/claims.jsonl",
+        "version": 2,
+        "sha256": "e98fb5aeceb957f1a7059b2450f29cbebad9c7fce68c7284c067dc058143b455"
+      },
+      {
+        "artifact_id": "paper/build/main.pdf",
+        "version": 2,
+        "sha256": "86e2d83013f33bd528980155b7b92a599152d44d20d600c9b9144b6d79efbb8f"
+      }
+    ],
+    "status": "pending",
+    "created_at": "2026-10-10T11:38:17.851054+08:00",
+    "decided_at": null,
+    "decision_comment": "",
+    "decided_by": null,
+    "request_ids": []
+  }
+]

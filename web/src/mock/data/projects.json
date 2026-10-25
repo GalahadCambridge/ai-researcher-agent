@@ -1,0 +1,13 @@
+[
+  {
+    "project_id": "p-20261010-0b26",
+    "title": "小样本分类：基线、主方法与消融的比较（样例项目）",
+    "state": "ManuscriptPending",
+    "stage_label": "等待审批最终手稿",
+    "pending_approvals": 1,
+    "has_question": false,
+    "created_at": "2026-10-10T11:38:07.431137+08:00",
+    "updated_at": "2026-10-10T11:38:17.851270+08:00",
+    "root": "~/air-sample"
+  }
+]
