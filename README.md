@@ -272,8 +272,8 @@ air dev check /tmp/ws
 | 本地执行器 + 运行包装器、冒烟任务 `tasks/smoke` | **真实但精简**（没有环境 pip freeze、数据校验、GPU 串行），实验同学接手补全 |
 | 汇总统计 `services/runs.py`、引用核验 `services/literature.py` | **真实** |
 | 证据核验 `services/evidence.py` | **真实**：确定性证据检查与追溯；`audit()` 仍留待 Phase 3 |
-| 论文写作 `stages/writing` | **真实**：绘图、Claim 绑定、LaTeX 编译、语义审查及有界定点修订；已做 FakeLLM 工程验证，未做真实模型验证 |
-| 文献检索、选题、实验计划、编码 Agent、分析决策 | **假实现**（固定内容，不调用大模型） |
+| 论文写作 `stages/writing` | **真实**：绘图、Claim 绑定、LaTeX 编译、语义审查及有界定点修订；已做真实 Plan/Experiment → Writing 离线集成验证；真实模型仅验证部分链路，尚未完成集成后的完整轨迹 |
+| 文献检索、选题、实验计划、编码 Agent、分析决策 | **真实实现已集成**；默认项目仍可选择假阶段，真实 Plan/Experiment 的离线验证使用 FakeLLM/FakeExecutor，不产生研究结论 |
 | 测试替身 `FakeLLM`、`FakeExecutor`、`FakeLiterature`；skill 版本登记与 `air skills verify` | **真实**（给组员写测试用） |
 | SQLite 索引 | **没做**：目前直接读文件（数据量小，够用） |
 | GUI（`web/`，Vue 3 + Element Plus） | **真实**：P1~P14 全部页面、SSE 实时更新、审批防重复与过期处理；用法见 [web/README.md](web/README.md) |
