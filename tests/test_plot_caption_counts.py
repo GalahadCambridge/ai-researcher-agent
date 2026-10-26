@@ -169,3 +169,101 @@ def test_actual_group_label_is_not_mistaken_for_execution_qualifier(source, labe
     assert validate(source, caption)
     with pytest.raises(ValueError):
         validate(source, caption.replace(f"{label}: over 3", f"{label}: over 2"))
+
+
+def test_third_smoke_diagnostic_reconstruction(source):
+    # EXACT CAPTION UNAVAILABLE: both external smoke workspaces are absent.
+    # Only the denominator phrase below is preserved verbatim in the audit;
+    # the surrounding caption is reconstructed, not a claimed model response.
+    caption = "baseline: n=3; main: n=3; 每组 n=3。95% CI。8 次运行中的失败率为 0.125。"
+    assert validate(source, caption)
+    # Every explicit n remains authoritative, including the common-n assertion.
+    for index in range(3):
+        pieces = caption.split("n=3")
+        wrong = "n=3".join(pieces[:index + 1]) + "n=2" + "n=3".join(pieces[index + 1:])
+        with pytest.raises(ValueError, match="actual n"):
+            validate(source, wrong)
+
+
+DENOMINATORS = [
+    "The failure rate was 0.125 across 8 runs.",
+    "The failure rate among 8 runs was 0.125.",
+    "The failure rate in 8 runs was 0.125.",
+    "1 of 8 runs failed.",
+    "There was 1 failure in 8 runs.",
+    "Across 8 total runs, one failure occurred.",
+    "Two failed runs were excluded from 8 total runs.",
+    "8 次运行中的失败率为 0.125。",
+    "在 8 次运行中，失败率为 0.125。",
+    "8 次运行中有 1 次失败。",
+    "共进行了 8 次运行，其中 1 次失败。",
+    "总计 8 次运行，排除 2 次失败运行。",
+    "The exclusion rate was 0.25 across 8 observations.",
+    "Pilot execution across 8 seeds.",
+    "在 8 次运行中失败 1 次。",
+    "8 次运行中排除 2 次。",
+    "8 次运行用于试运行。",
+]
+
+
+@pytest.mark.parametrize("context", DENOMINATORS)
+@pytest.mark.parametrize("samples", ["baseline: n=3; main: n=3.", "over 3 seeds.", ""])
+def test_execution_denominators_are_not_group_n(source, context, samples):
+    caption = samples + " " + context + " 95% CI."
+    if samples:
+        assert validate(source, caption)
+    else:
+        with pytest.raises(ValueError, match="actual n"):
+            validate(source, caption)
+
+
+@pytest.mark.parametrize("context", DENOMINATORS)
+def test_execution_denominator_equal_to_n_is_not_a_sample_statement(source, context):
+    with pytest.raises(ValueError, match="actual n"):
+        validate(source, context.replace("8", "3") + " 95% CI.")
+
+
+@pytest.mark.parametrize("label", ["trial", "total", "failed"])
+@pytest.mark.parametrize("form", ["prefix", "suffix", "canonical"])
+def test_group_binding_precedes_execution_vocabulary(source, label, form):
+    source.rows[0].group = {"method": label}
+    if form == "prefix":
+        first = f"{label}: over 3 runs in total"
+    elif form == "suffix":
+        first = f"over 3 runs ({label})"
+    else:
+        first = f'over 3 runs ({{"method":"{label}"}})'
+    caption = first + "; main: n=3. The failure rate was 0.125 across 8 runs. 95% CI."
+    assert validate(source, caption)
+    with pytest.raises(ValueError):
+        validate(source, caption.replace("over 3", "over 2"))
+
+
+@pytest.mark.parametrize("caption", [
+    "Means over 3 runs, the failure rate was 0.125 across 8 runs.",
+    "The failure rate was 0.125 across 8 runs, means over 3 seeds.",
+    "每组3次运行，8 次运行中的失败率为 0.125。",
+    "8 次运行中的失败率为 0.125，每组3个种子。",
+    "The failure rate is reported separately and means are over 3 runs.",
+    "每组3次运行中计算均值，失败率另行报告。",
+])
+def test_denominator_context_does_not_cross_sample_clause(source, caption):
+    assert validate(source, caption + " 95% CI.")
+    with pytest.raises(ValueError):
+        validate(source, caption.replace("over 3", "over 2").replace("每组3", "每组2") + " 95% CI.")
+
+
+@pytest.mark.parametrize("samples", [
+    "baseline: n=2; main: n=3",
+    "baseline: n=3",
+    "baseline: n=3; main: n=2; total failures n=8",
+])
+def test_failure_context_never_hides_explicit_n_or_missing_group(source, samples):
+    with pytest.raises(ValueError):
+        validate(source, samples + "; 8 次运行中的失败率为 0.125。95% CI.")
+
+
+def test_bare_english_counts_do_not_extend_the_sample_grammar(source):
+    with pytest.raises(ValueError, match="actual n"):
+        validate(source, "baseline: 3 runs; main: 3 runs. 95% CI.")
+    assert validate(source, "n=3 per group; 8 total runs (including failures). 95% CI.")

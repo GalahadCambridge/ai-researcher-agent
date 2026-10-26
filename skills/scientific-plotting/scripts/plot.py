@@ -52,84 +52,134 @@ def ordered(values: list) -> list:
     ]
 
 
-def _execution_count(caption: str, match: re.Match, group_labels: set[str]) -> bool:
-    """Recognize local execution qualifiers around a generic runs/seeds count.
+# Extract count expressions independently of their semantic role. Bare English
+# counts are observable execution/ambiguous quantities, not a new common-n form.
+_CAPTION_COUNTS = re.compile(
+    r"\bn\s*=\s*(?P<n>\d+)|(?P<shorthand>\b(?:over|across)\s+)?"
+    r"(?P<count>\d+)\s*(?:(?P<modifier>total|failed|excluded|discarded|trial|pilot|smoke)\s+)?"
+    r"(?P<unit>seeds\b|runs\b|observations\b|(?:个)?(?:种子|次运行|个观测))", re.I,
+)
+# Decimal points belong to rates, not sentence boundaries.
+_CLAUSE_BREAK = r"[,，;；。!?！？\n]|(?<!\d)\.|\.(?!\d)"
+_EXECUTION_TOPIC = (
+    r"\b(?:failures?|failed|exclusions?|excluded|discarded|trial|pilot|smoke|total)\b|"
+    r"失败|排除|剔除|试运行|总计|总共|共计|累计"
+)
 
-    Do not search the whole sentence: an excluded-run clause must not conceal a
-    wrong sample size elsewhere. Explicit n= statements remain authoritative.
+
+def _caption_count_role(match: re.Match, before: str, after: str) -> str:
+    """Classify an unbound count by its local subject/relation/predicate.
+
+    Context stops at adjacent count expressions and clause boundaries. A rate
+    subject can govern a run denominator across/among/in those runs; conversely
+    a run count can introduce a relative clause about failures or exclusions.
+    Neither is a statement of plotted sample size. Unknown bare English counts
+    stay ambiguous; only the established shorthand grammar supplies common n.
+    Explicit n and group bindings are handled before this classifier.
     """
-    before, after = caption[:match.start()], caption[match.end():]
-    prefix = (
-        r"(?:\b(?:total(?:\s+of)?|failures?(?:\s+occurred)?|failed|excluded|discarded|trial|smoke)"
-        r"(?:\s+(?:runs|seeds|observations))?|总计|总共|共计|共执行|累计|"
-        r"排除(?:了)?|剔除(?:了)?|失败|试运行|筛选后剩余)\s*[:：,，]?\s*$"
+    left = re.split(_CLAUSE_BREAK, before)[-1]
+    # A comma can introduce the predicate of the current count, but the predicate
+    # must be complete: "failures occurred across <next count>" belongs to that
+    # next denominator, not to the current "means over 3 runs".
+    continuation = re.split(r"[;；。!?！？\n]|(?<!\d)\.|\.(?!\d)", after, maxsplit=1)[0]
+    denominator = re.search(
+        r"\b(?:failures?|exclusions?)(?:\s+rates?)?"
+        r"(?:\s+(?:was|were|is|are|of|occurred|\d+(?:\.\d+)?))*"
+        r"\s+(?:over|across|among|in|of|from)\s*$", left + (match["shorthand"] or ""), re.I,
     )
-    suffix = (
-        r"^\s*[,，]?\s*(?:(?:which|that)\s+)?"
+    modifier = re.search(
+        r"\b(?:total(?:\s+of)?|failures?(?:\s+occurred)?|failed|excluded|discarded|trial|pilot|smoke)"
+        r"(?:\s+(?:runs|seeds|observations|execution))?\s*[:：]?\s*$|"
+        r"(?:总计|总共|共计|共|累计)(?:执行|进行)?了?\s*$|"
+        r"(?:排除|剔除|失败|试运行|筛选后剩余)了?\s*$", left, re.I,
+    )
+    relative = re.match(
+        r"\s*(?:中|之中|当中)(?:的|有)?\s*[,，]?\s*(?:\d+\s*次\s*)?(?:" + _EXECUTION_TOPIC + r")",
+        continuation, re.I,
+    )
+    predicate = re.match(
+        r"\s*[,，]?\s*(?:(?:which|that)\s+)?"
         r"(?:(?:were|was|are|is|have been|had been)\s+)?"
         r"(?:in\s+total\b|overall\b|(?:excluded|discarded|failed)\b(?!\s+(?:runs|seeds|observations))|"
-        r"failures?\s+occurred(?=\s*(?:[.;。；!?！？]|$))|"
-        r"filtered\s+out\b|(?:executed|attempted|performed)\s+in\s+total\b|"
-        r"remained\s+after\s+filtering\b|被(?:排除|剔除)|(?:失败|总计)(?!\s*\d)|用于试运行)"
+        r"(?:(?:one|a|\d+)\s+)?failures?\s+occurred\s*$|filtered\s+out\b|"
+        r"(?:executed|attempted|performed)\s+in\s+total\b|remained\s+after\s+filtering\b|"
+        r"被(?:排除|剔除)|(?:失败|总计)(?!\s*\d)|用于试运行)", continuation, re.I,
     )
-    # A real group may itself be named "trial" or "total". Preserve the existing
-    # explicit prefix-binding grammar rather than interpreting its label as metadata.
-    bound_prefix = any(re.search(r"(?<!\w)" + re.escape(label) + r"\s*[:,]?\s*\(?\s*$", before)
-                       for label in group_labels)
-    return bool((not bound_prefix and re.search(prefix, before, re.I)) or re.search(suffix, after, re.I))
+    if match["modifier"] or denominator or modifier or relative or predicate:
+        return "execution"
+    if match["shorthand"] or re.search(r"种子|运行|观测", match["unit"]):
+        return "common"
+    return "ambiguous"
+
+
+def _caption_group(caption: str, match: re.Match, expected: dict[str, int],
+                   aliases: dict[str, set[str]]) -> set[str]:
+    """Resolve the existing canonical/unique-short-label binding grammar first."""
+    tail, candidates = caption[match.end():].lstrip(), set()
+    if tail.startswith("("):
+        label = tail[1:].lstrip()
+        if label.startswith("{"):
+            try:
+                group, end = json.JSONDecoder().raw_decode(label)
+            except ValueError as exc:
+                raise ValueError("invalid caption group label") from exc
+            if not label[end:].lstrip().startswith(")"):
+                raise ValueError("unclosed caption group label")
+            candidates = {canonical(group)} & expected.keys()
+        elif ")" in label:
+            candidates = aliases.get(label.split(")", 1)[0].strip(), set())
+        if len(candidates) != 1:
+            raise ValueError("caption group label is unknown or ambiguous")
+    else:
+        # Also accept A: n=3 / A (n=3), with a unique short group label.
+        before = caption[:match.start()]
+        for label, groups in aliases.items():
+            if re.search(r"(?<!\w)" + re.escape(label) + r"\s*[:,]?\s*\(?\s*$", before):
+                candidates.update(groups)
+    if len(candidates) > 1:
+        raise ValueError("caption group label is ambiguous")
+    return candidates
 
 
 def validate_caption_counts(caption: str, rows: list[AggregateRow]) -> None:
-    """Bind explicit counts to canonical groups or unique human group labels.
+    """Validate sample counts after binding and classifying each expression.
 
-    Keep the existing common-n shorthand for homogeneous groups. Once any group
-    is explicitly named, every group must be covered; heterogeneous n always needs
-    explicit binding. Short labels must unambiguously identify one complete group.
+    Explicit n and explicit group bindings always participate, even alongside
+    execution vocabulary. Homogeneous groups retain common-n shorthand; once a
+    group is named all groups need coverage. Heterogeneous n needs binding.
     """
-    counts = list(re.finditer(r"\bn\s*=\s*(\d+)|(?:over|across)\s+(\d+)\s+(?:seeds|runs|observations)|"
-                              r"(\d+)\s*(?:个)?(?:种子|次运行|个观测)", caption, re.I))
-    # Only generic shorthand needs disambiguation. Never discard an explicit n=
-    # assertion, even when another clause discusses exclusions or execution totals.
-    group_labels = {str(v) for row in rows for v in row.group.values()}
-    counts = [m for m in counts if m.group(1) is not None or not _execution_count(caption, m, group_labels)]
-    def count_of(match):
-        return int(next(v for v in match.groups() if v))
-
-    if {count_of(m) for m in counts} != {r.n for r in rows}:
-        raise ValueError("caption must state the actual n for every group")
     expected = {canonical(r.group): r.n for r in rows}
     aliases: dict[str, set[str]] = {}
     for row in rows:
         for value in row.group.values():
             aliases.setdefault(str(value), set()).add(canonical(row.group))
-    bound = set()
-    for match in counts:
-        tail, candidates = caption[match.end():].lstrip(), set()
-        if tail.startswith("("):
-            label = tail[1:].lstrip()
-            if label.startswith("{"):
-                try:
-                    group, end = json.JSONDecoder().raw_decode(label)
-                except ValueError as exc:
-                    raise ValueError("invalid caption group label") from exc
-                if not label[end:].lstrip().startswith(")"):
-                    raise ValueError("unclosed caption group label")
-                candidates = {canonical(group)} & expected.keys()
-            elif ")" in label:
-                candidates = aliases.get(label.split(")", 1)[0].strip(), set())
-            if len(candidates) != 1:
-                raise ValueError("caption group label is unknown or ambiguous")
+    counts = list(_CAPTION_COUNTS.finditer(caption))
+    samples = []
+    for index, match in enumerate(counts):
+        # Newly observed bare English quantities must not acquire the binding
+        # semantics of the established n=/over/across/Chinese sample grammar.
+        supported = match["n"] is not None or match["shorthand"] or re.search(r"种子|运行|观测", match["unit"])
+        candidates = _caption_group(caption, match, expected, aliases) if supported else set()
+        if match["n"] is not None:
+            role = "explicit"
+        elif candidates:
+            role = "group"
         else:
-            # Also accept A: n=3 / A (n=3), with a unique short group label.
-            before = caption[:match.start()]
-            for label, groups in aliases.items():
-                if re.search(r"(?<!\w)" + re.escape(label) + r"\s*[:,]?\s*\(?\s*$", before):
-                    candidates.update(groups)
+            start = counts[index - 1].end() if index else 0
+            # Include the next expression as lookahead: cutting just before it
+            # would turn "failures occurred across 2 runs" into the apparently
+            # complete predicate "failures occurred" (across is in the match).
+            end = counts[index + 1].end() if index + 1 < len(counts) else len(caption)
+            role = _caption_count_role(match, caption[start:match.start()], caption[match.end():end])
+        if role in {"explicit", "group", "common"}:
+            samples.append((int(match["n"] or match["count"]), candidates))
+    if {count for count, _ in samples} != {r.n for r in rows}:
+        raise ValueError("caption must state the actual n for every group")
+    bound = set()
+    for count, candidates in samples:
         if candidates:
-            if len(candidates) != 1:
-                raise ValueError("caption group label is ambiguous")
             key = next(iter(candidates))
-            if count_of(match) != expected[key]:
+            if count != expected[key]:
                 raise ValueError("caption n does not match its group")
             bound.add(key)
         elif len(set(expected.values())) > 1:
