@@ -14,9 +14,9 @@ def test_exact_paper_ref_does_not_read_mutable_source(sample_project):
     p = sample_project
     ref = p.archive.put("paper", "paper", p.root / "paper", exclude=["build/**", "review/**"])
     before = evidence.check(p.root, paper_ref=ref)
-    (p.root / "paper/claims.jsonl").write_text("")
-    (p.root / "paper/air_values.tex").write_text("corrupt")
-    (p.root / "paper/sections/results.tex").write_text("An unbound score 987.654.\\cite{invented}\n")
+    (p.root / "paper/claims.jsonl").write_text("", encoding="utf-8")
+    (p.root / "paper/air_values.tex").write_text("corrupt", encoding="utf-8")
+    (p.root / "paper/sections/results.tex").write_text("An unbound score 987.654.\\cite{invented}\n", encoding="utf-8")
     after = evidence.check(p.root, paper_ref=ref)
     assert after.claims == before.claims and after.unbound_issues == before.unbound_issues
     assert after.claims
@@ -24,7 +24,7 @@ def test_exact_paper_ref_does_not_read_mutable_source(sample_project):
 
 def test_macro_tampering_is_a_numeric_blocker(sample_project):
     path = sample_project.root / "paper/air_values.tex"
-    path.write_text(path.read_text().replace("{78.0}", "{12.3}"))
+    path.write_text(path.read_text(encoding="utf-8").replace("{78.0}", "{12.3}"), encoding="utf-8")
     report = evidence.check(sample_project.root)
     first = next(c for c in report.claims if c.claim_id == "CL1")
     assert any(i.code == "NUM_MISMATCH" and i.severity == "blocker" for i in first.issues)
@@ -50,7 +50,7 @@ def test_unbound_scanner_excludes_identifiers_comments_and_literals(sample_proje
         + r"\verb|77.88%|"
         + "\n"
     )
-    (p.root / "paper/sections/abstract.tex").write_text(text)
+    (p.root / "paper/sections/abstract.tex").write_text(text, encoding="utf-8")
     report = evidence.check(p.root)
     issues = [
         i for i in report.unbound_issues if i.code == "NUM_UNBOUND" and i.location["file"].endswith("abstract.tex")
@@ -62,7 +62,7 @@ def test_failed_supporting_run_is_invalid(sample_project):
     p = sample_project
     rid = runs.load_aggregate(p.root, "C1", version=1).rows[0].run_ids[0]
     status = p.root / f"runs/{rid}/status.json"
-    data = json.loads(status.read_text())
+    data = json.loads(status.read_text(encoding="utf-8"))
     data["state"] = "failed"
     atomic_write_json(status, data)
     assert "INVALID_RUN" in codes(evidence.check(p.root))
@@ -70,9 +70,9 @@ def test_failed_supporting_run_is_invalid(sample_project):
 
 def rewrite_claims(project, edit):
     path = project.root / "paper/claims.jsonl"
-    claims = [json.loads(line) for line in path.read_text().splitlines()]
+    claims = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     edit(claims)
-    path.write_text("".join(json.dumps(c) + "\n" for c in claims))
+    path.write_text("".join(json.dumps(c) + "\n" for c in claims), encoding="utf-8")
 
 
 def test_all_remaining_issue_codes(sample_project):
@@ -125,9 +125,9 @@ def test_non_significant_comparison_has_no_automatic_overclaim(sample_project, m
 def test_dispatcher_override_missing_and_duplicate_macros(sample_project):
     p = sample_project
     path = p.root / "paper/air_values.tex"
-    original = path.read_text()
+    original = path.read_text(encoding="utf-8")
     for changed in (original + r"\renewcommand{\airval}[1]{999}", "", original + original):
-        path.write_text(changed)
+        path.write_text(changed, encoding="utf-8")
         report = evidence.check(p.root)
         assert any(i.code == "NUM_MISMATCH" for i in report.claims[0].issues)
 
@@ -138,14 +138,15 @@ def test_invalid_kinds_labels_missing_and_suspicious_runs(sample_project):
     p = sample_project
     rid = runs.load_aggregate(p.root, "C1", version=1).rows[0].run_ids[0]
     path = p.root / f"runs/{rid}/run.json"
-    original = json.loads(path.read_text())
+    original = json.loads(path.read_text(encoding="utf-8"))
     for kind in ("trial", "smoke"):
         atomic_write_json(path, {**original, "kind": kind})
         assert "INVALID_RUN" in codes(evidence.check(p.root))
     atomic_write_json(path, original)
     labels = p.root / "artifacts/run_labels.jsonl"
     for label, expected in (("invalid", True), ("suspicious", False)):
-        labels.write_text(json.dumps({"run_id": rid, "label": label, "ts": "2026-01-01T00:00:00Z"}) + "\n")
+        labels.write_text(
+            json.dumps({"run_id": rid, "label": label, "ts": "2026-01-01T00:00:00Z"}) + "\n", encoding="utf-8")
         assert ("INVALID_RUN" in codes(evidence.check(p.root))) is expected
     shutil.rmtree(path.parent)
     report = evidence.check(p.root)
@@ -184,7 +185,8 @@ def test_unbound_severity_layout_and_matching_literal(sample_project):
     p = sample_project
     for section in ("abstract", "results", "discussion"):
         (p.root / f"paper/sections/{section}.tex").write_text(
-            r"\section{2. Results}\setcounter{table}{3}\label{table:4}" + "\nA matching score 78.0.\n"
+            r"\section{2. Results}\setcounter{table}{3}\label{table:4}" + "\nA matching score 78.0.\n",
+            encoding="utf-8",
         )
     report = evidence.check(p.root)
     for section, severity in (("abstract", "major"), ("results", "major"), ("discussion", "minor")):
@@ -202,13 +204,13 @@ def test_official_old_plan_and_missing_metric_invalidity(sample_project):
     row = runs.load_aggregate(p.root, "C1", version=1).rows[0]
     rid = row.run_ids[0]
     path = p.root / f"runs/{rid}/run.json"
-    original = json.loads(path.read_text())
-    changed = json.loads(path.read_text())
+    original = json.loads(path.read_text(encoding="utf-8"))
+    changed = json.loads(path.read_text(encoding="utf-8"))
     changed["plan_ref"]["sha256"] = "0" * 64
     atomic_write_json(path, changed)
     assert "INVALID_RUN" in codes(evidence.check(p.root))
     atomic_write_json(path, original)
-    (path.parent / "metrics.jsonl").write_text("")
+    (path.parent / "metrics.jsonl").write_text("", encoding="utf-8")
     report = evidence.check(p.root)
     assert "INVALID_RUN" in codes(report)
     assert report.claims[0].support == "unverifiable"

@@ -22,7 +22,7 @@ def qualitative(p, kind="aggregate", selector=None):
 
 
 def save(p, c):
-    (p.root / "paper/claims.jsonl").write_text(c.model_dump_json() + "\n")
+    (p.root / "paper/claims.jsonl").write_text(c.model_dump_json() + "\n", encoding="utf-8")
 
 
 def checked(p):
@@ -45,10 +45,10 @@ def test_valueless_experimental_runs_checked_per_claim(sample_project, kind, dam
     rid = agg.rows[0].run_ids[0]
     directory = p.root / f"runs/{rid}"
     if damage == "failed":
-        data = json.loads((directory / "status.json").read_text())
+        data = json.loads((directory / "status.json").read_text(encoding="utf-8"))
         atomic_write_json(directory / "status.json", {**data, "state": "failed"})
     elif damage in {"trial", "smoke", "condition", "plan"}:
-        data = json.loads((directory / "run.json").read_text())
+        data = json.loads((directory / "run.json").read_text(encoding="utf-8"))
         if damage in {"trial", "smoke"}:
             data["kind"] = damage
         elif damage == "condition":
@@ -58,12 +58,13 @@ def test_valueless_experimental_runs_checked_per_claim(sample_project, kind, dam
         atomic_write_json(directory / "run.json", data)
     elif damage == "invalid":
         (p.root / "artifacts/run_labels.jsonl").write_text(
-            json.dumps({"run_id": rid, "label": "invalid", "ts": "2026-01-01T00:00:00Z"}) + "\n"
+            json.dumps({"run_id": rid, "label": "invalid", "ts": "2026-01-01T00:00:00Z"}) + "\n",
+            encoding="utf-8",
         )
     elif damage == "missing":
         shutil.rmtree(directory)
     elif damage == "metric":
-        (directory / "metrics.jsonl").write_text("")
+        (directory / "metrics.jsonl").write_text("", encoding="utf-8")
     result = checked(p)
     if damage is None:
         assert result.support == "supported" and not result.issues
@@ -87,7 +88,7 @@ def test_closure_deduplicates_exact_refs_rows_runs_and_issues(sample_project):
     agg = runs.load_aggregate(p.root, "C1", version=1)
     rid = agg.rows[0].run_ids[0]
     path = p.root / f"runs/{rid}/status.json"
-    atomic_write_json(path, {**json.loads(path.read_text()), "state": "failed"})
+    atomic_write_json(path, {**json.loads(path.read_text(encoding="utf-8")), "state": "failed"})
     report = checked(p)
     invalid = [i for i in report.issues if i.code == "INVALID_RUN"]
     assert len(invalid) == 1
@@ -116,7 +117,7 @@ def test_aggregate_selector_limits_support_and_trace_uses_frozen_version(sample_
     qualitative(p, selector={"group": selected.group, "metric": selected.metric, "eval_condition": agg.eval_condition})
     rid = excluded.run_ids[0]
     path = p.root / f"runs/{rid}/status.json"
-    atomic_write_json(path, {**json.loads(path.read_text()), "state": "failed"})
+    atomic_write_json(path, {**json.loads(path.read_text(encoding="utf-8")), "state": "failed"})
     assert checked(p).support == "supported"
     agg.rows = [excluded]
     p.archive.put("artifacts/aggregates/C1.json", "aggregate", agg.model_dump_json())
@@ -141,13 +142,13 @@ def test_figure_uses_exact_archived_graph(sample_project, damage):
     qualitative(p, "figure")
     original = archived_trace(p)
     path = p.root / "artifacts/figures/fig_c1/figure.json"
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     if damage == "archive":
         stored = p.archive.stored_path(p.archive.versions("artifacts/figures/fig_c1")[0].ref)
-        (stored / "figure.json").write_text("{}")
+        (stored / "figure.json").write_text("{}", encoding="utf-8")
     elif damage == "outside_bundle":
         bundle_path = p.root / "paper/evidence_bundle.json"
-        bundle = json.loads(bundle_path.read_text())
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
         bundle["aggregates"] = []
         atomic_write_json(bundle_path, bundle)
     elif damage == "wrong_hash":
@@ -202,7 +203,7 @@ def test_closure_run_identity_and_explicit_plan_reuse(sample_project, case):
     c.evidence[0].version = ref.version
     save(p, c)
     path = p.root / "paper/evidence_bundle.json"
-    bundle = json.loads(path.read_text())
+    bundle = json.loads(path.read_text(encoding="utf-8"))
     bundle["aggregates"][0]["ref"] = ref.model_dump()
     atomic_write_json(path, bundle)
     result = checked(p)

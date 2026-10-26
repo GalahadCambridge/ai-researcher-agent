@@ -102,16 +102,16 @@ def test_code_owned_edits_fail_closed(writing_true, relative):
     p, e = writing_true
     to_phase(e, "compile")
     path = p.root / "paper" / relative
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     changed = text.replace("observed mean", "invented mean") if relative.endswith("results.tex") else text + "% edit\n"
-    path.write_text(changed)
+    path.write_text(changed, encoding="utf-8")
     calls = len(e.llm.backend.calls)
     for _ in range(4):
         tick = e.tick()
         if isinstance(tick.result, Error):
             break
     assert isinstance(tick.result, Error)
-    assert path.read_text() == changed and len(e.llm.backend.calls) == calls
+    assert path.read_text(encoding="utf-8") == changed and len(e.llm.backend.calls) == calls
 
 
 def test_surrounding_prose_updates_locations_without_replanning(writing_true):
@@ -119,7 +119,7 @@ def test_surrounding_prose_updates_locations_without_replanning(writing_true):
     to_phase(e, "compile")
     before = evidence.load_claims(p.root)
     path = p.root / "paper/sections/results.tex"
-    path.write_text("% preserved human context\n\n" + path.read_text())
+    path.write_text("% preserved human context\n\n" + path.read_text(encoding="utf-8"), encoding="utf-8")
     approval = run(e)
     after = evidence.load_claims(p.root)
     assert len(claim_calls(e)) == 1 and len(writing_calls(e)) == 8
@@ -212,14 +212,14 @@ def test_compile_repair_cannot_change_bound_claim(writing_true, monkeypatch):
         errors=[{"file": "sections/results.tex", "line": 1, "message": "synthetic syntax failure"}],
     )
     path = p.root / "paper/sections/results.tex"
-    original = path.read_text()
+    original = path.read_text(encoding="utf-8")
     e.llm.backend.script[stage.REPAIR_PROMPT] = [
         {"section": "results", "latex": original.replace("observed", "invented")}
     ]
     e.tick()
     attempts = receipt(p, "runtime")["repairs"]
     assert attempts[-1]["status"] == "rejected" and "bound claim" in attempts[-1]["reason"]
-    assert path.read_text() == original and len(claim_calls(e)) == 1
+    assert path.read_text(encoding="utf-8") == original and len(claim_calls(e)) == 1
 
 
 def test_missing_link_is_unverifiable_not_supported(writing_true):
@@ -227,9 +227,9 @@ def test_missing_link_is_unverifiable_not_supported(writing_true):
     run(e)
     # Check a new unarchived candidate independently; Stage itself rejects such edits.
     path = p.root / "paper/claims.jsonl"
-    data = [json.loads(line) for line in path.read_text().splitlines()]
+    data = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     data[0]["evidence"].append({"type": "figure", "ref": "absent", "version": 1})
-    path.write_text("".join(json.dumps(c) + "\n" for c in data))
+    path.write_text("".join(json.dumps(c) + "\n" for c in data), encoding="utf-8")
     report = evidence.check(p.root)
     assert report.claims[0].support == "unverifiable"
 
@@ -242,7 +242,7 @@ def test_trace_ignores_newer_figure_and_uses_frozen_runtime(writing_true):
     before = evidence.trace(p.root, "CL1")
     old_ref = before.figures[0]["ref"]
     newer = p.root / old_ref["artifact_id"]
-    metadata = json.loads((newer / "figure.json").read_text())
+    metadata = json.loads((newer / "figure.json").read_text(encoding="utf-8"))
     metadata["spec"]["caption"] += " New unrelated rendering."
     atomic_write_json(newer / "figure.json", metadata)
     new_ref = p.archive.put(old_ref["artifact_id"], "figure", newer)

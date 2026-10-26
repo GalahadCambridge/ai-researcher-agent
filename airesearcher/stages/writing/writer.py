@@ -217,7 +217,7 @@ class Writer:
         guidance: list[dict] | None = None,
         claims: list[Claim] | None = None,
     ):
-        self.root = safe_path(root)
+        self.root = safe_path(root, root=root)
         self.bundle = EvidenceBundle.model_validate_json(bundle.to_bytes())
         self.llm = llm
         self.skill = (skills or SkillLoader()).load("latex-writing")
@@ -232,7 +232,7 @@ class Writer:
         }
 
     def _target(self, relative: str) -> Path:
-        target = safe_path(self.root / relative)
+        target = safe_path(self.root / relative, root=self.root)
         if self.root not in target.parents or (target.exists() and not target.is_file()):
             raise ValidationFailed(f"Writer target must be a project file: {relative}")
         return target
@@ -397,7 +397,7 @@ class Writer:
 
     def _literature_snapshot(self) -> bytes:
         source = self.bundle.literature_source
-        path = safe_path(self.root / literature.LITERATURE)
+        path = safe_path(self.root / literature.LITERATURE, root=self.root)
         raw = path.read_bytes() if path.exists() else b""
         if (sha256_bytes(raw) != source.sha256 or (source.mode == "absent") != (not path.exists())
                 or source.path != literature.LITERATURE):

@@ -80,7 +80,7 @@ def resolve_template(root: Path, template: dict | None = None, *, skill: Skill |
     root = safe_tree(root)
     if template is None:
         skill = skill or SkillLoader().load("latex-writing")
-        original = safe_tree(skill.path("templates/default"))
+        original = safe_tree(skill.root / "templates/default", trusted_root=skill.root)
         check = root / "paper/.template_check_default.json"
         report = root / "paper/.template_compile_default.json"
     else:
@@ -89,10 +89,10 @@ def resolve_template(root: Path, template: dict | None = None, *, skill: Skill |
                 or type(version) is not int or version < 1):
             raise TemplateError("Template selection must contain a valid id and positive integer version")
         vdir = root / "templates" / tid / f"v{version}"
-        original = safe_tree(vdir / "original")
+        original = safe_tree(vdir / "original", trusted_root=root)
         check, report = vdir / "check.json", vdir / "compile_report.json"
-    safe_path(check)
-    safe_path(report)
+    safe_path(check, root=root)
+    safe_path(report, root=root)
     return TemplateSource(original, check, report, root)
 
 
@@ -201,7 +201,7 @@ def write_check(source: TemplateSource, check: TemplateCheck) -> None:
     # Revalidate the destination tree, including existing metadata symlinks.
     safe_tree(source.root)
     for path in (source.check_path, source.report_path, source.log_path):
-        path = safe_path(path)
+        path = safe_path(path, root=source.root)
         if source.root not in path.parents or source.original == path or source.original in path.parents:
             raise TemplateError("Check metadata must be inside the project and outside the original")
     if check.report:
@@ -301,7 +301,9 @@ def prepare_template(original: Path, destination: Path, body: str, *, entry: str
     orchestration owns replacing a previous paper and preserving other paper artifacts.
     """
     root = safe_tree(original)
-    dest = safe_path(destination)
+    # Standalone preparation creates a new child of the caller's output directory.
+    # Project callers validate that directory against their project boundary first.
+    dest = safe_path(destination, root=Path(destination).parent)
     if dest.exists() or dest == root or root in dest.parents or dest in root.parents:
         raise TemplateError("Preparation requires a new destination outside the template tree")
     check = inspect_template(root, entry=entry)

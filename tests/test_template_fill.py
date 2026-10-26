@@ -86,9 +86,9 @@ def test_default_resolution_and_deterministic_inspection(tmp_path, installed_dep
 def test_single_zero_multiple_and_explicit_entry(tmp_path, installed_dependencies):
     root = original_at(tmp_path)
     assert tpl.inspect_template(root).entry == "entry.tex"
-    (root / "comment.tex").write_text("% \\documentclass{ignored}\n\\section{Part}\n")
+    (root / "comment.tex").write_text("% \\documentclass{ignored}\n\\section{Part}\n", encoding="utf-8")
     assert tpl.inspect_template(root).entry_candidates == ["entry.tex"]
-    (root / "other.tex").write_text(BASE + END)
+    (root / "other.tex").write_text(BASE + END, encoding="utf-8")
     check = tpl.inspect_template(root)
     assert check.selection_required and check.entry is None
     assert check.entry_candidates == ["entry.tex", "other.tex"]
@@ -107,12 +107,12 @@ def test_local_and_system_dependencies(tmp_path, installed_dependencies):
     root = original_at(tmp_path, BASE.replace("{article}", "{local}") +
                        "\\usepackage{localstyle,graphicx}\n\\bibliographystyle{custom}\n"
                        "\\input{parts/body}\n\\bibliography{refs}\n" + END)
-    (root / "local.cls").write_text("\\LoadClass{article}\n")
-    (root / "localstyle.sty").write_text("% local style\n")
-    (root / "custom.bst").write_text("% controlled local style\n")
-    (root / "refs.bib").write_text("% controlled bibliography\n")
+    (root / "local.cls").write_text("\\LoadClass{article}\n", encoding="utf-8")
+    (root / "localstyle.sty").write_text("% local style\n", encoding="utf-8")
+    (root / "custom.bst").write_text("% controlled local style\n", encoding="utf-8")
+    (root / "refs.bib").write_text("% controlled bibliography\n", encoding="utf-8")
     (root / "parts").mkdir()
-    (root / "parts/body.tex").write_text("Text.\n")
+    (root / "parts/body.tex").write_text("Text.\n", encoding="utf-8")
     check = tpl.inspect_template(root)
     assert not check.missing
     resolved = {d.name: d.resolution for d in check.dependencies}
@@ -204,7 +204,7 @@ def test_unsafe_resource_paths(tmp_path, resource):
 
 def test_prepare_preserves_local_assets_and_rejects_overwrite(tmp_path, installed_dependencies):
     root = original_at(tmp_path)
-    (root / "style.sty").write_text("% local asset\n")
+    (root / "style.sty").write_text("% local asset\n", encoding="utf-8")
     (root / "image.png").write_bytes(b"controlled asset")
     before = hashes(root)
     dest = tmp_path / "paper"
@@ -221,7 +221,7 @@ def test_prepare_preserves_local_assets_and_rejects_overwrite(tmp_path, installe
 def test_symlinks_rejected_for_inspection_preparation_and_metadata(tmp_path, installed_dependencies):
     root = original_at(tmp_path)
     outside = tmp_path / "outside"
-    outside.write_text("untouched")
+    outside.write_text("untouched", encoding="utf-8")
     try:
         (root / "linked.sty").symlink_to(outside)
     except OSError:
@@ -235,7 +235,7 @@ def test_symlinks_rejected_for_inspection_preparation_and_metadata(tmp_path, ins
     (tmp_path / "check.json").symlink_to(outside)
     with pytest.raises(TemplateError):
         tpl.write_check(source, tpl.inspect_template(root))
-    assert outside.read_text() == "untouched"
+    assert outside.read_text(encoding="utf-8") == "untouched"
 
 
 @pytest.mark.parametrize("selection", [{"id": "../tpl-01", "version": 1}, {"id": "tpl-01", "version": 0},
@@ -266,7 +266,7 @@ def test_real_uploaded_template_check_prepare_compile_and_metadata(project, mark
     tpl.write_check(source, check)
     assert templates.template_info(project, info.template_id, info.version).check == json.loads(first_bytes)
     assert (project.root / check.compile_report).exists()
-    assert source.log_path.is_file() and "air-template-" not in source.log_path.read_text()
+    assert source.log_path.is_file() and "air-template-" not in source.log_path.read_text(encoding="utf-8")
     assert first_bytes == tpl.check_template(source).to_bytes()
     assert b"air-template-" not in first_bytes
     tpl.prepare_template(source.original, project.root / "prepared-paper", BODY)
@@ -296,7 +296,7 @@ def test_skill_can_verify_structure_without_tex(monkeypatch):
 
 def test_ambiguous_or_missing_template_does_not_compile(tmp_path, installed_dependencies, monkeypatch):
     root = original_at(tmp_path)
-    (root / "other.tex").write_text(BASE + END)
+    (root / "other.tex").write_text(BASE + END, encoding="utf-8")
     source = tpl.TemplateSource(root, tmp_path / "check.json", tmp_path / "report.json", tmp_path)
 
     def forbidden(*args, **kwargs):
@@ -313,7 +313,7 @@ def test_ambiguous_or_missing_template_does_not_compile(tmp_path, installed_depe
 
 def test_entry_rename_collision_and_reserved_build_are_rejected(tmp_path, installed_dependencies):
     root = original_at(tmp_path)
-    (root / "main.tex").write_text("Supporting text only.\n")
+    (root / "main.tex").write_text("Supporting text only.\n", encoding="utf-8")
     with pytest.raises(TemplateError, match="overwrite"):
         tpl.prepare_template(root, tmp_path / "paper", BODY)
     (root / "main.tex").unlink()
@@ -330,8 +330,8 @@ def test_inserted_document_boundaries_rejected(body):
 
 def test_selected_entry_only_checks_its_reachable_dependencies(tmp_path, monkeypatch):
     root = original_at(tmp_path)
-    (root / "unused.tex").write_text(BASE + "\\usepackage{unusedMissing}\n" + END)
-    (root / "unused.sty").write_text("\\RequirePackage{unrelatedMissing}\n")
+    (root / "unused.tex").write_text(BASE + "\\usepackage{unusedMissing}\n" + END, encoding="utf-8")
+    (root / "unused.sty").write_text("\\RequirePackage{unrelatedMissing}\n", encoding="utf-8")
     monkeypatch.setattr(tpl.shutil, "which", lambda name: "kpsewhich")
 
     def lookup(args, **kwargs):
@@ -347,7 +347,7 @@ def test_selected_entry_only_checks_its_reachable_dependencies(tmp_path, monkeyp
 
 def test_recursive_dependency_cycle_is_finite(tmp_path, installed_dependencies):
     root = original_at(tmp_path, BASE + "\\input{part}\n" + END)
-    (root / "part.tex").write_text("\\input{part}\n\\usepackage{graphicx}\n")
+    (root / "part.tex").write_text("\\input{part}\n\\usepackage{graphicx}\n", encoding="utf-8")
     check = tpl.inspect_template(root)
     assert [(d.name, d.resolution) for d in check.dependencies] == [
         ("article.cls", "system"), ("graphicx.sty", "system"), ("part.tex", "local"), ("part.tex", "local")]

@@ -113,14 +113,15 @@ def test_major_revision_round_trip_exact_immutable_evidence_and_history(sample):
     assert reports(p)[0].counts["major"] == 1 and reports(p)[1].counts["major"] == 0
     assert reports(p)[1].paper_ref == approval.target != old_paper
     assert (p.root / "paper/review/review_v1.json").read_bytes() == first
-    assert "universal superiority" in (p.archive.stored_path(old_paper) / "sections/results.tex").read_text()
+    assert "universal superiority" in (p.archive.stored_path(old_paper) / "sections/results.tex").read_text(
+        encoding="utf-8")
     assert evidence.check(p.root, paper_ref=old_paper).paper_ref == old_paper
     for index, report in enumerate(reports(p), 1):
         ref = p.archive.latest(f"paper/review/review_v{index}.json")
         parents = p.archive.version_info(ref).parents
         assert parents[0] == report.paper_ref and parents[1] in p.archive.version_info(report.paper_ref).parents
     assert "Semantic review rounds: 2; automatic revision rounds: 1" in approval.summary
-    assert "Semantic LLM claim review was not run" not in (p.root / "paper/ai_use.tex").read_text()
+    assert "Semantic LLM claim review was not run" not in (p.root / "paper/ai_use.tex").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("limit", [1, 2])
@@ -171,7 +172,7 @@ def test_no_evidence_targeted_surrounding_prose(sample, monkeypatch):
     assert evidence.load_claims(p.root) == old
     assert reports(p)[0].unbound_issues[0].code == "NO_EVIDENCE"
     assert not reports(p)[1].unbound_issues
-    text = (p.root / "paper/sections/abstract.tex").read_text()
+    text = (p.root / "paper/sections/abstract.tex").read_text(encoding="utf-8")
     assert "Further evaluation is needed." in text and "dominates every" not in text
     assert len(calls(e, r.REVISE_PROMPT)) == 1
 
@@ -240,9 +241,9 @@ def test_revision_transaction_recovery_and_no_duplicate_calls(sample, monkeypatc
     else:
 
         def crash(path, data):
-            if boundary == "section" and str(path).endswith("paper/claims.jsonl"):
+            if boundary == "section" and path.as_posix().endswith("paper/claims.jsonl"):
                 raise OSError("section installed, claims pending")
-            if boundary == "claims" and str(path).endswith("sections/results.tex"):
+            if boundary == "claims" and path.as_posix().endswith("sections/results.tex"):
                 pending = receipt(p, "pending-revision")
                 original_write(p.root / "paper/claims.jsonl", pending["new"]["paper/claims.jsonl"].encode())
                 raise OSError("claims installed, section pending")
@@ -403,7 +404,7 @@ def test_unbound_results_sentence_and_oversized_unit_fail_explicitly(sample):
     p, e = sample
     to_phase(e, "verify")
     path = p.root / "paper/sections/results.tex"
-    path.write_text(path.read_text() + "\nOur method beats all rivals.\n")
+    path.write_text(path.read_text(encoding="utf-8") + "\nOur method beats all rivals.\n", encoding="utf-8")
     run(e)
     contexts = [context_of(call) for call in calls(e, r.REVIEW_PROMPT)]
     assert any(
@@ -415,7 +416,7 @@ def test_unbound_results_sentence_and_oversized_unit_fail_explicitly(sample):
 
     scratch = p.root / "unit-source"
     shutil.copytree(p.root / "paper", scratch)
-    (scratch / "sections/abstract.tex").write_text("Oversized " + "word " * 600 + ".")
+    (scratch / "sections/abstract.tex").write_text("Oversized " + "word " * 600 + ".", encoding="utf-8")
     bundle = module.EvidenceBundle.model_validate_json((p.root / "paper/evidence_bundle.json").read_bytes())
     with pytest.raises(ValueError, match="bounded"):
         r.units(scratch, evidence.load_claims(p.root), bundle, reports(p)[0])
@@ -428,18 +429,18 @@ def test_source_changed_during_model_call_is_not_overwritten(sample, monkeypatch
     before = (p.root / "paper/claims.jsonl").read_bytes()
     original = SampleWritingLLM.call
     path = p.root / "paper/sections/discussion.tex"
-    changed = path.read_text() + "\n% human edit during revision call\n"
+    changed = path.read_text(encoding="utf-8") + "\n% human edit during revision call\n"
 
     def change(self, request):
         response = original(self, request)
         if request.prompt_id == r.REVISE_PROMPT:
-            path.write_text(changed)
+            path.write_text(changed, encoding="utf-8")
         return response
 
     monkeypatch.setattr(SampleWritingLLM, "call", change)
     tick = e.tick()
     assert isinstance(tick.result, Error) and "source changed during" in tick.result.message
-    assert path.read_text() == changed and (p.root / "paper/claims.jsonl").read_bytes() == before
+    assert path.read_text(encoding="utf-8") == changed and (p.root / "paper/claims.jsonl").read_bytes() == before
     assert not (p.root / "paper/.writing/pending-revision.json").exists()
 
 
@@ -451,11 +452,11 @@ def test_real_numeric_blocker_cannot_be_waived_or_revised(sample):
     to_phase(e, "verify")
     run_id = runs.load_aggregate(p.root, "C1", version=1).rows[0].run_ids[0]
     path = p.root / f"runs/{run_id}/metrics.jsonl"
-    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     for row in rows:
         if row["name"] == "score":
             row["value"] += 0.25
-    path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
     approval = run(e)
     final = reports(p)[-1]
     assert any(i.code == "NUM_MISMATCH" and i.severity == "blocker" for i in r.all_issues(final))
@@ -469,11 +470,12 @@ def test_exact_revision_preserves_crlf_and_surrounding_human_prose(sample):
     e.llm.backend.semantic_revision = True
     to_phase(e, "compile")
     path = p.root / "paper/sections/results.tex"
-    path.write_bytes(("% preserved human header\n" + path.read_text()).replace("\n", "\r\n").encode())
+    path.write_bytes(("% preserved human header\n" + path.read_text(encoding="utf-8")).replace("\n", "\r\n").encode())
     run(e)
     data = path.read_bytes()
     assert data.startswith(b"% preserved human header\r\n")
     assert b"\n" not in data.replace(b"\r\n", b"")
     assert b"limited to the evaluated scope" in data
     assert receipt(p, "section-results")["human_edited"] is True
-    assert "Automatic revision rounds completed: 1" in (p.root / "paper/review/review_v2.md").read_text()
+    assert "Automatic revision rounds completed: 1" in (p.root / "paper/review/review_v2.md").read_text(
+        encoding="utf-8")

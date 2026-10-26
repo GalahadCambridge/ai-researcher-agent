@@ -158,7 +158,8 @@ def test_macro_collision_and_comment_locations(bound_inputs, monkeypatch):
     assert not errors
     for section in module.SECTIONS:
         path = p.root / f"paper/sections/{section}.tex"
-        path.write_text("% " + claims[0].text + "\n" + "\n".join(c.text for c in claims if c.section == section))
+        path.write_text(
+            "% " + claims[0].text + "\n" + "\n".join(c.text for c in claims if c.section == section), encoding="utf-8")
     located = module.locate_claims(p.root, claims)
     assert located[0].location["line"] == 2
     monkeypatch.setattr(module, "value_key", lambda selector: "collision")

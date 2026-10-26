@@ -50,7 +50,7 @@ def restart(project, engine):
 
 
 def receipt(project, name):
-    return json.loads((project.root / f"paper/.writing/{name}.json").read_text())
+    return json.loads((project.root / f"paper/.writing/{name}.json").read_text(encoding="utf-8"))
 
 
 def set_template(project, files, version=1):
@@ -119,9 +119,9 @@ def test_control_arm_engine_artifacts_and_exact_sources(writing):
     paper = p.root / "paper"
     for relative in ("main.tex", "references.bib", "ai_use.tex", "build/compile_report.json"):
         assert (paper / relative).exists()
-    assert "hu2022lora" in (paper / "references.bib").read_text()
-    assert r"\input{ai_use}" in (paper / "main.tex").read_text()
-    assert "evidence\\_check=false" in (paper / "ai_use.tex").read_text()
+    assert "hu2022lora" in (paper / "references.bib").read_text(encoding="utf-8")
+    assert r"\input{ai_use}" in (paper / "main.tex").read_text(encoding="utf-8")
+    assert "evidence\\_check=false" in (paper / "ai_use.tex").read_text(encoding="utf-8")
     assert not (paper / "build/main.pdf").exists()
     assert not (paper / "claims.jsonl").exists() and not (paper / "air_values.tex").exists()
     assert not list((paper / "review").glob("review_v*.json"))
@@ -286,7 +286,7 @@ def test_changed_run_environment_invalidates_frozen_basis(writing):
     old = p.archive.latest("paper")
     bundle = EvidenceBundle.model_validate_json((p.root / "paper/evidence_bundle.json").read_bytes())
     envpath = p.root / "runs" / bundle.runtime.runs[0]["run_id"] / "environment.json"
-    data = json.loads(envpath.read_text())
+    data = json.loads(envpath.read_text(encoding="utf-8"))
     data["python"] = "3.99.test"
     atomic_write_json(envpath, data)
     e.ck.state = S.Writing
@@ -325,7 +325,8 @@ def test_human_section_edit_preserved_and_reference_service_used(writing, monkey
     p, e = writing
     old = run(e).target
     path = p.root / "paper/sections/discussion.tex"
-    path.write_text(path.read_text() + "\nHuman clarification.\\cite{zhang2021revisiting}\n")
+    path.write_text(
+        path.read_text(encoding="utf-8") + "\nHuman clarification.\\cite{zhang2021revisiting}\n", encoding="utf-8")
     from airesearcher.services import literature
 
     original = literature.bibtex_for
@@ -337,12 +338,12 @@ def test_human_section_edit_preserved_and_reference_service_used(writing, monkey
 
     monkeypatch.setattr(literature, "bibtex_for", observe)
     drive(e, S.ManuscriptPending, timeout=90)
-    assert "Human clarification" in path.read_text()
+    assert "Human clarification" in path.read_text(encoding="utf-8")
     assert len(writing_calls(e)) == 8 and called
-    assert "zhang2021revisiting" in (p.root / "paper/references.bib").read_text()
+    assert "zhang2021revisiting" in (p.root / "paper/references.bib").read_text(encoding="utf-8")
     assert p.archive.latest("paper").version > old.version
     assert receipt(p, "section-discussion")["human_edited"]
-    assert "Human-edited sections" in (p.root / "paper/ai_use.tex").read_text()
+    assert "Human-edited sections" in (p.root / "paper/ai_use.tex").read_text(encoding="utf-8")
 
 
 def test_compile_only_rerun_does_not_version_source(writing):
@@ -393,7 +394,7 @@ def test_broken_template_explicit_choices(writing, choice):
         assert len([r for r in p.questions.records() if r.question.stage == "writing"]) == 1
         if choice == "use_default":
             assert receipt(p, "runtime")["fallback_from"] == {"id": "tpl-01", "version": 1}
-            assert "explicitly selected" in (p.root / "paper/ai_use.tex").read_text()
+            assert "explicitly selected" in (p.root / "paper/ai_use.tex").read_text(encoding="utf-8")
         else:
             assert resumed.ck.scratch["writing"]["template"]["version"] == 2
 
@@ -407,20 +408,21 @@ def test_template_only_change_reassembles_without_prose_calls(writing):
     e.ck.pending_approval = None
     run(e)
     assert len(writing_calls(e)) == 8
-    assert "[11pt]" in (p.root / "paper/main.tex").read_text()
+    assert "[11pt]" in (p.root / "paper/main.tex").read_text(encoding="utf-8")
     assert old_sections == {name: (p.root / f"paper/sections/{name}.tex").read_bytes() for name in SECTIONS}
 
 
 def test_no_direct_cross_stage_import_or_private_run_reads():
     folder = Path(module.__file__).parent
     for path in folder.glob("*.py"):
-        tree = ast.parse(path.read_text())
+        tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 assert not (node.module or "").startswith("airesearcher.stages.idea")
         if path.name != "bundle.py":
-            assert '"environment.json"' not in path.read_text()
-        assert '"run.json"' not in path.read_text() and '"config.yaml"' not in path.read_text()
+            assert '"environment.json"' not in path.read_text(encoding="utf-8")
+        assert '"run.json"' not in path.read_text(encoding="utf-8")
+        assert '"config.yaml"' not in path.read_text(encoding="utf-8")
 
 
 def test_figure_planner_rejects_extra_values_and_code(writing):
@@ -450,11 +452,11 @@ def test_unknown_units_are_not_invented_by_deterministic_stage(writing):
 def test_explicit_task_units_avoid_figure_planner(writing):
     p, e = writing
     task = Path(module.__file__).resolve().parents[3] / "tasks/smoke/task.yaml"
-    data = yaml.safe_load(task.read_text())
+    data = yaml.safe_load(task.read_text(encoding="utf-8"))
     data["metrics"][0]["unit"] = "dimensionless"
     target = p.root / "tasks/smoke/task.yaml"
     target.parent.mkdir(parents=True)
-    target.write_text(yaml.safe_dump(data))
+    target.write_text(yaml.safe_dump(data), encoding="utf-8")
     run(e)
     assert len(e.llm.backend.calls) == 8
 
@@ -515,7 +517,7 @@ def test_compile_repair_validated_and_restart_does_not_repeat(writing, monkeypat
     resumed = restart(p, e)
     resumed.tick()  # install the durable response, no call
     assert len(e.llm.backend.calls) == before
-    assert "Repaired syntax" in (p.root / "paper/sections/method.tex").read_text()
+    assert "Repaired syntax" in (p.root / "paper/sections/method.tex").read_text(encoding="utf-8")
     assert resumed.ck.scratch["writing"]["phase"] == "compile"
     request = e.llm.backend.calls[-1]
     assert request.role == "writing.compile_repair" and request.prompt_version == 1
@@ -555,13 +557,13 @@ def test_exhausted_repairs_question_and_manual_retry_without_model(writing, monk
         drive(e, S.Failed)
     else:
         path = p.root / "paper/sections/method.tex"
-        path.write_text(path.read_text() + "\nHuman fix.\n")
+        path.write_text(path.read_text(encoding="utf-8") + "\nHuman fix.\n", encoding="utf-8")
         # Actual disabled compile implementation: proves no placeholder and no extra repair call.
         from airesearcher.stages.writing.compile import compile_paper
 
         monkeypatch.setattr(module, "compile_paper", compile_paper)
         drive(e, S.ManuscriptPending, timeout=90)
-        assert "Human fix" in path.read_text()
+        assert "Human fix" in path.read_text(encoding="utf-8")
     assert len(e.llm.backend.calls) == calls
 
 
@@ -582,7 +584,7 @@ def test_zero_compile_fix_budget_makes_no_repair_call(writing, monkeypatch):
 def test_exact_approved_bytes_win_over_unapproved_working_files(writing):
     p, e = writing
     for kind in ("idea", "plan"):
-        (p.root / e.ck.approved[kind].artifact_id).write_text("UNAPPROVED CURRENT FILE")
+        (p.root / e.ck.approved[kind].artifact_id).write_text("UNAPPROVED CURRENT FILE", encoding="utf-8")
     to_phase(e, "compile")
     assert all("UNAPPROVED CURRENT FILE" not in json.dumps(context_of(c)) for c in writing_calls(e))
 
@@ -599,7 +601,7 @@ def test_exploratory_and_negative_results_remain_visible(writing):
     data = context["aggregates"][0]["data"]
     assert data["eval_condition"] == "explore" and data["contrasts"][0]["diff_mean"] == -0.1
     assert data["contrasts"][0]["p_value"] == 0.8
-    spec = json.loads((p.root / "artifacts/figures/fig_c1/spec.json").read_text())
+    spec = json.loads((p.root / "artifacts/figures/fig_c1/spec.json").read_text(encoding="utf-8"))
     assert "Exploratory" in spec["title"] and "Exploratory" in spec["caption"]
 
 
@@ -608,11 +610,11 @@ def test_task_snapshot_mutation_rebuilds_bundle(writing):
     to_phase(e, "figures")
     first = p.archive.latest("paper/evidence_bundle.json")
     task = Path(module.__file__).resolve().parents[3] / "tasks/smoke/task.yaml"
-    data = yaml.safe_load(task.read_text())
+    data = yaml.safe_load(task.read_text(encoding="utf-8"))
     data["resources"]["gpu"] = "different recorded hardware constraint"
     target = p.root / "tasks/smoke/task.yaml"
     target.parent.mkdir(parents=True)
-    target.write_text(yaml.safe_dump(data))
+    target.write_text(yaml.safe_dump(data), encoding="utf-8")
     e.tick()
     assert p.archive.latest("paper/evidence_bundle.json").version == first.version + 1
 
@@ -678,17 +680,17 @@ def test_unknown_existing_section_is_not_overwritten(writing):
     to_phase(e, "write")
     path = p.root / "paper/sections/introduction.tex"
     path.parent.mkdir(parents=True)
-    path.write_text("Human-authored fragment without a model receipt.")
+    path.write_text("Human-authored fragment without a model receipt.", encoding="utf-8")
     result = e.tick().result
     assert isinstance(result, Error) and "unreceipted" in result.message
-    assert path.read_text() == "Human-authored fragment without a model receipt."
+    assert path.read_text(encoding="utf-8") == "Human-authored fragment without a model receipt."
     assert not writing_calls(e)
 
 
 def test_human_edit_during_compile_failure_is_recompiled_first(writing, monkeypatch):
     p, e = simulated_compile(writing, monkeypatch)
     path = p.root / "paper/sections/method.tex"
-    path.write_text(path.read_text() + "\nHuman fix before automatic repair.\n")
+    path.write_text(path.read_text(encoding="utf-8") + "\nHuman fix before automatic repair.\n", encoding="utf-8")
     result = e.tick().result
     assert isinstance(result, Continue) and e.ck.scratch["writing"]["phase"] == "write"
     assert not any(c.prompt_id == module.REPAIR_PROMPT for c in e.llm.backend.calls)
@@ -721,7 +723,7 @@ def test_comment_only_edit_pdf_and_report_parent_current_source(tmp_path):
     # Mark the first human edit, then change only comments on the next revision.
     path = p.root / "paper/sections/method.tex"
     for n in range(2):
-        path.write_text(path.read_text() + f"\n% Human comment {n}\n")
+        path.write_text(path.read_text(encoding="utf-8") + f"\n% Human comment {n}\n", encoding="utf-8")
         drive(e, S.ManuscriptPending, timeout=90)
     current = p.approvals.get(e.ck.pending_approval)
     assert current.target != old.target
@@ -794,7 +796,7 @@ def test_pending_section_compare_before_install(writing, monkeypatch, existing):
     assert not receipt(p, "section-introduction")["installed"]
     if existing == "human":
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("\\section{Introduction}\nHuman-authored replacement.\n")
+        path.write_text("\\section{Introduction}\nHuman-authored replacement.\n", encoding="utf-8")
     before = sha256_file(path) if path.exists() else None
     calls = len(e.llm.backend.calls)
     writes = []
@@ -896,7 +898,8 @@ def change_figure_dependency(p, e, monkeypatch, tmp_path, dependency):
         original = e.llm.prompts.load(module.FIGURE_PROMPT)
         copied = tmp_path / "prompts/writing/prompts"
         copied.mkdir(parents=True)
-        (copied / "figure_spec.v2.md").write_text(original.path.read_text().replace("version: 1", "version: 2"))
+        (copied / "figure_spec.v2.md").write_text(
+            original.path.read_text(encoding="utf-8").replace("version: 1", "version: 2"), encoding="utf-8")
         e.llm.prompts.roots = [tmp_path / "prompts", *e.llm.prompts.roots]
         p.config.prompt_pins[module.FIGURE_PROMPT] = 2
         p.save_config(p.config)
@@ -907,7 +910,7 @@ def change_figure_dependency(p, e, monkeypatch, tmp_path, dependency):
         copied = tmp_path / "plotting-skill"
         shutil.copytree(skill.root, copied)
         script = copied / "scripts/plot.py"
-        script.write_text(script.read_text() + "\n# Stabilization dependency test\n")
+        script.write_text(script.read_text(encoding="utf-8") + "\n# Stabilization dependency test\n", encoding="utf-8")
         changed = replace(skill, root=copied, version="0.1.1" if dependency == "skill" else skill.version)
         def load(self, name, *args, **kwargs):
             return changed if name == "scientific-plotting" else original_load(self, name, *args, **kwargs)
@@ -988,7 +991,7 @@ def test_figure_gate_checks_full_registered_artifact(writing, damage):
     elif damage == "wrong_ref":
         s["figures"]["fig_c1"] = s["figures"]["fig_c2"]
     else:
-        figure = json.loads((directory / "figure.json").read_text())
+        figure = json.loads((directory / "figure.json").read_text(encoding="utf-8"))
         parents = p.archive.version_info(ref).parents
         if damage == "metadata":
             figure["fig_id"] = "fig_wrong"

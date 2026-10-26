@@ -98,9 +98,9 @@ def load_figures(root: Path, refs: dict[str, VersionRef]) -> dict[str, FigureSou
             raise ValueError("Figure identity mismatch")
         manifest = archive.get(ref)
         stored = archive.stored_path(ref)
-        if stored is None or manifest_bytes(dir_manifest(safe_path(stored), [])) != manifest:
+        if stored is None or manifest_bytes(dir_manifest(safe_path(stored, root=root), [])) != manifest:
             raise ValueError("Figure archive bytes differ from exact ref")
-        figure = Figure.model_validate_json(safe_path(stored / "figure.json").read_bytes())
+        figure = Figure.model_validate_json(safe_path(stored / "figure.json", root=root).read_bytes())
         if figure.fig_id != fid:
             raise ValueError("Figure metadata identity mismatch")
         result[fid] = FigureSource(ref=ref, data=figure)
@@ -432,7 +432,7 @@ def validate_bound_section(text, claims, section):
 def locate_claims(root, claims):
     located = []
     for section in SECTIONS:
-        text = safe_path(Path(root) / f"paper/sections/{section}.tex").read_text(encoding="utf-8")
+        text = safe_path(Path(root) / f"paper/sections/{section}.tex", root=root).read_text(encoding="utf-8")
         validate_bound_section(text, claims, section)
         for claim in claims:
             if claim.section == section:

@@ -150,7 +150,7 @@ def _portable_input(value: Any) -> Any:
                 if not re.search(r"secret|token|password|credential|api.?key|authorization", k, re.I)}
     if isinstance(value, list):
         return [_portable_input(v) for v in value]
-    if isinstance(value, str) and (Path(value).is_absolute() or PureWindowsPath(value).is_absolute()):
+    if isinstance(value, str) and (PurePosixPath(value).is_absolute() or PureWindowsPath(value).is_absolute()):
         return "<external-path>"
     return value
 
@@ -162,7 +162,7 @@ def _runtime_input(root: Path, plan: ApprovedSource, aggregates: list[AggregateS
     name = relative_name((plan.data or {})["task_config"])
     if not name.endswith((".yaml", ".yml")):
         name += "/task.yaml"
-    candidates = [safe_path(root / name), safe_path(repo_root() / name)]
+    candidates = [safe_path(root / name, root=root), safe_path(repo_root() / name, root=repo_root())]
     path = next((p for p in candidates if p.is_file()), None)
     if path is None:
         raise BundleError(f"approved task configuration unavailable: {name}")
@@ -275,7 +275,7 @@ def _aggregate_sources(root: Path, archive: Archive, refs: Sequence[VersionRef] 
 def _portable_fulltext(record: dict[str, Any], root: Path) -> dict[str, Any]:
     record = dict(record)
     location = record.get("fulltext_path")
-    if location and (Path(location).is_absolute() or PureWindowsPath(location).is_absolute()):
+    if location and (PurePosixPath(location).is_absolute() or PureWindowsPath(location).is_absolute()):
         try:
             record["fulltext_path"] = Path(location).relative_to(root).as_posix()
         except ValueError:

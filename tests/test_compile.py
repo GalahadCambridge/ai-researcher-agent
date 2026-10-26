@@ -111,7 +111,8 @@ def test_command_environment_final_log_and_persisted_report(tmp_path, monkeypatc
     assert seen["env"]["shell_escape"] == "f" and "TEXINPUTS" not in seen["env"]
     assert seen["env"]["SOURCE_DATE_EPOCH"] == "946684800"
     assert report.log_path == "paper/build/main.log"
-    assert json.loads((paper / "build/compile_report.json").read_text()) == report.model_dump(mode="json")
+    assert json.loads((paper / "build/compile_report.json").read_text(
+        encoding="utf-8")) == report.model_dump(mode="json")
     assert sorted(p.name for p in paper.iterdir()) == ["build", "main.tex"]
 
 
@@ -121,7 +122,7 @@ def test_failed_attempts_never_keep_a_stale_or_placeholder_pdf(tmp_path, monkeyp
     build = paper / "build"
     build.mkdir()
     (build / "main.pdf").write_bytes(b"%PDF-1.5 old success")
-    (build / "main.log").write_text("Output written on build/main.pdf (9 pages, 100 bytes).")
+    (build / "main.log").write_text("Output written on build/main.pdf (9 pages, 100 bytes).", encoding="utf-8")
     seen = fake_process(monkeypatch, code=1 if state == "bad_exit" else 0,
                         pdf=state not in {"no_pdf", "bad_pdf"}, timeout=state == "timeout")
     if state == "missing":
@@ -228,7 +229,7 @@ def test_real_shell_escape_and_parent_output_are_blocked(tmp_path):
     assert compiler.compile_paper(paper).ok
     assert not (paper / "EXECUTED").exists()
     (paper / "main.tex").write_text("\\documentclass{article}\n\\begin{document}\n"
-                                    "\\immediate\\openout0=../escaped.txt\n\\end{document}\n")
+                                    "\\immediate\\openout0=../escaped.txt\n\\end{document}\n", encoding="utf-8")
     report = compiler.compile_paper(paper)
     assert not report.ok and not (tmp_path / "escaped.txt").exists()
 
@@ -253,7 +254,7 @@ def test_actual_process_timeout_terminates_subprocess(tmp_path, monkeypatch):
 
 def test_reserved_build_file_is_explicit_error(tmp_path):
     paper = paper_at(tmp_path)
-    (paper / "build").write_text("not a directory")
+    (paper / "build").write_text("not a directory", encoding="utf-8")
     with pytest.raises(TemplateError, match="not a directory"):
         compiler.compile_paper(paper)
 

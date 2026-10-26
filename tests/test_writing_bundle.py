@@ -470,7 +470,7 @@ def test_broken_historical_closure_blocks_build_and_preserves_bundle(project, da
         elif damage == "directory_idea":
             path = project.root / "idea/history"
             path.mkdir()
-            (path / "note.md").write_text("not an Idea")
+            (path / "note.md").write_text("not an Idea", encoding="utf-8")
             plan.idea_ref = project.archive.put("idea/history", "idea", path)
         elif damage == "wrong_idea_kind":
             plan.idea_ref = project.archive.put("idea/history.md", "other", project.archive.read_text(idea1))

@@ -273,7 +273,7 @@ def test_wrong_identity_and_partial_generation_preserve_existing_work(writing):
         Writer(p.root, bundle, llm=llm).generate_draft()
     assert len(llm.backend.calls) == 3 and previous.read_bytes() == old
     assert writer.read_section("introduction") and writer.read_section("related_work")
-    assert main.read_text() == "prior assembled document"
+    assert main.read_text(encoding="utf-8") == "prior assembled document"
 
 
 def test_scanner_literals_comments_and_escaped_braces_are_inert(writing):
@@ -417,7 +417,7 @@ def test_bibtex_comments_do_not_change_the_cited_entry_set(writing, monkeypatch)
     official = literature.bibtex_for
     monkeypatch.setattr(literature, "bibtex_for",
                         lambda root, ids: "@Comment{Context, not an entry}\n" + official(root, ids))
-    assert writer.generate_references().read_text().startswith("@Comment{")
+    assert writer.generate_references().read_text(encoding="utf-8").startswith("@Comment{")
 
 
 def test_unverified_skill_is_not_used(writing, tmp_path):
@@ -443,7 +443,7 @@ def test_section_symlinks_and_arbitrary_section_names_cannot_write_outside(writi
         writer.write_section(SectionOutput(section="results", latex="Valid prose"))
     with pytest.raises(ValidationFailed, match="Unknown writing section"):
         writer.read_section("../escape")
-    assert outside.read_text() == "unchanged"
+    assert outside.read_text(encoding="utf-8") == "unchanged"
 
 
 def test_user_template_priority_and_original_immutability(writing):
@@ -460,7 +460,7 @@ def test_user_template_priority_and_original_immutability(writing):
     main = writer.assemble_draft(template=p.config.template, title="Uploaded template draft")
     assert "\\bibliographystyle{abbrv}" in main.read_text(encoding="utf-8")
     assert "\\bibliographystyle{plain}" not in main.read_text(encoding="utf-8")
-    assert (p.root / "paper/asset.txt").read_text() == "Preserved user template resource"
+    assert (p.root / "paper/asset.txt").read_text(encoding="utf-8") == "Preserved user template resource"
     assert dir_manifest(original, []) == before
 
 
@@ -486,7 +486,7 @@ def test_compile_failure_is_returned_without_llm_repair(writing):
     result = Writer(p.root, bundle, llm=llm).generate_draft(title="Compile failure test", compile_enabled=True)
     assert not result.compile_report.ok and result.compile_report.errors
     assert len(llm.backend.calls) == 8 and not (p.root / "paper/build/main.pdf").exists()
-    assert "$x" in (p.root / "paper/sections/method.tex").read_text()
+    assert "$x" in (p.root / "paper/sections/method.tex").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("name", ["ref", "pageref", "label"])
@@ -501,7 +501,7 @@ def test_figure_references_after_linebreak_are_checked(writing, name, prefix, kn
                            ("known" if known else "invented") + "}")
     if known:
         assert writer.validate_section(output, "results") == ()
-        assert writer.write_section(output).read_text().strip() == output.latex
+        assert writer.write_section(output).read_text(encoding="utf-8").strip() == output.latex
     else:
         with pytest.raises(ValidationFailed, match="Unknown figure ID"):
             writer.write_section(output)
@@ -566,7 +566,7 @@ def test_unsupported_bibliographies_fail_before_any_paper_change(writing, preamb
     original_before = dir_manifest(original, [])
     for name, content in {"main.tex": "Old main\n", "references.bib": "Old references\n",
                           "asset.txt": "Old asset\n"}.items():
-        (p.root / "paper" / name).write_text(content)
+        (p.root / "paper" / name).write_text(content, encoding="utf-8")
     before = dir_manifest(p.root / "paper", [])
     with pytest.raises(ValidationFailed, match="BibTeX template; adapt"):
         writer.assemble_draft(template=p.config.template, title="Unsupported bibliography")
@@ -584,8 +584,8 @@ def test_inert_biblatex_declarations_do_not_reject_templates(writing, wrapper):
     original = import_writer_template(p, body=wrapper.replace("{}", fake))
     before = dir_manifest(original, [])
     main = writer.assemble_draft(template=p.config.template, title="Inert examples")
-    assert "\\bibliographystyle{plain}" in main.read_text()
-    assert "hu2022lora" in (p.root / "paper/references.bib").read_text()
+    assert "\\bibliographystyle{plain}" in main.read_text(encoding="utf-8")
+    assert "hu2022lora" in (p.root / "paper/references.bib").read_text(encoding="utf-8")
     assert dir_manifest(original, []) == before
 
 
@@ -600,7 +600,8 @@ def test_real_user_bibtex_template_compiles(writing):
     report = compile_paper(main.parent)
     assert report.ok and report.pages and not report.errors, report
     assert not report.undefined_citations and not report.undefined_refs and not report.missing_files
-    assert "sections/results" in main.read_text() and "User template retained text." in main.read_text()
-    assert "0.779900" in (p.root / "paper/sections/results.tex").read_text()
+    assert "sections/results" in main.read_text(encoding="utf-8")
+    assert "User template retained text." in main.read_text(encoding="utf-8")
+    assert "0.779900" in (p.root / "paper/sections/results.tex").read_text(encoding="utf-8")
     assert (main.parent / "build/main.pdf").stat().st_size > 1000
     assert dir_manifest(original, []) == before

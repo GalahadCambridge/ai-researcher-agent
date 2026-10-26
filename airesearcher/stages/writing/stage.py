@@ -65,7 +65,7 @@ def _refs(values):
 
 
 def _path(ctx, relative):
-    return safe_path(ctx.root / relative)
+    return safe_path(ctx.root / relative, root=ctx.root)
 
 
 def _receipt(ctx, name):
@@ -561,7 +561,7 @@ class WritingStage:
             numbers = [int(p.stem.removeprefix("review_v")) for p in _path(ctx, "paper/review").glob("review_v*.json")]
             # Reserve a number before calls; a crash cannot overwrite an older review.
             for path in _path(ctx, "paper/.writing").glob("semantic-*.json"):
-                numbers.append(json.loads(path.read_text())["number"])
+                numbers.append(json.loads(path.read_text(encoding="utf-8"))["number"])
             cycle = self._cycle(s)
             history = meta.setdefault("semantic_rounds", {}).setdefault(cycle, [])
             receipt = {
@@ -738,7 +738,7 @@ class WritingStage:
             raise ValueError("revision changed code-owned numeric values")
         if meta["compiled"]["source_sha256"] != self._source_sha(ctx):
             raise ValueError("source changed during semantic revision; preserve human edits and recheck")
-        old["paper/claims.jsonl"] = _path(ctx, "paper/claims.jsonl").read_text()
+        old["paper/claims.jsonl"] = _path(ctx, "paper/claims.jsonl").read_text(encoding="utf-8")
         new["paper/claims.jsonl"] = binding.claims_bytes(claims).decode()
         transaction = {
             "basis": basis,
@@ -918,7 +918,7 @@ class WritingStage:
                 directory = _path(ctx, ref.artifact_id)
                 if (
                     archived is None
-                    or manifest_bytes(dir_manifest(safe_path(archived), [])) != archived_manifest
+                    or manifest_bytes(dir_manifest(safe_path(archived, root=ctx.root), [])) != archived_manifest
                     or manifest_bytes(dir_manifest(directory, [])) != archived_manifest
                 ):
                     raise ValueError(f"Figure artifact no longer matches archived version: {fid}")

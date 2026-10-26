@@ -22,16 +22,38 @@ from airesearcher.services._tex import (
 )
 
 
-def safe_path(path: Path) -> Path:
-    path = Path(path).absolute()
-    for part in [*reversed(path.parents), path]:
-        if part.is_symlink():
-            raise TemplateError(f"Symlink is not allowed: {part.name}")
-    return path.resolve()
+def safe_path(path: Path, *, root: Path) -> Path:
+    """Check a controlled path, allowing aliases only *above* its trusted root.
+
+    Callers must supply the project/skill/tree boundary, not a descendant's
+    parent. The root itself and every component below it must be symlink-free,
+    including dangling links and links whose targets stay inside the tree.
+    """
+    path, root = Path(path).absolute(), Path(root).absolute()
+    try:
+        relative = path.relative_to(root)
+    except ValueError as exc:
+        raise TemplateError("Path is outside the trusted tree") from exc
+    if ".." in root.parts or ".." in relative.parts:
+        raise TemplateError("Parent traversal is not allowed in a trusted tree")
+    # Resolve external ancestors only; never resolve away a controlled symlink
+    # before checking it. This handles OS temp aliases without platform rules.
+    boundary = root.parent.resolve() / root.name
+    current = boundary
+    for component in (None, *relative.parts):
+        if component is not None:
+            current /= component
+        if current.is_symlink():
+            raise TemplateError(f"Symlink is not allowed: {current.name}")
+    resolved = current.resolve()
+    if not resolved.is_relative_to(boundary):
+        raise TemplateError("Path is outside the trusted tree")
+    return resolved
 
 
-def safe_tree(root: Path) -> Path:
-    root = safe_path(root)
+def safe_tree(root: Path, *, trusted_root: Path | None = None) -> Path:
+    """Validate an entire standalone tree, or a subtree of a known boundary."""
+    root = safe_path(root, root=root if trusted_root is None else trusted_root)
     if not root.is_dir():
         raise TemplateError("Template/work directory does not exist")
     for path in root.rglob("*"):
