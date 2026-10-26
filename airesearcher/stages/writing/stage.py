@@ -194,7 +194,11 @@ class WritingStage:
         if ctx.answer and ctx.answer.question_id not in meta.setdefault("answers", []):
             wait = meta.get("waiting", {})
             choice = ctx.answer.choice
-            if wait.get("kind") == "template_entry":
+            if wait.get("kind") == "figure_unit":
+                self._answer_figure_unit(ctx, wait, figure_keys, selected)
+                if not new_basis:
+                    s["phase"] = "figures"
+            elif wait.get("kind") == "template_entry":
                 if choice not in wait["choices"]:
                     raise ValueError("template answer is not a candidate")
                 meta.setdefault("entries", {})[wait["key"]] = choice
@@ -940,6 +944,82 @@ class WritingStage:
                 f"explicit reconciliation/regeneration required: {exc}"
             ) from exc
 
+    def _answer_figure_unit(self, ctx, wait, figure_keys, selected):
+        fid = wait["fig_id"]
+        receipt = _receipt(ctx, f"figure-{fid}")
+        record = ctx.questions.record(ctx.answer.question_id)
+        latest = ctx.questions.records()[-1].question.question_id
+        if (
+            figure_keys.get(fid) != wait["key"]
+            or _ref(wait["aggregate_ref"]) not in selected
+            or receipt.get("key") != wait["key"]
+            or _hash(receipt.get("original_proposal")) != wait["proposal_hash"]
+            or receipt.get("spec", {}).get("metric") != wait["metric"]
+            or _hash({k: v for k, v in receipt.get("spec", {}).items() if k != "ylabel"}) != wait["spec_basis"]
+            or record.question.stage != "writing"
+            or record.question.text != wait["question_text"]
+            or record.question.refs != [_ref(wait["aggregate_ref"])]
+            or record.question.status != "answered"
+            or record.answer != ctx.answer
+            or latest != ctx.answer.question_id
+            or ctx.answer.question_id == wait["previous_question_id"]
+        ):
+            raise ValueError("stale Figure unit answer; dependencies/proposal/question changed; reconcile or resume")
+        if ctx.answer.answered_by != "user" or not ctx.answer.text.strip():
+            raise ValueError("Figure unit requires nonempty explicit user clarification")
+        clarifications = receipt.setdefault("clarifications", [])
+        if any(c["answer"]["question_id"] == ctx.answer.question_id for c in clarifications):
+            return  # Receipt persisted before the engine consumed this answer.
+        if len(clarifications) >= 3:
+            raise ValueError("Figure unit clarification exhausted after 3 attempts")
+        clarifications.append(
+            {"question": record.question.model_dump(mode="json"), "answer": ctx.answer.model_dump(mode="json")}
+        )
+        receipt["spec"]["ylabel"] = ctx.answer.text.strip()
+        receipt["ylabel_source"] = {
+            "kind": "user_clarification",
+            "question_id": ctx.answer.question_id,
+            "fig_id": fid,
+            "key": receipt["key"],
+            "aggregate_ref": wait["aggregate_ref"],
+        }
+        _save(ctx, f"figure-{fid}", receipt)
+
+    def _ask_figure_unit(self, ctx, meta, item, receipt, reason=""):
+        if len(receipt.get("clarifications", [])) >= 3:
+            raise ValueError("Figure unit clarification exhausted after 3 attempts: " + reason)
+        spec = receipt["spec"]
+        text = (
+            f'Provide the y-axis label for metric "{spec["metric"]}", including its unit '
+            'or an explicit dimensionless/unitless designation (for example, "Latency (ms)" '
+            'or "score (dimensionless)").'
+        )
+        if reason:
+            text += " Previous clarification was invalid: " + reason
+        records = ctx.questions.records()
+        result = self._ask(
+            ctx,
+            meta,
+            "figure_unit",
+            text,
+            [],
+            fig_id=spec["fig_id"],
+            key=receipt["key"],
+            aggregate_ref=item.ref.model_dump(),
+            metric=spec["metric"],
+            proposal_hash=_hash(receipt["original_proposal"]),
+            spec_basis=_hash({k: v for k, v in spec.items() if k != "ylabel"}),
+            question_text=text,
+            previous_question_id=records[-1].question.question_id if records else None,
+        )
+        result.question.refs = [item.ref]
+        return result
+
+    def _figure_unit_key(self, bundle, spec):
+        # A label describes displayed values. Scope reuse to the same approved plan,
+        # task definition, exact metric and display scale; never infer compatibility.
+        return _hash([bundle.plan_ref.model_dump(), bundle.runtime.task_sha256, spec.metric, spec.scale])
+
     def _figures(self, ctx, s, meta, bundle, figure_keys, figure_basis):
         skill = ctx.skills.load("scientific-plotting")
         for item in bundle.aggregates:
@@ -976,16 +1056,57 @@ class WritingStage:
                     spec = PlannedFigure.model_validate(response.parsed)
                     receipt = {
                         "key": key,
+                        "original_proposal": spec.model_dump(),
+                        "original_response": response.text,
                         "spec": spec.model_dump(),
                         "call_id": response.call_id,
                         "prompt_id": response.prompt_id,
                         "prompt_version": response.prompt_version,
                     }
-                if spec.fig_id != fid or spec.aggregate_id != item.aggregate_id or spec.metric != metric:
-                    raise ValueError("FigureSpec changed the selected comparison identity")
-                prepare_data(item.data, spec)
+                # Preserve a completed model call before any semantic validation.
                 _save(ctx, f"figure-{fid}", receipt)
             spec = FigureSpec.model_validate(receipt["spec"])
+            if (
+                spec.fig_id != fid
+                or spec.aggregate_id != item.aggregate_id
+                or spec.metric != item.data.comparison.get("metric")
+            ):
+                raise ValueError("FigureSpec changed the selected comparison identity")
+            if not spec.xlabel.strip():
+                rows = [r for r in item.data.rows if r.metric == spec.metric]
+                if not rows or not all(spec.x in r.group for r in rows):
+                    raise ValueError("unknown grouping field in x; cannot normalize xlabel")
+                spec.xlabel = spec.x
+                receipt["spec"] = spec.model_dump()
+                _save(ctx, f"figure-{fid}", receipt)
+            unit_key = self._figure_unit_key(bundle, spec)
+            known = meta.get("figure_units", {}).get(unit_key)
+            if not spec.ylabel.strip() and known:
+                spec.ylabel = known["ylabel"]
+                receipt.update(spec=spec.model_dump(), ylabel_source=known["source"])
+                _save(ctx, f"figure-{fid}", receipt)
+            if not spec.ylabel.strip() and "original_proposal" in receipt:
+                return self._ask_figure_unit(ctx, meta, item, receipt)
+            try:
+                prepare_data(item.data, spec)
+            except ValueError as exc:
+                # Only a rejected user-supplied unit returns to clarification.
+                # Uncertainty, grouping and all other scientific failures still stop.
+                if receipt.get("ylabel_source") and str(exc) in {
+                    "xlabel and ylabel must be nonempty",
+                    "ylabel must state a unit in parentheses/brackets or be explicitly dimensionless",
+                }:
+                    if receipt.get("clarifications"):
+                        receipt["clarifications"][-1]["validation_error"] = str(exc)
+                        _save(ctx, f"figure-{fid}", receipt)
+                    return self._ask_figure_unit(ctx, meta, item, receipt, str(exc))
+                raise
+            if receipt.get("ylabel_source"):
+                meta.setdefault("figure_units", {})[unit_key] = {
+                    "ylabel": spec.ylabel,
+                    "source": receipt["ylabel_source"],
+                }
+                _save(ctx, "runtime", meta)
             directory = _path(ctx, f"artifacts/figures/{fid}")
             info = ctx.archive.latest_version(f"artifacts/figures/{fid}")
             reuse = False

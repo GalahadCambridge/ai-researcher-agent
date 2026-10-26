@@ -441,7 +441,10 @@ def test_unknown_units_are_not_invented_by_deterministic_stage(writing):
     spec["ylabel"] = ""
     e.llm.backend.script[module.FIGURE_PROMPT] = [spec]
     result = e.tick().result
-    assert isinstance(result, Error) and "ylabel" in result.message
+    assert isinstance(result, module.Stop)
+    assert p.questions.pending().allow_text
+    assert not (p.root / "artifacts/figures/fig_c1").exists()
+    assert receipt(p, "figure-fig_c1")["original_proposal"] == spec
 
 
 def test_explicit_task_units_avoid_figure_planner(writing):
