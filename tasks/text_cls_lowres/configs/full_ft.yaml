@@ -1,0 +1,13 @@
+method: full_ft
+seed: 0
+train_size: 500
+eval_split: dev
+model_name: distilbert/distilbert-base-uncased
+device: cuda
+epochs: 3
+learning_rate: 0.00003
+batch_size: 8
+eval_batch_size: 32
+grad_accum_steps: 2
+max_length: 128
+save_model: false

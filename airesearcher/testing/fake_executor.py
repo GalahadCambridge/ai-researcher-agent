@@ -54,6 +54,7 @@ class FakeOutcome:
     stderr: str = ""
     wall_seconds: float = 1.0
     files: dict[str, str] = field(default_factory=dict)  # outputs/ 下的文件：{相对路径: 文本内容}
+    metric_splits: dict[str, str | None] = field(default_factory=dict)  # 可按指标覆盖 config.eval_split
 
     @classmethod
     def fail(cls, reason: FailureReason = "nonzero_exit", stderr: str = "", **kw: Any) -> FakeOutcome:
@@ -81,6 +82,8 @@ def default_value(record: RunRecord, metric: str) -> float:
 
 
 class FakeExecutor(LocalExecutor):
+    simulation = True
+
     def __init__(self, project: Project, outcomes: dict[str, OutcomeSpec] | OutcomeSpec | None = None,
                  python: str | None = None):
         super().__init__(project, python=python or project.config.experiment.get("python") or "python")
@@ -111,7 +114,7 @@ class FakeExecutor(LocalExecutor):
             raise InvalidState(f"运行 {rec.run_id} 的状态是 {st.state.value}，不能提交")
         d = self.run_dir(rec.run_id)
         out = self.outcome_for(rec, spec.config)
-        self._write_files(d, rec, out)
+        self._write_files(d, rec, out, eval_split=spec.config.get("eval_split", "test"))
         self.submitted.append(rec.run_id)
         return JobHandle(run_id=rec.run_id, wrapper_pid=None)
 
@@ -122,7 +125,7 @@ class FakeExecutor(LocalExecutor):
         self._write_status(st.model_copy(update={"state": RunState.cancelled, "failure_reason": "cancelled",
                                                  "ended_at": now()}))
 
-    def _write_files(self, d: Path, rec: RunRecord, out: FakeOutcome) -> None:
+    def _write_files(self, d: Path, rec: RunRecord, out: FakeOutcome, eval_split: str = "test") -> None:
         start = now()
         end = start + timedelta(seconds=out.wall_seconds)
         metrics = out.metrics
@@ -130,9 +133,10 @@ class FakeExecutor(LocalExecutor):
             metrics = {m: default_value(rec, m) for m in (rec.required_metrics or ["score"])}
         lines, stdout = [], []
         for seq, (name, value) in enumerate(metrics.items(), start=1):
-            m = MetricRecord(seq=seq, ts=end, name=name, value=float(value), split="test")
+            split = out.metric_splits.get(name, eval_split)
+            m = MetricRecord(seq=seq, ts=end, name=name, value=float(value), split=split)
             lines.append(m.model_dump_json() + "\n")
-            stdout.append("@@AIR_METRIC " + json.dumps({"name": name, "value": float(value), "split": "test",
+            stdout.append("@@AIR_METRIC " + json.dumps({"name": name, "value": float(value), "split": split,
                                                         "step": None}) + "\n")
         (d / "metrics.jsonl").write_text("".join(lines), encoding="utf-8")
         (d / "stdout.log").write_text(out.stdout + "".join(stdout), encoding="utf-8")

@@ -1,0 +1,68 @@
+{
+  "approval": {
+    "approval_id": "ap-0001",
+    "kind": "idea",
+    "target": {
+      "artifact_id": "idea/selected.md",
+      "version": 1,
+      "sha256": "d3e6aaf8fbd333a905dda08d2f5902e655e6aa453a6dfe1bcc9a725ac17c00c7"
+    },
+    "previous": null,
+    "summary": "（假实现）selected.md v1：1 个假设，基线 B1、方法 M1，3 篇参考文献",
+    "impact": "首次提交，无下游影响",
+    "extra_refs": [
+      {
+        "artifact_id": "idea/scores.json",
+        "version": 1,
+        "sha256": "789f8acaf574aa0a542dd05a748d3bf637bd9a339c0b640000af4d16821119f5"
+      },
+      {
+        "artifact_id": "idea/gap_table.md",
+        "version": 1,
+        "sha256": "aa6f91ebbab37d4a3c6f586022082e15192af824c090f10785ee48bdd04c304a"
+      },
+      {
+        "artifact_id": "idea/literature.jsonl",
+        "version": 1,
+        "sha256": "2efefb6ac4933e3480d803fa4597981a35c6712453403c9c88fcc1a70f092ca5"
+      }
+    ],
+    "status": "changes_requested",
+    "created_at": "2026-10-10T11:38:07.515794+08:00",
+    "decided_at": "2026-10-10T11:38:07.516502+08:00",
+    "decision_comment": "研究问题请写明每类样本数和主要指标",
+    "decided_by": "user",
+    "request_ids": [
+      "sample-ap-0001"
+    ]
+  },
+  "target_content": "---\nidea_id: idea-001\ntitle: 小样本分类：基线、主方法与消融的比较（样例项目）\nresearch_question: 在任务 smoke 上，方法 main 的 score 是否优于基线 baseline？（由研究目标生成：在每类只有几百条训练样本时，比较基线方法、主方法和一个消融版本在分类得分上的差异，并检查结果是否稳定。）\nmotivation: 用户的研究目标：在每类只有几百条训练样本时，比较基线方法、主方法和一个消融版本在分类得分上的差异，并检查结果是否稳定。。已有工作对小数据场景下的结论不一致 [arxiv:2006.05987]。\nhypotheses:\n- id: H1\n  statement: main 的平均 score 高于 baseline。\n  falsified_if: 3 个种子的平均 score 差值 ≤ 0。\ncontributions:\n- 在统一预算下比较 baseline 与 main，并做消融实验\ntask:\n  domain: generic\n  task_config: tasks/smoke\n  description: 冒烟任务：按配置运行几秒，上报一个可复现的随机指标 score\ndata: []\nbaselines:\n- id: B1\n  name: baseline\n  why: 最常用的标准做法\n  citations:\n  - arxiv:1810.04805\nmethods:\n- id: M1\n  name: main\n  description: 主方法 main\n  citations:\n  - arxiv:2106.09685\nmetrics:\n- name: score\n  direction: higher\n  primary: true\n- name: run_seconds\n  direction: lower\n  primary: false\nbudget:\n  llm_usd: 5.0\n  wall_hours: 6.0\n  gpu_hours: 2.0\n  storage_gb: 5.0\nstopping_conditions:\n- 计划内实验全部完成\n- 预算达到硬上限\n- 连续 2 轮没有有效进展\nexpected_difficulties:\n- 小样本下方差大，需要多个种子\nopen_questions:\n- （假实现）未检索真实文献，请在真实实现中替换\ncitations:\n- arxiv:2106.09685\n- arxiv:1810.04805\n- arxiv:2006.05987\nscores_ref: idea/scores.json\ngap_table_ref: idea/gap_table.md\n---\n\n# 研究问题\n在任务 smoke 上，方法 main 的 score 是否优于基线 baseline？（由研究目标生成：在每类只有几百条训练样本时，比较基线方法、主方法和一个消融版本在分类得分上的差异，并检查结果是否稳定。）\n\n# 动机\n用户的研究目标：在每类只有几百条训练样本时，比较基线方法、主方法和一个消融版本在分类得分上的差异，并检查结果是否稳定。。已有工作对小数据场景下的结论不一致 [arxiv:2006.05987]。\n\n# 假设\n- **H1**：main 的平均 score 高于 baseline。（证伪条件：3 个种子的平均 score 差值 ≤ 0。）\n\n# 贡献\n- 在统一预算下比较 baseline 与 main，并做消融实验\n\n# 任务与数据\n- 任务配置：`tasks/smoke`（冒烟任务：按配置运行几秒，上报一个可复现的随机指标 score）\n\n# 基线与方法\n- 基线 B1 baseline：最常用的标准做法 [arxiv:1810.04805]\n- 方法 M1 main：主方法 main [arxiv:2106.09685]\n\n# 评价指标\n- score（越高越好，主要指标）\n- run_seconds（越低越好）\n\n# 预期困难\n- 小样本下方差大，需要多个种子\n\n# 预算与停止条件\n- 预算：{'llm_usd': 5.0, 'wall_hours': 6.0, 'gpu_hours': 2.0, 'storage_gb': 5.0}\n- 计划内实验全部完成\n- 预算达到硬上限\n- 连续 2 轮没有有效进展\n\n# 待确认问题\n- （假实现）未检索真实文献，请在真实实现中替换\n\n# 参考文献\n- [arxiv:2106.09685] Hu et al. 2022. LoRA: Low-Rank Adaptation of Large Language Models. https://arxiv.org/abs/2106.09685\n- [arxiv:1810.04805] Devlin et al. 2019. BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding. https://arxiv.org/abs/1810.04805\n- [arxiv:2006.05987] Zhang et al. 2021. Revisiting Few-sample BERT Fine-tuning. https://arxiv.org/abs/2006.05987\n",
+  "previous_content": null,
+  "target_path": "~/air-sample/idea/selected.md",
+  "extra": [
+    {
+      "artifact_id": "idea/scores.json",
+      "version": 1,
+      "sha256": "789f8acaf574aa0a542dd05a748d3bf637bd9a339c0b640000af4d16821119f5",
+      "title": "scores.json",
+      "url": "/api/projects/p-20261010-0b26/artifacts/content?artifact_id=idea/scores.json&version=1",
+      "content": "{\n  \"novelty\": {\n    \"score\": 3,\n    \"rationale\": \"假实现：固定分数\",\n    \"evidence\": [],\n    \"to_verify\": true\n  },\n  \"feasibility\": {\n    \"score\": 3,\n    \"rationale\": \"假实现：固定分数\",\n    \"evidence\": [],\n    \"to_verify\": true\n  },\n  \"impact\": {\n    \"score\": 3,\n    \"rationale\": \"假实现：固定分数\",\n    \"evidence\": [],\n    \"to_verify\": true\n  },\n  \"testability\": {\n    \"score\": 3,\n    \"rationale\": \"假实现：固定分数\",\n    \"evidence\": [],\n    \"to_verify\": true\n  },\n  \"risk\": {\n    \"score\": 3,\n    \"rationale\": \"假实现：固定分数\",\n    \"evidence\": [],\n    \"to_verify\": true\n  },\n  \"note\": \"评分仅供参考，不是唯一决策依据\",\n  \"model\": \"fake\",\n  \"prompt_version\": 0\n}"
+    },
+    {
+      "artifact_id": "idea/gap_table.md",
+      "version": 1,
+      "sha256": "aa6f91ebbab37d4a3c6f586022082e15192af824c090f10785ee48bdd04c304a",
+      "title": "gap_table.md",
+      "url": "/api/projects/p-20261010-0b26/artifacts/content?artifact_id=idea/gap_table.md&version=1",
+      "content": "# 差异表（假实现）\n\n| 已有工作 | 本研究的不同 |\n|---|---|\n| [arxiv:2106.09685] | 在小数据、小模型上比较 |\n"
+    },
+    {
+      "artifact_id": "idea/literature.jsonl",
+      "version": 1,
+      "sha256": "2efefb6ac4933e3480d803fa4597981a35c6712453403c9c88fcc1a70f092ca5",
+      "title": "literature.jsonl",
+      "url": "/api/projects/p-20261010-0b26/artifacts/content?artifact_id=idea/literature.jsonl&version=1",
+      "content": "{\"paper_id\":\"arxiv:2106.09685\",\"ids\":{\"arxiv\":\"2106.09685\"},\"title\":\"LoRA: Low-Rank Adaptation of Large Language Models\",\"authors\":[\"Edward J. Hu\",\"Yelong Shen\",\"Phillip Wallis\",\"Zeyuan Allen-Zhu\",\"Yuanzhi Li\",\"Shean Wang\",\"Lu Wang\",\"Weizhu Chen\"],\"year\":2022,\"venue\":\"ICLR\",\"venue_type\":\"conference\",\"url\":\"https://arxiv.org/abs/2106.09685\",\"abstract\":\"（假实现占位摘要）提出冻结预训练权重、只训练低秩分解矩阵的参数高效微调方法。\",\"access_level\":\"abstract_only\",\"fulltext_path\":null,\"source\":\"manual\",\"snapshot_id\":\"ss-fake-0001\",\"retrieved_at\":\"2026-10-10T11:38:07.509411+08:00\",\"queries\":[\"在每类只有几百条训练样本时，比较基线方法、主方法和一个消融版本在分类得分上的差异，并检查结果是否稳定。\"],\"same_as\":[],\"citation_key\":\"hu2022lora\",\"bibtex\":\"@inproceedings{hu2022lora,\\n  title = {LoRA: Low-Rank Adaptation of Large Language Models},\\n  author = {Edward J. Hu and Yelong Shen and Phillip Wallis and Zeyuan Allen-Zhu and Yuanzhi Li and Shean Wang and Lu Wang and Weizhu Chen},\\n  booktitle = {ICLR},\\n  year = {2022},\\n  url = {https://arxiv.org/abs/2106.09685}\\n}\",\"relevance\":{\"score\":4,\"reason\":\"假实现：固定论文\"},\"selected_for_reading\":true}\n{\"paper_id\":\"arxiv:1810.04805\",\"ids\":{\"arxiv\":\"1810.04805\"},\"title\":\"BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding\",\"authors\":[\"Jacob Devlin\",\"Ming-Wei Chang\",\"Kenton Lee\",\"Kristina Toutanova\"],\"year\":2019,\"venue\":\"NAACL\",\"venue_type\":\"conference\",\"url\":\"https://arxiv.org/abs/1810.04805\",\"abstract\":\"（假实现占位摘要）提出双向 Transformer 预训练与下游任务全量微调的范式。\",\"access_level\":\"abstract_only\",\"fulltext_path\":null,\"source\":\"manual\",\"snapshot_id\":\"ss-fake-0001\",\"retrieved_at\":\"2026-10-10T11:38:07.509411+08:00\",\"queries\":[\"在每类只有几百条训练样本时，比较基线方法、主方法和一个消融版本在分类得分上的差异，并检查结果是否稳定。\"],\"same_as\":[],\"citation_key\":\"devlin2019bert\",\"bibtex\":\"@inproceedings{devlin2019bert,\\n  title = {BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding},\\n  author = {Jacob Devlin and Ming-Wei Chang and Kenton Lee and Kristina Toutanova},\\n  booktitle = {NAACL},\\n  year = {2019},\\n  url = {https://arxiv.org/abs/1810.04805}\\n}\",\"relevance\":{\"score\":4,\"reason\":\"假实现：固定论文\"},\"selected_for_reading\":true}\n{\"paper_id\":\"arxiv:2006.05987\",\"ids\":{\"arxiv\":\"2006.05987\"},\"title\":\"Revisiting Few-sample BERT Fine-tuning\",\"authors\":[\"Tianyi Zhang\",\"Felix Wu\",\"Arzoo Katiyar\",\"Kilian Q. Weinberger\",\"Yoav Artzi\"],\"year\":2021,\"venue\":\"ICLR\",\"venue_type\":\"conference\",\"url\":\"https://arxiv.org/abs/2006.05987\",\"abstract\":\"（假实现占位摘要）研究小样本条件下微调的不稳定性及改进做法。\",\"access_level\":\"abstract_only\",\"fulltext_path\":null,\"source\":\"manual\",\"snapshot_id\":\"ss-fake-0001\",\"retrieved_at\":\"2026-10-10T11:38:07.509411+08:00\",\"queries\":[\"在每类只有几百条训练样本时，比较基线方法、主方法和一个消融版本在分类得分上的差异，并检查结果是否稳定。\"],\"same_as\":[],\"citation_key\":\"zhang2021revisiting\",\"bibtex\":\"@inproceedings{zhang2021revisiting,\\n  title = {Revisiting Few-sample BERT Fine-tuning},\\n  author = {Tianyi Zhang and Felix Wu and Arzoo Katiyar and Kilian Q. Weinberger and Yoav Artzi},\\n  booktitle = {ICLR},\\n  year = {2021},\\n  url = {https://arxiv.org/abs/2006.05987}\\n}\",\"relevance\":{\"score\":4,\"reason\":\"假实现：固定论文\"},\"selected_for_reading\":true}\n"
+    }
+  ]
+}

@@ -25,6 +25,7 @@ from typing import Any
 
 from airesearcher.core.errors import InvalidState, NotFound, ValidationFailed
 from airesearcher.core.fsutil import now
+from airesearcher.core.i18n import DEFAULT_LANG, Msg, render
 from airesearcher.core.locks import ProjectLock
 from airesearcher.core.models.approval import Approval
 from airesearcher.core.models.common import ProjectState as S
@@ -451,6 +452,9 @@ class ProjectEngine:
     def _transition(self, to: S, reason: str, actor: str = "engine") -> None:
         frm = self.ck.state
         self.ck.state = to
+        if to != frm:  # 上一状态上报的进度不再适用（否则新阶段第一次上报前总览还显示旧阶段的进度）
+            self.ck.scratch.pop("_label", None)
+            self.ck.scratch.pop("_progress", None)
         if to in ACTIVE_STATES or to in PENDING_STATES or to == S.Completed:
             self.ck.reason = ""
         self.project.events.append(
@@ -522,11 +526,14 @@ class ProjectEngine:
         label = KIND_LABELS[kind]
         if nxt is None:  # idea/plan/manuscript 被拒绝：转 Paused 并提问 redo / end
             ck.rejected_approval = a.approval_id
+            text = Msg(code="question.rejected", params={"kind": f"kind.{kind}", "artifact_id": a.target.artifact_id,
+                                                         "version": a.target.version})
+            redo, end = Msg(code="question.rejected.redo"), Msg(code="question.rejected.end")
             q = Question(
-                text=f"你拒绝了「{label}」（{a.target.artifact_id} v{a.target.version}）。接下来怎么做？",
+                text=render(text, DEFAULT_LANG), msg=text,
                 options=[
-                    QuestionOption(id="redo", label="回到起草状态重写（会参考你的拒绝意见）"),
-                    QuestionOption(id=END_OPTION_ID, label="结束项目"),
+                    QuestionOption(id="redo", label=render(redo, DEFAULT_LANG), msg=redo),
+                    QuestionOption(id=END_OPTION_ID, label=render(end, DEFAULT_LANG), msg=end),
                 ],
                 refs=[a.target],
             )

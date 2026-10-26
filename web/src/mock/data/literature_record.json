@@ -1,0 +1,41 @@
+{
+  "paper": {
+    "paper_id": "arxiv:2106.09685",
+    "ids": {
+      "arxiv": "2106.09685"
+    },
+    "title": "LoRA: Low-Rank Adaptation of Large Language Models",
+    "authors": [
+      "Edward J. Hu",
+      "Yelong Shen",
+      "Phillip Wallis",
+      "Zeyuan Allen-Zhu",
+      "Yuanzhi Li",
+      "Shean Wang",
+      "Lu Wang",
+      "Weizhu Chen"
+    ],
+    "year": 2022,
+    "venue": "ICLR",
+    "venue_type": "conference",
+    "url": "https://arxiv.org/abs/2106.09685",
+    "abstract": "（假实现占位摘要）提出冻结预训练权重、只训练低秩分解矩阵的参数高效微调方法。",
+    "access_level": "abstract_only",
+    "fulltext_path": null,
+    "source": "manual",
+    "snapshot_id": "ss-fake-0001",
+    "retrieved_at": "2026-10-10T11:38:07.509411+08:00",
+    "queries": [
+      "在每类只有几百条训练样本时，比较基线方法、主方法和一个消融版本在分类得分上的差异，并检查结果是否稳定。"
+    ],
+    "same_as": [],
+    "citation_key": "hu2022lora",
+    "bibtex": "@inproceedings{hu2022lora,\n  title = {LoRA: Low-Rank Adaptation of Large Language Models},\n  author = {Edward J. Hu and Yelong Shen and Phillip Wallis and Zeyuan Allen-Zhu and Yuanzhi Li and Shean Wang and Lu Wang and Weizhu Chen},\n  booktitle = {ICLR},\n  year = {2022},\n  url = {https://arxiv.org/abs/2106.09685}\n}",
+    "relevance": {
+      "score": 4,
+      "reason": "假实现：固定论文"
+    },
+    "selected_for_reading": true
+  },
+  "reading_cards": []
+}

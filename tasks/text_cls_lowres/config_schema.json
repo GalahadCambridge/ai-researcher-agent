@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SST-2 baseline run",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "method",
+    "seed",
+    "train_size",
+    "eval_split"
+  ],
+  "properties": {
+    "method": {
+      "enum": [
+        "tfidf_lr",
+        "full_ft",
+        "lora"
+      ]
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "train_size": {
+      "type": "integer",
+      "minimum": 2
+    },
+    "eval_split": {
+      "enum": [
+        "dev",
+        "test"
+      ]
+    },
+    "model_name": {
+      "const": "distilbert/distilbert-base-uncased",
+      "default": "distilbert/distilbert-base-uncased"
+    },
+    "device": {
+      "enum": [
+        "cuda",
+        "cpu"
+      ],
+      "default": "cuda"
+    },
+    "epochs": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20,
+      "default": 3
+    },
+    "learning_rate": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 0.01,
+      "default": 0.00003
+    },
+    "batch_size": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 8
+    },
+    "eval_batch_size": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 32
+    },
+    "grad_accum_steps": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 2
+    },
+    "max_length": {
+      "type": "integer",
+      "minimum": 8,
+      "maximum": 512,
+      "default": 128
+    },
+    "weight_decay": {
+      "type": "number",
+      "minimum": 0,
+      "default": 0.01
+    },
+    "lora_rank": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64,
+      "default": 8
+    },
+    "lora_alpha": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 16
+    },
+    "lora_dropout": {
+      "type": "number",
+      "minimum": 0,
+      "exclusiveMaximum": 1,
+      "default": 0.1
+    },
+    "max_features": {
+      "type": "integer",
+      "minimum": 100,
+      "default": 20000
+    },
+    "classifier_c": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "default": 1
+    },
+    "save_model": {
+      "type": "boolean",
+      "default": false
+    }
+  }
+}

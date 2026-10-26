@@ -1,0 +1,109 @@
+[
+  {
+    "paper_id": "arxiv:2106.09685",
+    "ids": {
+      "arxiv": "2106.09685"
+    },
+    "title": "LoRA: Low-Rank Adaptation of Large Language Models",
+    "authors": [
+      "Edward J. Hu",
+      "Yelong Shen",
+      "Phillip Wallis",
+      "Zeyuan Allen-Zhu",
+      "Yuanzhi Li",
+      "Shean Wang",
+      "Lu Wang",
+      "Weizhu Chen"
+    ],
+    "year": 2022,
+    "venue": "ICLR",
+    "venue_type": "conference",
+    "url": "https://arxiv.org/abs/2106.09685",
+    "abstract": "（假实现占位摘要）提出冻结预训练权重、只训练低秩分解矩阵的参数高效微调方法。",
+    "access_level": "abstract_only",
+    "fulltext_path": null,
+    "source": "manual",
+    "snapshot_id": "ss-fake-0001",
+    "retrieved_at": "2026-10-10T11:38:07.509411+08:00",
+    "queries": [
+      "在每类只有几百条训练样本时，比较基线方法、主方法和一个消融版本在分类得分上的差异，并检查结果是否稳定。"
+    ],
+    "same_as": [],
+    "citation_key": "hu2022lora",
+    "bibtex": "@inproceedings{hu2022lora,\n  title = {LoRA: Low-Rank Adaptation of Large Language Models},\n  author = {Edward J. Hu and Yelong Shen and Phillip Wallis and Zeyuan Allen-Zhu and Yuanzhi Li and Shean Wang and Lu Wang and Weizhu Chen},\n  booktitle = {ICLR},\n  year = {2022},\n  url = {https://arxiv.org/abs/2106.09685}\n}",
+    "relevance": {
+      "score": 4,
+      "reason": "假实现：固定论文"
+    },
+    "selected_for_reading": true
+  },
+  {
+    "paper_id": "arxiv:1810.04805",
+    "ids": {
+      "arxiv": "1810.04805"
+    },
+    "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+    "authors": [
+      "Jacob Devlin",
+      "Ming-Wei Chang",
+      "Kenton Lee",
+      "Kristina Toutanova"
+    ],
+    "year": 2019,
+    "venue": "NAACL",
+    "venue_type": "conference",
+    "url": "https://arxiv.org/abs/1810.04805",
+    "abstract": "（假实现占位摘要）提出双向 Transformer 预训练与下游任务全量微调的范式。",
+    "access_level": "abstract_only",
+    "fulltext_path": null,
+    "source": "manual",
+    "snapshot_id": "ss-fake-0001",
+    "retrieved_at": "2026-10-10T11:38:07.509411+08:00",
+    "queries": [
+      "在每类只有几百条训练样本时，比较基线方法、主方法和一个消融版本在分类得分上的差异，并检查结果是否稳定。"
+    ],
+    "same_as": [],
+    "citation_key": "devlin2019bert",
+    "bibtex": "@inproceedings{devlin2019bert,\n  title = {BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding},\n  author = {Jacob Devlin and Ming-Wei Chang and Kenton Lee and Kristina Toutanova},\n  booktitle = {NAACL},\n  year = {2019},\n  url = {https://arxiv.org/abs/1810.04805}\n}",
+    "relevance": {
+      "score": 4,
+      "reason": "假实现：固定论文"
+    },
+    "selected_for_reading": true
+  },
+  {
+    "paper_id": "arxiv:2006.05987",
+    "ids": {
+      "arxiv": "2006.05987"
+    },
+    "title": "Revisiting Few-sample BERT Fine-tuning",
+    "authors": [
+      "Tianyi Zhang",
+      "Felix Wu",
+      "Arzoo Katiyar",
+      "Kilian Q. Weinberger",
+      "Yoav Artzi"
+    ],
+    "year": 2021,
+    "venue": "ICLR",
+    "venue_type": "conference",
+    "url": "https://arxiv.org/abs/2006.05987",
+    "abstract": "（假实现占位摘要）研究小样本条件下微调的不稳定性及改进做法。",
+    "access_level": "abstract_only",
+    "fulltext_path": null,
+    "source": "manual",
+    "snapshot_id": "ss-fake-0001",
+    "retrieved_at": "2026-10-10T11:38:07.509411+08:00",
+    "queries": [
+      "在每类只有几百条训练样本时，比较基线方法、主方法和一个消融版本在分类得分上的差异，并检查结果是否稳定。"
+    ],
+    "same_as": [],
+    "citation_key": "zhang2021revisiting",
+    "bibtex": "@inproceedings{zhang2021revisiting,\n  title = {Revisiting Few-sample BERT Fine-tuning},\n  author = {Tianyi Zhang and Felix Wu and Arzoo Katiyar and Kilian Q. Weinberger and Yoav Artzi},\n  booktitle = {ICLR},\n  year = {2021},\n  url = {https://arxiv.org/abs/2006.05987}\n}",
+    "relevance": {
+      "score": 4,
+      "reason": "假实现：固定论文"
+    },
+    "selected_for_reading": true
+  }
+]

@@ -1,6 +1,6 @@
 # 详细设计 1：Agent 主干
 
-**文档版本：** v0.7（2026-10-08 起：v0.2 按主干骨架实现同步；v0.3 增加跨平台、CI、样例项目与契约测试；v0.4 模型配置三层化、实现 `tool_loop()`；v0.5 测试替身 FakeExecutor / FakeLiterature、skill 版本登记与验证；v0.6 GUI 联调接口（SSE 全部消息类型、日志逐行推送、模板、导出、运行标注、回滚）；v0.7 请求去重持久化、人工改动单独提交、存储记账、批量评价工具、真实崩溃恢复测试。改动汇总见附录 B）  
+**文档版本：** v0.8（2026-10-08 起：v0.2 按主干骨架实现同步；v0.3 增加跨平台、CI、样例项目与契约测试；v0.4 模型配置三层化、实现 `tool_loop()`；v0.5 测试替身 FakeExecutor / FakeLiterature、skill 版本登记与验证；v0.6 GUI 联调接口（SSE 全部消息类型、日志逐行推送、模板、导出、运行标注、回滚）；v0.7 请求去重持久化、人工改动单独提交、存储记账、批量评价工具、真实崩溃恢复测试；v0.8 网页 GUI 审查后的后台改动：建项目的运行模式与预算部分覆盖、默认值接口、事件取最新 N 条、换阶段清进度、界面文字中英文。改动汇总见附录 B）  
 **编写日期：** 2026-10-08  
 **负责人：** ZHU YANG（组长）  
 **依据：** 《需求分析》v1.3、《概要设计》v0.2  
@@ -852,7 +852,7 @@ FastAPI 自动生成的 `/docs` 页面是权威说明；本节是第 1 周的初
 
 - 前缀 `/api`；JSON；时间用 ISO 8601 带时区。
 - 所有**写操作**的请求体包含 `request_id`（客户端生成的 UUID）。同一 `request_id` 重复提交返回第一次的结果，HTTP 200。
-- 错误格式：`{"error": {"code": "...", "message": "给人看的中文说明", "detail": {...}}}`
+- 错误格式：`{"error": {"code": "...", "message": "给人看的说明", "detail": {...}}}`；主干已登记消息代码的错误另带 `message_code` 和 `params`，`message` 按请求语言显示（9.6）
 
 | code | HTTP | 场景 |
 |---|---|---|
@@ -869,15 +869,23 @@ FastAPI 自动生成的 `/docs` 页面是权威说明；本节是第 1 周的初
 | 方法 路径 | 说明 | 返回 |
 |---|---|---|
 | `GET /api/tasks` | 仓库 `tasks/` 下可用的任务配置（名称、领域、说明），新建项目表单用 | `[TaskInfo]` |
+| `GET /api/defaults` | 新建项目表单的默认值：`{task, mode, real_stages, allow_local_execution, budget}` | `ProjectDefaults` |
 | `GET /api/projects` | 项目列表 | `[ProjectSummary]` |
-| `POST /api/projects` | 创建项目：`{title, idea_text, constraints, task, budget, evidence_check, request_id}` | `ProjectSummary` |
+| `POST /api/projects` | 创建项目：`{title, idea_text, constraints, task, budget, evidence_check, mode, allow_local_execution, request_id}`，见下方说明 | `ProjectSummary` |
 | `GET /api/projects/{pid}` | 项目状态页数据 | `ProjectStatus`（见 9.4） |
 | `POST /api/projects/{pid}/actions` | `{action: pause|resume|cancel|reopen, request_id}` | `ProjectStatus` |
 | `GET /api/projects/{pid}/question` | 当前待回答问题（没有时返回 `null`） | `Question` |
 | `POST /api/projects/{pid}/question/answer` | `{question_id, choice, text, request_id}`；问题已过期返回 409 `STALE_VERSION` | `ProjectStatus` |
 | `PATCH /api/projects/{pid}/budget` | 调整上限 `{llm_usd: {hard: 8}, request_id}` | `BudgetStatus` |
-| `GET /api/projects/{pid}/events?after_seq=&type=&run_id=&q=&limit=` | 事件日志 / 搜索 | `[Event]` |
+| `GET /api/projects/{pid}/events?after_seq=&type=&run_id=&q=&limit=&tail=` | 事件日志 / 搜索。默认从 `after_seq` 往后取前 `limit` 条；给了 `tail=N`（1~1000）时取符合条件的**最新** N 条，仍按时间正序返回（从文件末尾往前读，不扫全量），此时忽略 `limit` | `[Event]` |
 | `GET /api/projects/{pid}/stream` | SSE（9.5） | |
+
+`POST /api/projects` 的几个字段（v0.8）：
+
+- `mode`：`fake`（默认，全部假实现，不花钱）或 `real`（已有真实实现的阶段——即 `GET /api/defaults` 的 `real_stages`——在 `dev.stage_impl` 里设为 `real`，并设 `experiment.llm_backend: api`；还没有真实实现的阶段仍用假实现）。请求里显式给的 `dev.stage_impl` 优先于 `mode`。
+- `allow_local_execution`：是否允许在本机真的跑训练（写入 `experiment.allow_local_execution: true`）。默认 `false`，只能和 `mode=real` 一起用，否则返回 422。
+- `budget`：只覆盖传入的类别（整类替换，如 `{"llm_usd": {"soft": 1, "hard": 2}}`），其余类别用默认值（`GET /api/defaults` 的 `budget`）。建项目后再调整用 `PATCH /api/projects/{pid}/budget`。
+- 命令行对应 `air new --mode real --allow-local-execution`。
 
 **审批**
 
@@ -937,7 +945,8 @@ class ProjectStatus(BaseModel):
     stage: str | None                 # "idea" | "plan" | "experiment" | "writing"
     stage_label: str                  # 给人看的，如“实验执行中（第 2 轮）”
     progress: dict                    # 阶段自报：{"done": 4, "total": 9, "unit": "runs"}
-    blocking_reason: str | None       # 如“等待你审批实验计划 v2”
+    blocking_reason: str | None       # 如“等待你审批实验计划 v2”（按请求语言，9.6）
+    blocking: Msg | None              # 同一内容的消息代码 + 参数（9.6），界面想自己翻译时用
     pending_approvals: list[ApprovalBrief]
     pending_question: Question | None  # 有值时 GUI 在状态页显示问题和选项按钮
     active_runs: list[RunSummary]
@@ -954,7 +963,7 @@ class EvidenceTrace(BaseModel):      # 一条论断的完整追溯链
     check: ClaimCheck | None          # claim-review 对这条的结论
 ```
 
-`progress` 和 `stage_label` 由阶段写入 `scratch["_progress"]` 和 `scratch["_label"]`，主干原样返回。各阶段在自己的文档里说明会写什么。
+`progress` 和 `stage_label` 由阶段写入 `scratch["_progress"]` 和 `scratch["_label"]`，主干原样返回。各阶段在自己的文档里说明会写什么。阶段还没上报时 `stage_label` 是状态名（按请求语言）。v0.8 起项目状态一变（如计划审批通过进入 Executing），引擎就清掉上一阶段写的 `_label` / `_progress`，避免新阶段第一次上报前总览还显示旧阶段的进度。
 
 ### 9.5 SSE 事件（`GET /api/projects/{pid}/stream`）
 
@@ -970,6 +979,35 @@ class EvidenceTrace(BaseModel):      # 一条论断的完整追溯链
 连接建立时先推一次完整 `state`。客户端断线重连时带 `Last-Event-ID`（= 事件 `seq`），服务端补发之后的 `event`。
 
 v0.6 实现说明：每秒检查一次。`approval` / `question` / `run` 由事件日志推出（`approval.status` 为 `pending` / 决定值 / `superseded`；`question.status` 为 `pending` / `answered` / `withdrawn`；`run.status` 为运行状态，加标签时为 `labeled` 并带 `label`）；包装器直接写 `status.json` 的变化（如开始运行）没有事件，通过比对活动运行的状态补推 `run`。连接建立时先推 `state` 和 `budget`，之后有变化才推。GUI 每次收到 `state`/`approval`/`run` 后，按需重新拉取对应的 REST 数据——SSE 只做“通知”，REST 才是数据来源，这样 GUI 不必处理消息丢失。
+
+### 9.6 界面文字的中英文（v0.8）
+
+**问题**：后台返回给界面的文字（`stage_label`、`blocking_reason`、问题正文与选项、错误提示）原来都是写死的中文，文献阶段又有英文，混在一起；GUI 加了中英文切换后，后台的文字跟不上。
+
+**方案：消息代码 + 参数为准，后台按请求语言渲染。**
+
+1. 主干自己的文字登记在 `airesearcher/core/i18n.py` 的 `MESSAGES`：`code → {zh: 模板, en: 模板}`。代码按用途分组：`state.*`（状态名）、`kind.*`（审批类型）、`blocking.*`、`question.*`（引擎自己提的问题）、`error.*`。参数值如果本身是 `state.*` / `kind.*` 代码也会一起翻译。
+2. 一条可翻译的文字用 `Msg{code, params}` 表示。API 返回时**两样都给**：渲染好的文字（老字段，如 `blocking_reason`、`error.message`），以及代码和参数（新字段，如 `blocking`、`error.message_code` / `error.params`）。CLI 和不想管翻译的地方直接用文字；GUI 也可以用代码在前端自己翻译。
+3. **请求语言**：`?lang=zh|en` 优先（SSE 的 `EventSource` 不能加请求头，用这个），其次 `Accept-Language`，默认 `zh`。后台在每个请求开始时（`server/app.py` 的 `LanguageMiddleware`）把语言放进 contextvar，主干代码直接调 `render(msg)` / `t(code)`，不用一层层传 `lang`。**GUI 切换语言后，应在 axios 里统一加 `Accept-Language`（或 `?lang=`），SSE 连接 URL 加 `?lang=`**；不要依赖浏览器默认的 `Accept-Language`，否则英文系统的用户没切换也会看到英文。
+4. 存进文件的东西（事件 `summary`、`ck.reason`、问题 json 里的 `text`）仍写中文，保证老数据和 CLI 可读；问题和选项可以另带 `msg` 字段（`Question.msg`、`QuestionOption.msg`），API 返回时按请求语言替换 `text` / `label`。事件日志的翻译留给 GUI：用 `type` + `data` 显示，`summary` 只作兜底。
+5. 英文缺失时退回中文；没登记的代码原样显示，不报错。
+
+**本期已改（主干）**：状态名（`stage_label` 的默认值、`STATE_LABELS` / `KIND_LABELS` 改为从 `MESSAGES` 生成）、`blocking_reason` 的四种情况、引擎在审批被拒绝后提的“重写还是结束”问题及选项、`参数不合法` / `找不到项目` / 新建项目的三个校验错误。
+
+**主干还没改（下一步）**：`ck.reason` 里引擎写的原因（如“出错：…”“用户选择结束”“非法转换：…”，会出现在 Paused/Failed 的 `blocking_reason` 里）——计划在检查点里加 `reason_msg`；其他主干模块（档案、审批、权限、模板、导出）抛出的 `AirError` 文字——逐个改成 `msg=Msg(...)`；`air` 命令行本身只有中文，暂不翻译。
+
+**各阶段的文字（只列清单，由各阶段负责人决定是否改）**：阶段写给界面的文字目前原样返回，不翻译。阶段想支持英文时，用同样的办法：在自己的模块里登记代码（主干可以提供 `register_messages()`），`Question` / `QuestionOption` 带 `msg`；进度标签可以考虑让 `ctx.progress()` 接受 `Msg`（需要主干配合加参数）。
+
+| 阶段 | 位置 | 内容 | 现在的语言 |
+|---|---|---|---|
+| 文献（`stages/idea/`） | `stage.py` 的 `ctx.progress(f"Literature stage: {phase}")` | 进度标签 `stage_label` | 英文 |
+| | `attempts.py` 的 `Question(...)`，各处 `Stop(...)` / `Error(...)`（约 6 / 21 处） | 问题、暂停原因、错误提示（进入 `blocking_reason`、事件） | 中英混合 |
+| 计划（`stages/plan/`） | `stage.py` 的 3 处 `ctx.progress("计划：…")` | 进度标签 | 中文 |
+| | `stage.py` 的 `Question(...)`，`Stop(...)` / `Error(...)`（约 7 / 3 处，如“计划后端与 experiment.llm_backend 不匹配…”） | 问题、暂停原因、错误提示 | 中文 |
+| 实验（`stages/experiment/`） | `stage.py` 的 `ctx.progress(f"{'本地' if local else '模拟'}实验执行：…")` | 进度标签 | 中文 |
+| | `stage.py` 的 2 处 `Question(...)`（失败运行的处理），约 16 处 `Stop(...)`、3 处 `Error(...)`，9 处事件 `summary` | 问题与选项、暂停原因、错误、事件 | 中文 |
+| 论文（`stages/writing/`，还只有假实现） | — | 真实实现开工时直接按本节的方案写 | — |
+| 假实现（`stages/fakes/`，主干维护） | 13 处 `ctx.progress`（如“计划（假实现）：等待审批”）、1 处 `Question` | 进度标签、演示用的问题 | 中文；只用于开发演示，暂不翻译 |
 
 ---
 
@@ -1202,3 +1240,4 @@ air dev run-stage idea --workspace /tmp/ws --steps 3
 | 11 | v0.3：契约检查写在 `airesearcher/testing/contracts.py`（按提供方分组），契约测试在 `tests/contracts/`（每位提供方一个文件），组员可用 `air dev check <项目目录>` 自查 |
 | 跨平台 | v0.3：支持 Windows。项目锁在 Windows 上用 `msvcrt.locking`；进程管理统一用 `psutil`（新增依赖），不再用 `os.kill(pid, 0)`、`killpg`、`ps`、`resource`；所有文本文件读写显式使用 UTF-8；子进程设置 `PYTHONIOENCODING=utf-8`；Windows 上替换正被读取的文件会短暂失败，原子写和读取都带重试 |
 | 12 | v0.7：批量运行在 `airesearcher/eval/batch.py`（随包安装、受 ruff 检查），命令 `air eval run <配置> [--arm 组] [--out 目录]`，不需要 `air serve`；配置和实例放在仓库的 `eval/configs/`、`eval/instances/`。与 12.1 的差别：<br>• 配置字段：`arms` / `fixed` 的值就是要写进 `project.yaml` 的字段（如 `models: {tiers: {...}}`、`budget`、`dev`），合并顺序 fixed → arm → 实例的 `project`；固定提示版本写 `prompt_pins: <文件>`，内容 `{prompt_id: 版本}` 写进每个项目新增的 `project.yaml` 字段 `prompt_pins`，网关调用时使用；实例的 `literature_snapshots` 写进 `literature.replay_snapshots`；另有 `approval_delay_s`、`question_delay_s`（默认 30）、`timeout_hours`、`results_dir`（相对当前目录）；<br>• `approval_policy` 另有 `stop`（遇到审批就停）；问题没有默认选项、或策略为 `stop` 时轨迹结束，`outcome=needs_intervention`；暂停且没有问题可答时为 `paused`，超时为 `timeout`，轨迹本身出错为 `error`，都照常计入分母；<br>• `summary.csv` 的列：arm、instance、rep、outcome、final_state、reason、各预算类别用量、runs_succeeded/failed、approvals_auto、questions_asked、questions_auto、interventions（= 提问次数）、seconds、workspace；每条轨迹另有 `.eval/result.json`，再次运行同一配置时已完成的轨迹跳过、没完成的从检查点继续；<br>• 12.2 的场景：正常关闭后重启见 `tests/test_recovery.py`；真实 `kill -9` 后台（运行继续并在停机期间结束、重启后收集、不重复提交）和停机期间杀掉实验进程（核对为 `failed`/`lost` 并提问）见 `tests/test_kill_recovery.py`；重复审批见 `tests/test_api.py`；写操作后重启的去重见 `tests/test_request_dedupe.py`。都在 CI 中运行，没有单独的 `eval/recovery_test.py` |
+| 9.2 / 9.4 / 9.6 | v0.8（网页 GUI 审查后的后台改动）：`POST /api/projects` 增加 `mode`（`fake` / `real`）和 `allow_local_execution`，`budget` 改为只覆盖传入的类别，`air new` 增加 `--mode`、`--allow-local-execution`；新增 `GET /api/defaults`；事件接口增加 `tail=N`（`core/fsutil.py` 的 `iter_jsonl_reverse` 从文件末尾往前读）；引擎在状态变化时清掉 `scratch["_label"]` / `scratch["_progress"]`；界面文字中英文方案与清单见 9.6（`core/i18n.py`）。CI 增加网页构建（Node 20 / 22，`npm ci && npm run build`） |

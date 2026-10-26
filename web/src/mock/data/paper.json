@@ -1,0 +1,148 @@
+{
+  "versions": [
+    {
+      "ref": {
+        "artifact_id": "paper",
+        "version": 1,
+        "sha256": "4ca04907d61d34effc0de20adb94ca5e1ba67b4c088466b37ce94e4353a84e98"
+      },
+      "kind": "paper",
+      "path": "paper",
+      "stored_at": ".archive/paper/v0001",
+      "is_dir": true,
+      "exclude": [
+        "build/**",
+        "review/**",
+        ".template_check_default.json"
+      ],
+      "parents": [
+        {
+          "artifact_id": "artifacts/aggregates/C1.json",
+          "version": 1,
+          "sha256": "579765f917f1261ed5df6bb60d4f53435dcba11fc0c52443f09d6a94db606fc8"
+        },
+        {
+          "artifact_id": "artifacts/aggregates/C2.json",
+          "version": 1,
+          "sha256": "7bab00803be48cd81d63454d88cc5bf041ba8feb91f43edd34b66d1814c80b5f"
+        },
+        {
+          "artifact_id": "artifacts/aggregates/all.json",
+          "version": 1,
+          "sha256": "e53729d7b0e70bc44791d26868b21ec203a96982823b92e02d2d6469687ccf37"
+        },
+        {
+          "artifact_id": "artifacts/figures/fig_c1",
+          "version": 1,
+          "sha256": "32c2b6dd00a671c8cb63b46acc61f99a2943d3c4c99958f045a4983ad7fe642d"
+        },
+        {
+          "artifact_id": "artifacts/figures/fig_c2",
+          "version": 1,
+          "sha256": "f4d21d47e2ae6e542000193ad991d40d9b60d3081d685e70225b79935c4158b0"
+        }
+      ],
+      "producer": "agent:writing",
+      "note": "初稿",
+      "created_at": "2026-10-10T11:38:17.457695+08:00"
+    },
+    {
+      "ref": {
+        "artifact_id": "paper",
+        "version": 2,
+        "sha256": "738f6a713d9d6d73a85853ec4bbd2b5475066751ec88bdac358d5765ecbc6875"
+      },
+      "kind": "paper",
+      "path": "paper",
+      "stored_at": ".archive/paper/v0002",
+      "is_dir": true,
+      "exclude": [
+        "build/**",
+        "review/**",
+        ".template_check_default.json"
+      ],
+      "parents": [
+        {
+          "artifact_id": "paper",
+          "version": 1,
+          "sha256": "4ca04907d61d34effc0de20adb94ca5e1ba67b4c088466b37ce94e4353a84e98"
+        }
+      ],
+      "producer": "system",
+      "note": "样例项目：故意加入 2 条错误论断（CL6、CL7）",
+      "created_at": "2026-10-10T11:38:17.839250+08:00"
+    }
+  ],
+  "pdf_versions": [
+    {
+      "ref": {
+        "artifact_id": "paper/build/main.pdf",
+        "version": 1,
+        "sha256": "0f2cb40c94cb7c19c4adcb5a37474fdc70a550b9998d03c0b90362a45d1664bc"
+      },
+      "kind": "paper",
+      "path": "paper/build/main.pdf",
+      "stored_at": ".archive/paper%2Fbuild%2Fmain.pdf/v0001.pdf",
+      "is_dir": false,
+      "exclude": [],
+      "parents": [
+        {
+          "artifact_id": "paper",
+          "version": 1,
+          "sha256": "4ca04907d61d34effc0de20adb94ca5e1ba67b4c088466b37ce94e4353a84e98"
+        }
+      ],
+      "producer": "agent:writing",
+      "note": "",
+      "created_at": "2026-10-10T11:38:17.458542+08:00"
+    },
+    {
+      "ref": {
+        "artifact_id": "paper/build/main.pdf",
+        "version": 2,
+        "sha256": "86e2d83013f33bd528980155b7b92a599152d44d20d600c9b9144b6d79efbb8f"
+      },
+      "kind": "paper",
+      "path": "paper/build/main.pdf",
+      "stored_at": ".archive/paper%2Fbuild%2Fmain.pdf/v0002.pdf",
+      "is_dir": false,
+      "exclude": [],
+      "parents": [
+        {
+          "artifact_id": "paper",
+          "version": 2,
+          "sha256": "738f6a713d9d6d73a85853ec4bbd2b5475066751ec88bdac358d5765ecbc6875"
+        }
+      ],
+      "producer": "system",
+      "note": "",
+      "created_at": "2026-10-10T11:38:17.840193+08:00"
+    }
+  ],
+  "pdf_path": "~/air-sample/paper/build/main.pdf",
+  "compile_report": {
+    "ok": true,
+    "engine": "latexmk -pdf",
+    "entry": "main.tex",
+    "errors": [],
+    "undefined_citations": [],
+    "undefined_refs": [],
+    "missing_files": [],
+    "overfull_boxes": 0,
+    "pages": 2,
+    "log_path": "paper/build/main.log",
+    "seconds": 0.36
+  },
+  "review_summary": {
+    "file": "paper/review/review_v2.json",
+    "counts": {
+      "blocker": 2,
+      "major": 0,
+      "minor": 0,
+      "supported": 5,
+      "unsupported": 1,
+      "contradicted": 1
+    },
+    "compile_ok": true
+  }
+}

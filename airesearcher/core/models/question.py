@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, model_validator
 
+from ..i18n import Msg
 from .common import VersionRef
 
 END_OPTION_ID = "end"  # 保留选项：引擎直接把项目转 Failed（“用户选择结束”），阶段收不到这个回答
@@ -16,12 +17,14 @@ class QuestionOption(BaseModel):
     id: str  # 机器可读值，如 "skip"、"retry"
     label: str  # 给人看的说明
     default: bool = False  # 无人值守时可自动选择的安全选项，最多一个
+    msg: Msg | None = None  # 可选：label 的消息代码，API 按请求语言显示（见 core/i18n.py）
 
 
 class Question(BaseModel):
     question_id: str = ""  # "q-0001"，由引擎在 ask() 时分配
     stage: str = ""  # 提问的阶段，由引擎填写
     text: str
+    msg: Msg | None = None  # 可选：text 的消息代码，API 按请求语言显示（见 core/i18n.py）
     options: list[QuestionOption] = []
     allow_text: bool = False
     refs: list[VersionRef] = []

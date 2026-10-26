@@ -35,3 +35,7 @@ build/
 
 # 评价轨迹的结果（每条轨迹一个项目目录，很大）
 eval/results/
+
+# 本地实验输出与教师提供的密钥文件
+/local_results/
+/dsa4213_2610_group_keys.csv

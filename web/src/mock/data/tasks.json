@@ -1,0 +1,14 @@
+[
+  {
+    "name": "smoke",
+    "path": "tasks/smoke",
+    "domain": "generic",
+    "description": "冒烟任务：按配置运行几秒，上报一个可复现的随机指标 score"
+  },
+  {
+    "name": "text_cls_lowres",
+    "path": "tasks/text_cls_lowres",
+    "domain": "nlp",
+    "description": "Low-resource SST-2 classification: TF-IDF, DistilBERT full fine-tuning, and LoRA"
+  }
+]

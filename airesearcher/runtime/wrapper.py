@@ -113,9 +113,15 @@ class Wrapper:
             usage = resource.getrusage(resource.RUSAGE_CHILDREN)
             cpu = usage.ru_utime + usage.ru_stime
             rss = max(rss, usage.ru_maxrss / (1024 * 1024 if sys.platform == "darwin" else 1024))
+        wall = round(time.monotonic() - t0, 3)
+        config = read_json(self.d / "config.yaml")  # LocalExecutor 固定写 JSON 格式
+        environment_path = self.d / "environment.json"
+        environment = read_json(environment_path) if environment_path.is_file() else {}
+        gpu = environment.get("gpu_requested", config.get("device") == "cuda")
+        # 按 GPU 串行任务占用的墙钟时间记预算，不代表 CUDA kernel 活跃时间。
         atomic_write_json(self.d / "resources.json", Resources(
-            wall_seconds=round(time.monotonic() - t0, 3), cpu_seconds=round(cpu, 3),
-            gpu_seconds=0.0, max_rss_mb=round(rss, 1)))
+            wall_seconds=wall, cpu_seconds=round(cpu, 3),
+            gpu_seconds=wall if gpu else 0.0, max_rss_mb=round(rss, 1)))
         self.write_status(**self._verdict(rc), ended_at=now(), exit_code=rc)
         return 0
 

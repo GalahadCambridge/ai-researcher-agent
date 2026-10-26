@@ -12,7 +12,7 @@ from airesearcher.core.models.plan import TaskConfig
 from airesearcher.core.models.run import RunRecord, RunState
 from airesearcher.core.workspace import resolve_task_dir
 from airesearcher.runtime.executor import RunSpec
-from airesearcher.runtime.local import LocalExecutor, config_sha256, expand_entrypoint
+from airesearcher.runtime.local import LocalExecutor, UncertainSubmission, config_sha256, expand_entrypoint
 
 
 def _spec(project, ex, run_id, config, timeout=30):
@@ -85,3 +85,27 @@ def test_reconcile_lost_run(project):
                                                            "wrapper_pid": 999998})
     ex._write_status(st)
     assert ex.reconcile(spec.record.run_id).failure_reason == "lost"
+
+
+def test_submit_is_idempotent_during_wrapper_startup(project, monkeypatch):
+    ex = LocalExecutor(project)
+    spec = _spec(project, ex, "r-test-startup", {"method": "main", "seed": 0, "seconds": 1})
+    ex.prepare(spec)
+    queued = ex.status(spec.record.run_id)
+    original = ex.status
+    monkeypatch.setattr(ex, "status", lambda _: queued)
+    first = ex.submit(spec)
+    second = ex.submit(spec)
+    assert first.wrapper_pid == second.wrapper_pid and len(ex._children) == 1
+    monkeypatch.setattr(ex, "status", original)
+    assert _wait(ex, spec.record.run_id).state == RunState.succeeded
+
+
+def test_ambiguous_submit_intent_is_not_automatically_repeated(project):
+    ex = LocalExecutor(project)
+    spec = _spec(project, ex, "r-test-intent", {"method": "main", "seed": 0, "seconds": 1})
+    ex.prepare(spec)
+    (spec.run_dir / "launch.json").write_text('{"wrapper_pid":null}', encoding="utf-8")
+    with pytest.raises(UncertainSubmission, match="uncertain"):
+        ex.submit(spec)
+    assert not ex._children

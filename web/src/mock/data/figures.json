@@ -1,0 +1,84 @@
+[
+  {
+    "fig_id": "fig_c1",
+    "spec": {
+      "fig_id": "fig_c1",
+      "kind": "bar",
+      "aggregate_id": "C1",
+      "x": "method",
+      "hue": null,
+      "metric": "score",
+      "error": "ci95",
+      "title": "main 是否优于基线 baseline",
+      "xlabel": "method",
+      "ylabel": "score (%)",
+      "scale": 100,
+      "log_x": false,
+      "caption": "score 的均值，误差条为 95% 置信区间（每组 n 见 data.csv）。"
+    },
+    "aggregate_ref": {
+      "artifact_id": "artifacts/aggregates/C1.json",
+      "version": 1,
+      "sha256": "579765f917f1261ed5df6bb60d4f53435dcba11fc0c52443f09d6a94db606fc8"
+    },
+    "run_ids": [
+      "r-20261010-113808-e173",
+      "r-20261010-113808-6128",
+      "r-20261010-113809-6926",
+      "r-20261010-113809-0426",
+      "r-20261010-113811-02ea",
+      "r-20261010-113812-86a1"
+    ],
+    "skill_ref": "fake-plotting@0",
+    "script_sha256": "e53690e5251d59c4ad4c0f305615d74d98945c26aceba0f8cd92a09f4ddc78bf",
+    "outputs": [
+      "artifacts/figures/fig_c1/fig_c1.svg"
+    ],
+    "n_per_group": {
+      "baseline": 3,
+      "main": 3
+    },
+    "created_at": "2026-10-10T11:38:16.268635+08:00"
+  },
+  {
+    "fig_id": "fig_c2",
+    "spec": {
+      "fig_id": "fig_c2",
+      "kind": "bar",
+      "aggregate_id": "C2",
+      "x": "method",
+      "hue": null,
+      "metric": "score",
+      "error": "ci95",
+      "title": "消融：ablation 与 main 的差别",
+      "xlabel": "method",
+      "ylabel": "score (%)",
+      "scale": 100,
+      "log_x": false,
+      "caption": "score 的均值，误差条为 95% 置信区间（每组 n 见 data.csv）。"
+    },
+    "aggregate_ref": {
+      "artifact_id": "artifacts/aggregates/C2.json",
+      "version": 1,
+      "sha256": "7bab00803be48cd81d63454d88cc5bf041ba8feb91f43edd34b66d1814c80b5f"
+    },
+    "run_ids": [
+      "r-20261010-113813-5303",
+      "r-20261010-113814-a639",
+      "r-20261010-113814-daa4",
+      "r-20261010-113809-0426",
+      "r-20261010-113811-02ea",
+      "r-20261010-113812-86a1"
+    ],
+    "skill_ref": "fake-plotting@0",
+    "script_sha256": "e53690e5251d59c4ad4c0f305615d74d98945c26aceba0f8cd92a09f4ddc78bf",
+    "outputs": [
+      "artifacts/figures/fig_c2/fig_c2.svg"
+    ],
+    "n_per_group": {
+      "ablation": 3,
+      "main": 3
+    },
+    "created_at": "2026-10-10T11:38:16.270531+08:00"
+  }
+]

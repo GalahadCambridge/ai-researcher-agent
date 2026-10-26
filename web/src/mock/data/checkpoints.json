@@ -1,0 +1,162 @@
+[
+  {
+    "checkpoint_id": "ck-000035",
+    "saved_at": "2026-10-10T11:38:17.851270+08:00",
+    "state": "ManuscriptPending",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000034",
+    "saved_at": "2026-10-10T11:38:17.471710+08:00",
+    "state": "ManuscriptPending",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000033",
+    "saved_at": "2026-10-10T11:38:17.469048+08:00",
+    "state": "Writing",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000032",
+    "saved_at": "2026-10-10T11:38:16.276376+08:00",
+    "state": "Writing",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000031",
+    "saved_at": "2026-10-10T11:38:16.271822+08:00",
+    "state": "Writing",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000030",
+    "saved_at": "2026-10-10T11:38:16.263429+08:00",
+    "state": "Writing",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000029",
+    "saved_at": "2026-10-10T11:38:16.261719+08:00",
+    "state": "LogPending",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000028",
+    "saved_at": "2026-10-10T11:38:16.259453+08:00",
+    "state": "Analyzing",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000027",
+    "saved_at": "2026-10-10T11:38:16.257141+08:00",
+    "state": "Analyzing",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000026",
+    "saved_at": "2026-10-10T11:38:16.221728+08:00",
+    "state": "Analyzing",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000025",
+    "saved_at": "2026-10-10T11:38:15.704363+08:00",
+    "state": "Executing",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000024",
+    "saved_at": "2026-10-10T11:38:15.186284+08:00",
+    "state": "Executing",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000023",
+    "saved_at": "2026-10-10T11:38:14.672152+08:00",
+    "state": "Executing",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000022",
+    "saved_at": "2026-10-10T11:38:14.121146+08:00",
+    "state": "Executing",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000021",
+    "saved_at": "2026-10-10T11:38:13.573524+08:00",
+    "state": "Executing",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000020",
+    "saved_at": "2026-10-10T11:38:13.060312+08:00",
+    "state": "Executing",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000019",
+    "saved_at": "2026-10-10T11:38:12.509385+08:00",
+    "state": "Executing",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000018",
+    "saved_at": "2026-10-10T11:38:12.474584+08:00",
+    "state": "Paused",
+    "resume_to": "Executing",
+    "reason": "运行 E2-seed=2 失败（nonzero_exit）",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000017",
+    "saved_at": "2026-10-10T11:38:11.956779+08:00",
+    "state": "Executing",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  },
+  {
+    "checkpoint_id": "ck-000016",
+    "saved_at": "2026-10-10T11:38:11.444919+08:00",
+    "state": "Executing",
+    "resume_to": null,
+    "reason": "",
+    "milestone": false
+  }
+]

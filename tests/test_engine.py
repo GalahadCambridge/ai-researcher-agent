@@ -247,3 +247,28 @@ def test_storage_accounting(project):
     project.save_config(project.config.model_copy(update={"budget": {"storage_gb": Limit(hard=used / 2)}}))
     eng.tick()
     assert eng.state == S.BudgetExhausted
+
+
+def test_transition_clears_previous_stage_progress(project):
+    """进入新阶段时清掉上一阶段上报的进度，总览不再显示旧阶段的“等待审批（2/2）”。"""
+    from airesearcher.server.manager import ProjectManager
+
+    def report(ctx):
+        ctx.progress("idea（假实现）：等待审批", 2, 2, "步")
+        return Continue()
+
+    eng = engine(project, idea=Scripted("idea", [report, submit("idea/selected.md", "idea")]),
+                 plan=Scripted("plan", [Wait(60)]))
+    m = ProjectManager(home=project.root.parent, start_engines=False)
+    m.projects[project.project_id], m.engines[project.project_id] = project, eng
+
+    eng.tick()
+    st = m.status(project.project_id)
+    assert st.stage_label == "idea（假实现）：等待审批" and st.progress == {"done": 2, "total": 2, "unit": "步"}
+    eng.tick()
+    assert eng.state == S.IdeaPending
+    approve_pending(project)
+    drive(eng, S.PlanDrafting)
+    assert "_label" not in eng.ck.scratch and "_progress" not in eng.ck.scratch
+    st = m.status(project.project_id)
+    assert st.stage_label == "制定实验计划" and st.progress == {}

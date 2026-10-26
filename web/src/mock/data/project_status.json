@@ -1,0 +1,78 @@
+{
+  "project_id": "p-20261010-0b26",
+  "title": "小样本分类：基线、主方法与消融的比较（样例项目）",
+  "state": "ManuscriptPending",
+  "stage": "writing",
+  "stage_label": "等待审批最终手稿",
+  "progress": {},
+  "blocking_reason": "等待你审批「最终手稿」（paper v2）",
+  "pending_approvals": [
+    {
+      "approval_id": "ap-0006",
+      "kind": "manuscript",
+      "target": {
+        "artifact_id": "paper",
+        "version": 2,
+        "sha256": "738f6a713d9d6d73a85853ec4bbd2b5475066751ec88bdac358d5765ecbc6875"
+      },
+      "summary": "论文草稿 v2：7 条论断，2 个 blocker（样例：故意加入的错误论断）",
+      "status": "pending",
+      "created_at": "2026-10-10T11:38:17.851054+08:00"
+    }
+  ],
+  "pending_question": null,
+  "active_runs": [],
+  "budget": {
+    "categories": {
+      "cpu_hours": {
+        "used": 0.000091,
+        "soft": null,
+        "hard": null,
+        "level": "ok"
+      },
+      "gpu_hours": {
+        "used": 0,
+        "soft": null,
+        "hard": 2,
+        "level": "ok"
+      },
+      "llm_calls": {
+        "used": 0,
+        "soft": null,
+        "hard": null,
+        "level": "ok"
+      },
+      "llm_tokens": {
+        "used": 0,
+        "soft": null,
+        "hard": null,
+        "level": "ok"
+      },
+      "llm_usd": {
+        "used": 0,
+        "soft": 4,
+        "hard": 5,
+        "level": "ok"
+      },
+      "storage_gb": {
+        "used": 0,
+        "soft": null,
+        "hard": 5,
+        "level": "ok"
+      },
+      "wall_hours": {
+        "used": 0,
+        "soft": null,
+        "hard": 6,
+        "level": "ok"
+      }
+    },
+    "exhausted": false,
+    "warn": false
+  },
+  "next_actions": [
+    "approve:ap-0006"
+  ],
+  "updated_at": "2026-10-10T11:38:17.851270+08:00",
+  "root": "~/air-sample"
+}

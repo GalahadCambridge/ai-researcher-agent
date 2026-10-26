@@ -1,0 +1,6 @@
+method: tfidf_lr
+seed: 0
+train_size: 500
+eval_split: dev
+max_features: 20000
+classifier_c: 1.0

@@ -212,7 +212,11 @@ def new(
     task: str = typer.Option("tasks/smoke", "--task", help="任务配置目录"),
     title: str = typer.Option(None, "--title", help="项目标题（默认取想法的第一句）"),
     no_evidence_check: bool = typer.Option(False, "--no-evidence-check", help="关闭论断-证据检查（对照实验用）"),
-    impl: str = typer.Option(None, "--impl", help='阶段实现，如 "fake" 或 "idea=real,plan=fake"（默认全部 fake）'),
+    mode: str = typer.Option("fake", "--mode",
+                             help="fake：全部假实现（不花钱）；real：已有真实实现的阶段用 real，调用真实大模型"),
+    allow_local_execution: bool = typer.Option(False, "--allow-local-execution",
+                                               help="允许在本机真的跑训练（只能和 --mode real 一起用）"),
+    impl: str = typer.Option(None, "--impl", help='逐个指定阶段实现，如 "idea=real,plan=fake"（优先于 --mode）'),
     smoke_seconds: float = typer.Option(None, "--smoke-seconds", help="假实验：每个运行跑几秒"),
     smoke_fail: list[str] = typer.Option(None, "--smoke-fail", help="假实验：让某个运行失败，如 E2-seed=1:exit1"),
 ):
@@ -224,8 +228,10 @@ def new(
         dev["smoke_seconds"] = smoke_seconds
     if smoke_fail:
         dev["smoke_fail"] = dict(x.rsplit(":", 1) for x in smoke_fail)
+    if mode not in ("fake", "real"):
+        fail(f"--mode 只能是 fake 或 real，不是 {mode}")
     body = {"title": title, "idea_text": idea, "task": task, "evidence_check": not no_evidence_check,
-            "request_id": rid(), "dev": dev or None}
+            "mode": mode, "allow_local_execution": allow_local_execution, "request_id": rid(), "dev": dev or None}
     p = api("POST", "/api/projects", json=body)
     console.print(f"[bold green]✓ 已创建项目 {p['project_id']}[/]  目录：{p['root']}")
     time.sleep(1.5)
