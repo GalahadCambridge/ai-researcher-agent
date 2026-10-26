@@ -40,7 +40,8 @@ def legacy_locale(monkeypatch):
 
 
 @pytest.mark.parametrize("external_alias", [False, True])
-def test_template_tree_under_external_ancestor(tmp_path, monkeypatch, external_alias):
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+def test_template_tree_under_external_ancestor(tmp_path, monkeypatch, external_alias, newline):
     physical = tmp_path / "physical"
     physical.mkdir()
     parent = physical
@@ -51,7 +52,9 @@ def test_template_tree_under_external_ancestor(tmp_path, monkeypatch, external_a
     original = project / "templates/default"
     original.mkdir(parents=True)
     text = "\\documentclass{article}\n\\begin{document}\n%% AIR:BODY\n\\end{document}\n"
-    (original / "main.tex").write_text(text, encoding="utf-8")
+    text = text.replace("\n", newline)
+    # Source immutability is a byte contract; avoid host newline translation.
+    (original / "main.tex").write_bytes(text.encode("utf-8"))
     # No TeX lookup is needed to prove path/encoding behavior.
     monkeypatch.setattr(template.shutil, "which", lambda name: None)
     legacy_locale(monkeypatch)
