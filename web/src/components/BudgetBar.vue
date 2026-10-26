@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import { BUDGET, label } from '../constants/labels'
 import { num } from '../utils/format'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 
 // 已用 / 上限；超过 soft 变黄，达到 hard 变红
 const props = defineProps({ name: String, cat: { type: Object, required: true } })
@@ -20,8 +22,8 @@ const status = computed(() => {
     <div class="head">
       <span>{{ label(BUDGET, name) }}</span>
       <span class="muted mono">
-        {{ num(cat.used) }} / {{ limit != null ? num(limit) : '不限' }}
-        <template v-if="cat.soft != null && cat.hard != null">（提醒 {{ num(cat.soft) }}）</template>
+        {{ num(cat.used) }} / {{ limit != null ? num(limit) : t('budget.unlimited') }}
+        <template v-if="cat.soft != null && cat.hard != null">{{ t('budget.remind', { n: num(cat.soft) }) }}</template>
       </span>
     </div>
     <el-progress :percentage="Number(pct.toFixed(1))" :status="status" :show-text="false" :stroke-width="8" />

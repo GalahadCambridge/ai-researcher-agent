@@ -23,6 +23,7 @@ if (!pid) throw new Error('后台没有项目：先运行 air dev new-workspace 
 const P = `/projects/${pid}`
 
 await save('tasks', await get('/tasks'))
+await save('defaults', await get('/defaults'))
 await save('projects', projects)
 await save('project_status', await get(P))
 const approvals = await get(`${P}/approvals`)

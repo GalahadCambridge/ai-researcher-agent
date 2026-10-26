@@ -5,13 +5,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import StateTag from '../components/StateTag.vue'
 import BudgetBar from '../components/BudgetBar.vue'
 import QuestionCard from '../components/QuestionCard.vue'
-import EmptyState from '../components/EmptyState.vue'
 import TimeText from '../components/TimeText.vue'
-import { exportUrl, listCheckpoints, listEvents, patchBudget, projectAction, rollback } from '../api/projects'
+import { exportUrl, latestEvents, listCheckpoints, patchBudget, projectAction, rollback } from '../api/projects'
 import { newRequestId } from '../api/client'
 import { BUDGET, KIND, RUN_KIND, STATE, label } from '../constants/labels'
 import { duration } from '../utils/format'
+import { eventText } from '../utils/events'
 import { useLoader, useProject, useProjectRefresh } from '../utils/useLoader'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 
 // P3 项目总览：现在在干什么、卡在哪里、我需要做什么（详细设计 5 第 4.3 节）。
 // 按钮是否出现只看后台给的 next_actions，网页不自己判断状态。
@@ -21,10 +23,7 @@ const pid = ctx.pid
 const st = computed(() => ctx.status.value)
 
 // ---------------------------------------------------------------- 最近动态（最近 20 条，新的在上）
-const events = useLoader(async () => {
-  const all = await listEvents(pid.value, { limit: 100000 })
-  return all.slice(-20).reverse()
-})
+const events = useLoader(async () => (await latestEvents(pid.value, 20)).reverse())
 onMounted(() => events.load())
 useProjectRefresh(events.load, ['event'])
 
@@ -36,13 +35,12 @@ const firstApproval = computed(() => st.value?.pending_approvals?.[0])
 const canCancel = computed(() => st.value && !['Completed', 'Failed'].includes(st.value.state))
 const busy = ref('')
 
-const ACTION_TEXT = { pause: '已暂停', resume: '已继续', cancel: '项目已取消', reopen: '已重新打开，回到撰写论文' }
 async function act(action) {
   if (busy.value) return
   if (action === 'cancel') {
     try {
-      await ElMessageBox.confirm('取消后项目会停止，待审批和待回答的问题都会作废（已有文件不会删除）。确定取消吗？', '取消项目',
-        { type: 'warning', confirmButtonText: '确定取消项目', cancelButtonText: '不取消' })
+      await ElMessageBox.confirm(t('overview.cancelConfirm'), t('overview.cancelTitle'),
+        { type: 'warning', confirmButtonText: t('overview.cancelOk'), cancelButtonText: t('overview.cancelNo') })
     } catch {
       return
     }
@@ -50,7 +48,7 @@ async function act(action) {
   busy.value = action
   try {
     ctx.status.value = await projectAction(pid.value, action, newRequestId())
-    ElMessage.success(ACTION_TEXT[action])
+    ElMessage.success(t(`overview.actionDone.${action}`))
   } catch {
     ctx.refresh()
   } finally {
@@ -97,7 +95,7 @@ async function saveBudget() {
   budgetDlg.saving = true
   try {
     await patchBudget(pid.value, body)
-    ElMessage.success('预算上限已更新' + (st.value?.state === 'BudgetExhausted' ? '，点“继续”即可恢复运行' : ''))
+    ElMessage.success(t(st.value?.state === 'BudgetExhausted' ? 'overview.budgetSavedResume' : 'overview.budgetSaved'))
     budgetDlg.open = false
     ctx.refresh()
   } finally {
@@ -120,15 +118,15 @@ async function openCheckpoints() {
 }
 async function doRollback(row) {
   try {
-    await ElMessageBox.confirm(`回到 ${row.checkpoint_id}（状态：${label(STATE, row.state)}）？不会删除任何文件或运行；回滚后点“继续”从那里重新开始。`,
-      '回滚', { type: 'warning', confirmButtonText: '回滚', cancelButtonText: '取消' })
+    await ElMessageBox.confirm(t('overview.rollbackConfirm', { id: row.checkpoint_id, state: label(STATE, row.state) }),
+      t('overview.rollback'), { type: 'warning', confirmButtonText: t('overview.rollback'), cancelButtonText: t('common.cancel') })
   } catch {
     return
   }
   ck.busy = row.checkpoint_id
   try {
     ctx.status.value = await rollback(pid.value, row.checkpoint_id, newRequestId())
-    ElMessage.success('已回滚')
+    ElMessage.success(t('overview.rolledBack'))
     ck.open = false
   } finally {
     ck.busy = ''
@@ -140,147 +138,161 @@ const EVENT_COLOR = (t) => (t.includes('fail') || t.includes('error') ? 'danger'
 
 <template>
   <div v-if="!st"><el-skeleton :rows="8" animated /></div>
-  <div v-else class="card-gap">
-    <!-- 1. 标题栏 -->
-    <el-card shadow="never">
-      <div class="head">
-        <div class="htext">
-          <div class="row">
-            <h2>{{ st.title }}</h2>
-            <StateTag :value="st.state" />
-          </div>
-          <div class="muted stage">{{ st.stage_label }}<span v-if="progress">（{{ progress.text }}）</span></div>
-          <el-progress v-if="progress" :percentage="progress.pct" class="prog" />
+  <div v-else class="overview">
+    <!-- 1. 标题：状态、阶段说明、进度；右侧按钮（一个区域只有一个主按钮） -->
+    <header class="hero">
+      <div class="htext">
+        <div class="eyebrow">
+          <StateTag :value="st.state" size="small" />
+          <span class="meta">{{ st.stage_label }}<template v-if="progress"> · {{ progress.text }}</template></span>
         </div>
-        <div class="btns">
-          <el-button v-if="can('pause')" icon="VideoPause" :loading="busy === 'pause'" @click="act('pause')">暂停</el-button>
-          <el-button v-if="can('resume')" type="primary" icon="VideoPlay" :loading="busy === 'resume'" @click="act('resume')">继续</el-button>
-          <el-button v-if="can('reopen')" icon="EditPen" :loading="busy === 'reopen'" @click="act('reopen')">重新打开（修改论文）</el-button>
-          <el-button v-if="canCancel" type="danger" plain icon="CircleClose" :loading="busy === 'cancel'" @click="act('cancel')">取消项目</el-button>
-          <el-dropdown trigger="click">
-            <el-button icon="Download">导出<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <a :href="exportUrl(pid, 'paper')" class="dl"><el-dropdown-item>论文交付包（zip）</el-dropdown-item></a>
-                <a :href="exportUrl(pid, 'archive')" class="dl"><el-dropdown-item>完整研究档案（zip）</el-dropdown-item></a>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <el-button text icon="Clock" @click="openCheckpoints">检查点</el-button>
-        </div>
+        <h1 class="title">{{ st.title }}</h1>
+        <el-progress v-if="progress" :percentage="progress.pct" :show-text="false" :stroke-width="4" class="prog" />
       </div>
-    </el-card>
+      <div class="btns">
+        <el-button v-if="can('resume')" type="primary" icon="VideoPlay" :loading="busy === 'resume'" @click="act('resume')">{{ t('overview.resume') }}</el-button>
+        <el-button v-if="can('pause')" icon="VideoPause" :loading="busy === 'pause'" @click="act('pause')">{{ t('overview.pause') }}</el-button>
+        <el-button v-if="can('reopen')" icon="EditPen" :loading="busy === 'reopen'" @click="act('reopen')">{{ t('overview.reopen') }}</el-button>
+        <el-dropdown trigger="click">
+          <el-button icon="Download">{{ t('overview.export') }}</el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <a :href="exportUrl(pid, 'paper')" class="dl"><el-dropdown-item>{{ t('overview.exportPaper') }}</el-dropdown-item></a>
+              <a :href="exportUrl(pid, 'archive')" class="dl"><el-dropdown-item>{{ t('overview.exportArchive') }}</el-dropdown-item></a>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-dropdown trigger="click" @command="(c) => (c === 'cancel' ? act('cancel') : openCheckpoints())">
+          <el-button icon="MoreFilled" class="more" :title="t('overview.more')" />
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="checkpoints" icon="Clock">{{ t('overview.checkpoints') }}</el-dropdown-item>
+              <el-dropdown-item v-if="canCancel" command="cancel" icon="CircleClose" divided class="danger-item">{{ t('overview.cancelProject') }}</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </div>
+    </header>
 
-    <!-- 2. 提示条 -->
-    <el-alert v-if="st.blocking_reason" :type="alertType" :closable="false" show-icon class="block">
-      <template #title>
-        <div class="block-row">
-          <span class="block-text">{{ st.blocking_reason }}</span>
-          <router-link v-if="firstApproval" :to="`/projects/${pid}/approvals/${firstApproval.approval_id}`">
-            <el-button type="warning" size="small">去审批</el-button>
-          </router-link>
-          <el-button v-else-if="can('resume')" type="primary" size="small" :loading="busy === 'resume'" @click="act('resume')">继续</el-button>
-          <el-button v-if="st.state === 'BudgetExhausted'" size="small" @click="openBudget">调整预算上限</el-button>
-        </div>
-      </template>
-    </el-alert>
-    <el-alert v-else-if="st.state === 'Completed'" type="success" :closable="false" show-icon
-      title="项目已完成。可以在“论文”页查看最终 PDF，或点右上角“导出”。" />
+    <!-- 2. 下一步：卡在哪里、需要你做什么 -->
+    <div v-if="st.blocking_reason" :class="['callout', alertType === 'error' ? 'stop' : 'todo']">
+      <el-icon size="18" class="callout-icon"><component :is="alertType === 'error' ? 'Warning' : 'Stamp'" /></el-icon>
+      <div class="callout-text">
+        <div class="callout-label">{{ alertType === 'error' ? t('overview.stopped') : t('overview.nextStep') }}</div>
+        <div>{{ st.blocking_reason }}</div>
+      </div>
+      <div class="callout-actions">
+        <el-button v-if="st.state === 'BudgetExhausted'" @click="openBudget">{{ t('overview.adjustBudget') }}</el-button>
+        <router-link v-if="firstApproval" :to="`/projects/${pid}/approvals/${firstApproval.approval_id}`">
+          <el-button type="primary">{{ t('overview.goApprove') }}</el-button>
+        </router-link>
+        <el-button v-else-if="can('resume')" type="primary" :loading="busy === 'resume'" @click="act('resume')">{{ t('overview.resume') }}</el-button>
+      </div>
+    </div>
+    <div v-else-if="st.state === 'Completed'" class="callout done">
+      <el-icon size="18" class="callout-icon"><Check /></el-icon>
+      <div class="callout-text">
+        <div class="callout-label">{{ t('overview.done') }}</div>
+        <div>{{ t('overview.doneHint') }}</div>
+      </div>
+    </div>
 
     <!-- 3. 问题卡片 -->
     <QuestionCard v-if="st.pending_question" :pid="pid" :question="st.pending_question" @answered="ctx.refresh()" />
 
     <!-- 待审批（多个时逐个列出） -->
-    <el-card v-if="st.pending_approvals.length" shadow="never">
-      <template #header><b>等你审批（{{ st.pending_approvals.length }}）</b></template>
-      <div v-for="a in st.pending_approvals" :key="a.approval_id" class="appr" @click="router.push(`/projects/${pid}/approvals/${a.approval_id}`)">
-        <el-tag :type="(KIND[a.kind] || [, 'info'])[1]">{{ label(KIND, a.kind) }}</el-tag>
-        <span class="mono">{{ a.target.artifact_id }} v{{ a.target.version }}</span>
-        <span class="sum">{{ a.summary }}</span>
-        <TimeText :value="a.created_at" relative />
-        <el-button type="primary" size="small" link>去审批 →</el-button>
+    <section v-if="st.pending_approvals.length" class="sec">
+      <div class="sec-head"><h3 class="section-title">{{ t('overview.pendingApprovals') }}</h3><span class="meta">{{ t('overview.items', { n: st.pending_approvals.length }) }}</span></div>
+      <div class="panel">
+        <div v-for="a in st.pending_approvals" :key="a.approval_id" class="row-item" @click="router.push(`/projects/${pid}/approvals/${a.approval_id}`)">
+          <StateTag kind="kind" :value="a.kind" size="small" />
+          <div class="row-main">
+            <div>{{ a.summary }}</div>
+            <div class="meta"><span class="mono">{{ a.target.artifact_id }} v{{ a.target.version }}</span> · <TimeText :value="a.created_at" relative /></div>
+          </div>
+          <el-icon class="chev"><ArrowRight /></el-icon>
+        </div>
       </div>
-    </el-card>
+    </section>
 
     <div class="grid">
       <!-- 4. 预算 -->
-      <el-card shadow="never">
-        <template #header>
-          <div class="ch"><b>预算</b><el-button size="small" text type="primary" @click="openBudget">调整上限</el-button></div>
-        </template>
-        <BudgetBar v-for="[name, cat] in budgetCats" :key="name" :name="name" :cat="cat" />
-        <EmptyState v-if="!budgetCats.length" text="没有设置预算" />
-      </el-card>
+      <section class="sec">
+        <div class="sec-head"><h3 class="section-title">{{ t('overview.budget') }}</h3><el-button size="small" text @click="openBudget">{{ t('overview.adjustLimits') }}</el-button></div>
+        <div class="panel pad">
+          <BudgetBar v-for="[name, cat] in budgetCats" :key="name" :name="name" :cat="cat" />
+          <div v-if="!budgetCats.length" class="meta">{{ t('overview.noBudget') }}</div>
+        </div>
+      </section>
 
       <!-- 5. 进行中的运行 -->
-      <el-card shadow="never">
-        <template #header>
-          <div class="ch">
-            <b>进行中的运行<span v-if="st.active_runs.length">（{{ st.active_runs.length }}）</span></b>
-            <router-link :to="`/projects/${pid}/runs`"><el-button size="small" text type="primary">全部运行</el-button></router-link>
-          </div>
-        </template>
-        <div v-for="r in st.active_runs.slice(0, 5)" :key="r.run_id" class="run" @click="router.push(`/projects/${pid}/runs/${r.run_id}`)">
-          <StateTag kind="run" :value="r.state" size="small" />
-          <span class="mono">{{ r.task_key }}</span>
-          <span class="muted">{{ label(RUN_KIND, r.kind) }}</span>
-          <span class="spacer" />
-          <span class="muted">{{ duration(r.started_at, r.ended_at) }}</span>
+      <section class="sec">
+        <div class="sec-head">
+          <h3 class="section-title">{{ t('overview.activeRuns') }}</h3>
+          <router-link :to="`/projects/${pid}/runs`"><el-button size="small" text>{{ t('overview.allRuns') }}</el-button></router-link>
         </div>
-        <EmptyState v-if="!st.active_runs.length" text="现在没有正在跑的实验" />
-      </el-card>
+        <div class="panel">
+          <div v-for="r in st.active_runs.slice(0, 5)" :key="r.run_id" class="row-item" @click="router.push(`/projects/${pid}/runs/${r.run_id}`)">
+            <StateTag kind="run" :value="r.state" size="small" />
+            <div class="row-main"><span class="mono">{{ r.task_key }}</span> <span class="meta">{{ label(RUN_KIND, r.kind) }}</span></div>
+            <span class="meta">{{ duration(r.started_at, r.ended_at) }}</span>
+          </div>
+          <div v-if="!st.active_runs.length" class="empty meta">{{ t('overview.noActiveRuns') }}</div>
+        </div>
+      </section>
     </div>
 
     <!-- 6. 最近动态 -->
-    <el-card shadow="never">
-      <template #header>
-        <div class="ch">
-          <b>最近动态</b>
-          <router-link :to="`/projects/${pid}/events`"><el-button size="small" text type="primary">查看全部</el-button></router-link>
+    <section class="sec">
+      <div class="sec-head">
+        <h3 class="section-title">{{ t('overview.recent') }}</h3>
+        <router-link :to="`/projects/${pid}/events`"><el-button size="small" text>{{ t('common.viewAll') }}</el-button></router-link>
+      </div>
+      <div class="panel">
+        <el-skeleton v-if="events.loading.value && !events.data.value" :rows="4" animated class="pad" />
+        <template v-else-if="events.data.value?.length">
+          <div v-for="e in events.data.value" :key="e.seq" class="event">
+            <span :class="['dot', EVENT_COLOR(e.type)]" />
+            <span class="ev-text">{{ eventText(e) }}</span>
+            <span class="meta ev-time"><TimeText :value="e.ts" relative /></span>
+          </div>
+        </template>
+        <div v-else-if="events.error.value" class="empty">
+          <span class="meta">{{ t('overview.recentFailed') }}</span> <el-button size="small" text @click="events.load()">{{ t('common.retry') }}</el-button>
         </div>
-      </template>
-      <el-skeleton v-if="events.loading.value && !events.data.value" :rows="4" animated />
-      <el-timeline v-else-if="events.data.value?.length">
-        <el-timeline-item v-for="e in events.data.value" :key="e.seq" :type="EVENT_COLOR(e.type)" :timestamp="new Date(e.ts).toLocaleString()" placement="top">
-          <span>{{ e.summary }}</span>
-          <span class="muted mono etype">{{ e.type }}</span>
-        </el-timeline-item>
-      </el-timeline>
-      <el-result v-else-if="events.error.value" icon="error" title="动态加载失败">
-        <template #extra><el-button @click="events.load()">重试</el-button></template>
-      </el-result>
-      <EmptyState v-else text="还没有动态" />
-    </el-card>
+        <div v-else class="empty meta">{{ t('overview.noEvents') }}</div>
+      </div>
+    </section>
 
     <!-- 调整预算对话框 -->
-    <el-dialog v-model="budgetDlg.open" title="调整预算上限" width="620px">
-      <p class="muted">“提醒”到了会提示你，“上限”到了项目会自动暂停。留空表示不限。</p>
+    <el-dialog v-model="budgetDlg.open" :title="t('overview.budgetTitle')" width="620px">
+      <p class="muted">{{ t('overview.budgetHint') }}</p>
       <el-table :data="budgetDlg.rows" size="small">
-        <el-table-column label="类别" min-width="150"><template #default="{ row }">{{ label(BUDGET, row.name) }}</template></el-table-column>
-        <el-table-column label="已用" width="90"><template #default="{ row }"><span class="mono">{{ +row.used.toFixed(4) }}</span></template></el-table-column>
-        <el-table-column label="提醒" width="150">
+        <el-table-column :label="t('newProject.colCategory')" min-width="150"><template #default="{ row }">{{ label(BUDGET, row.name) }}</template></el-table-column>
+        <el-table-column :label="t('overview.colUsed')" width="90"><template #default="{ row }"><span class="mono">{{ +row.used.toFixed(4) }}</span></template></el-table-column>
+        <el-table-column :label="t('newProject.colSoft')" width="150">
           <template #default="{ row }"><el-input-number v-model="row.soft" :min="0" size="small" controls-position="right" :value-on-clear="null" /></template>
         </el-table-column>
-        <el-table-column label="上限" width="150">
+        <el-table-column :label="t('newProject.colHard')" width="150">
           <template #default="{ row }"><el-input-number v-model="row.hard" :min="0" size="small" controls-position="right" :value-on-clear="null" /></template>
         </el-table-column>
       </el-table>
       <template #footer>
-        <el-button @click="budgetDlg.open = false">取消</el-button>
-        <el-button type="primary" :loading="budgetDlg.saving" @click="saveBudget">保存</el-button>
+        <el-button @click="budgetDlg.open = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="budgetDlg.saving" @click="saveBudget">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 检查点抽屉 -->
-    <el-drawer v-model="ck.open" title="检查点与回滚" size="560px">
+    <el-drawer v-model="ck.open" :title="t('overview.checkpoints')" size="560px">
       <el-alert type="info" :closable="false" show-icon class="mb"
-        title="回滚只改变“流程走到哪一步”，不删除任何产物或运行。项目正在工作时请先暂停。" />
+        :title="t('overview.ckHint')" />
       <el-table v-loading="ck.loading" :data="ck.rows" size="small">
-        <el-table-column label="检查点" width="120"><template #default="{ row }"><span class="mono">{{ row.checkpoint_id }}</span></template></el-table-column>
-        <el-table-column label="状态"><template #default="{ row }"><StateTag :value="row.state" size="small" /><el-tag v-if="row.milestone" size="small" type="success" effect="plain" class="ml">里程碑</el-tag></template></el-table-column>
-        <el-table-column label="时间" width="110"><template #default="{ row }"><TimeText :value="row.saved_at" /></template></el-table-column>
+        <el-table-column :label="t('overview.colCheckpoint')" width="120"><template #default="{ row }"><span class="mono">{{ row.checkpoint_id }}</span></template></el-table-column>
+        <el-table-column :label="t('approvals.colStatus')"><template #default="{ row }"><StateTag :value="row.state" size="small" /><el-tag v-if="row.milestone" size="small" type="success" effect="plain" class="ml">{{ t('overview.milestone') }}</el-tag></template></el-table-column>
+        <el-table-column :label="t('overview.colTime')" width="110"><template #default="{ row }"><TimeText :value="row.saved_at" /></template></el-table-column>
         <el-table-column width="80">
-          <template #default="{ row }"><el-button size="small" link type="primary" :loading="ck.busy === row.checkpoint_id" @click="doRollback(row)">回滚</el-button></template>
+          <template #default="{ row }"><el-button size="small" link type="primary" :loading="ck.busy === row.checkpoint_id" @click="doRollback(row)">{{ t('overview.rollback') }}</el-button></template>
         </el-table-column>
       </el-table>
     </el-drawer>
@@ -288,23 +300,51 @@ const EVENT_COLOR = (t) => (t.includes('fail') || t.includes('error') ? 'danger'
 </template>
 
 <style scoped>
-.head { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
-.htext { flex: 1; min-width: 280px; }
-.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.row h2 { margin: 0; font-size: 20px; }
-.stage { margin-top: 6px; }
-.prog { margin-top: 8px; max-width: 420px; }
+.overview > * + * { margin-top: 28px; }
+.hero { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+.htext { flex: 1; min-width: 300px; }
+.eyebrow { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.title { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -0.015em; line-height: 1.3; }
+.prog { margin-top: 14px; max-width: 420px; }
 .btns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .btns .el-button { margin-left: 0; }
+.more { padding: 8px 10px; }
 .dl { text-decoration: none; }
-.block-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.block-text { font-size: 14px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; }
-.ch { display: flex; align-items: center; justify-content: space-between; }
-.appr, .run { display: flex; align-items: center; gap: 10px; padding: 8px 4px; cursor: pointer; border-radius: 6px; flex-wrap: wrap; }
-.appr:hover, .run:hover { background: var(--el-fill-color-light); }
-.sum { flex: 1; min-width: 200px; }
-.etype { margin-left: 8px; font-size: 12px; }
+:global(.el-dropdown-menu__item.danger-item) { color: var(--air-danger); }
+
+.callout {
+  display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-radius: var(--air-radius);
+  background: var(--air-surface); border: 1px solid var(--air-border); border-left: 3px solid var(--air-accent); flex-wrap: wrap;
+}
+.callout.stop { border-left-color: var(--air-danger); background: var(--el-color-danger-light-9); }
+.callout.done { border-left-color: var(--air-success); }
+.callout-icon { color: var(--air-accent); flex: none; }
+.callout.stop .callout-icon { color: var(--air-danger); }
+.callout.done .callout-icon { color: var(--air-success); }
+.callout-text { flex: 1; min-width: 240px; line-height: 1.55; }
+.callout-label { font-size: var(--air-fs-meta); color: var(--air-text-3); margin-bottom: 2px; }
+.callout-actions { display: flex; gap: 8px; }
+.callout-actions .el-button { margin-left: 0; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 28px; }
+.grid > .sec { margin: 0; }
+.sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; min-height: 28px; }
+.panel { background: var(--air-surface); border: 1px solid var(--air-border); border-radius: var(--air-radius); overflow: hidden; }
+.pad { padding: 18px 20px; }
+.row-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; cursor: pointer; }
+.row-item + .row-item { border-top: 1px solid var(--air-border); }
+.row-item:hover { background: var(--air-fill); }
+.row-main { flex: 1; min-width: 0; line-height: 1.5; }
+.chev { color: var(--air-text-3); }
+.empty { padding: 18px 16px; }
+.event { display: flex; align-items: baseline; gap: 12px; padding: 9px 16px; }
+.event + .event { border-top: 1px solid var(--air-border); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--air-border-strong); flex: none; transform: translateY(-1px); }
+.dot.danger { background: var(--air-danger); }
+.dot.warning { background: var(--air-warning); }
+.dot.primary { background: var(--air-accent); }
+.ev-text { flex: 1; min-width: 0; }
+.ev-time { flex: none; }
 .mb { margin-bottom: 12px; }
 .ml { margin-left: 6px; }
 </style>

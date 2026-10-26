@@ -12,6 +12,8 @@ import { exportUrl } from '../api/projects'
 import { SECTION, SUPPORT, label } from '../constants/labels'
 import { renderClaimText } from '../utils/format'
 import { useLoader, useProject, useProjectRefresh } from '../utils/useLoader'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 
 // P10 论文与论断：左侧 PDF（可选版本），右侧论断 / 核验报告 / 编译报告
 const { pid } = useProject()
@@ -72,10 +74,10 @@ const counts = computed(() => paper.data.value?.review_summary?.counts || {})
 <template>
   <div>
     <div class="page-title">
-      <h2>论文与论断</h2>
+      <h2>{{ t('paper.title') }}</h2>
       <span class="spacer" />
-      <a :href="exportUrl(pid, 'paper')"><el-button icon="Download">导出论文</el-button></a>
-      <a :href="exportUrl(pid, 'archive')"><el-button icon="Box">导出完整研究档案</el-button></a>
+      <a :href="exportUrl(pid, 'paper')"><el-button icon="Download">{{ t('paper.exportPaper') }}</el-button></a>
+      <a :href="exportUrl(pid, 'archive')"><el-button icon="Box">{{ t('paper.exportArchive') }}</el-button></a>
     </div>
     <PageState :loading="paper.loading.value && !paper.data.value" :error="paper.error.value" @retry="loadAll()">
       <div class="cols">
@@ -93,81 +95,81 @@ const counts = computed(() => paper.data.value?.review_summary?.counts || {})
             </div>
           </template>
           <PdfViewer v-if="version" :src="pdfUrl(pid, version)" height="78vh" />
-          <el-empty v-else description="还没有 PDF（撰写论文阶段生成）" />
+          <el-empty v-else :description="t('paper.noPdf')" />
         </el-card>
 
         <el-card shadow="never" class="right">
           <el-tabs v-model="tab">
             <el-tab-pane name="claims">
-              <template #label>论断 <el-badge v-if="badCount" :value="badCount" type="danger" class="tb" /></template>
+              <template #label>{{ t('paper.claims') }} <el-badge v-if="badCount" :value="badCount" type="danger" class="tb" /></template>
               <div class="toolbar">
-                <el-select v-model="filter.support" placeholder="全部支持程度" clearable size="small" style="width: 150px">
-                  <el-option v-for="(v, k) in SUPPORT" :key="k" :value="k" :label="v[0]" />
+                <el-select v-model="filter.support" :placeholder="t('paper.allSupport')" clearable size="small" style="width: 150px">
+                  <el-option v-for="k in Object.keys(SUPPORT)" :key="k" :value="k" :label="label(SUPPORT, k)" />
                 </el-select>
-                <el-select v-model="filter.section" placeholder="全部章节" clearable size="small" style="width: 130px">
+                <el-select v-model="filter.section" :placeholder="t('paper.allSections')" clearable size="small" style="width: 130px">
                   <el-option v-for="s in sections" :key="s" :value="s" :label="label(SECTION, s)" />
                 </el-select>
               </div>
               <PageState :loading="claims.loading.value && !claims.data.value" :error="claims.error.value" :empty="!rows.length"
-                empty-text="没有论断清单：论文还没写，或本项目未开启论断-证据检查" @retry="claims.load()">
+                :empty-text="t('paper.noClaims')" @retry="claims.load()">
                 <div v-for="c in filtered" :key="c.claim_id" :class="['claim', { bad: BAD.includes(c.support) }]" @click="openTrace(c.claim_id)">
                   <div class="row">
                     <b class="mono">{{ c.claim_id }}</b>
                     <el-tag size="small" effect="plain">{{ label(SECTION, c.section) }}</el-tag>
                     <StateTag v-if="c.support" kind="support" :value="c.support" size="small" />
-                    <el-tag v-if="c.issues.length" type="danger" size="small" effect="plain">{{ c.issues.length }} 个问题</el-tag>
+                    <el-tag v-if="c.issues.length" type="danger" size="small" effect="plain">{{ t('paper.issues', { n: c.issues.length }) }}</el-tag>
                   </div>
                   <div class="text">{{ c.display }}</div>
                   <div v-for="(i, k) in c.issues" :key="k" class="issue">
                     <StateTag kind="severity" :value="i.severity" size="small" /> <span class="mono">{{ i.code }}</span> {{ i.detail }}
                   </div>
                 </div>
-                <div v-if="!filtered.length" class="muted">没有符合筛选条件的论断</div>
+                <div v-if="!filtered.length" class="muted">{{ t('paper.noMatch') }}</div>
               </PageState>
             </el-tab-pane>
 
-            <el-tab-pane label="核验报告" name="review">
+            <el-tab-pane :label="t('paper.review')" name="review">
               <div v-if="paper.data.value?.review_summary" class="counts">
-                <el-tag type="danger" effect="dark">阻断 {{ counts.blocker || 0 }}</el-tag>
-                <el-tag type="warning">重要 {{ counts.major || 0 }}</el-tag>
-                <el-tag type="info">次要 {{ counts.minor || 0 }}</el-tag>
+                <el-tag type="danger">{{ t('approval.blocker', { n: counts.blocker || 0 }) }}</el-tag>
+                <el-tag type="warning">{{ t('approval.major', { n: counts.major || 0 }) }}</el-tag>
+                <el-tag type="info">{{ t('approval.minor', { n: counts.minor || 0 }) }}</el-tag>
                 <span class="muted mono small">{{ paper.data.value.review_summary.file }}</span>
               </div>
               <MarkdownView v-if="reviewMd" :source="reviewMd" />
-              <el-empty v-else description="还没有核验报告" />
+              <el-empty v-else :description="t('paper.noReview')" />
             </el-tab-pane>
 
-            <el-tab-pane label="编译报告" name="compile">
+            <el-tab-pane :label="t('paper.compile')" name="compile">
               <template v-if="compile">
                 <el-descriptions :column="2" border size="small" class="mb">
-                  <el-descriptions-item label="结果"><el-tag :type="compile.ok ? 'success' : 'danger'">{{ compile.ok ? '成功' : '失败' }}</el-tag></el-descriptions-item>
-                  <el-descriptions-item label="页数">{{ compile.pages ?? '—' }}</el-descriptions-item>
-                  <el-descriptions-item label="引擎"><span class="mono">{{ compile.engine }}</span></el-descriptions-item>
-                  <el-descriptions-item label="入口"><span class="mono">{{ compile.entry }}</span></el-descriptions-item>
-                  <el-descriptions-item label="耗时">{{ compile.seconds }} 秒</el-descriptions-item>
-                  <el-descriptions-item label="排版溢出">{{ compile.overfull_boxes }}</el-descriptions-item>
+                  <el-descriptions-item :label="t('paper.result')"><el-tag :type="compile.ok ? 'success' : 'danger'">{{ compile.ok ? t('paper.ok') : t('paper.failed') }}</el-tag></el-descriptions-item>
+                  <el-descriptions-item :label="t('paper.pages')">{{ compile.pages ?? '—' }}</el-descriptions-item>
+                  <el-descriptions-item :label="t('paper.engine')"><span class="mono">{{ compile.engine }}</span></el-descriptions-item>
+                  <el-descriptions-item :label="t('paper.entry')"><span class="mono">{{ compile.entry }}</span></el-descriptions-item>
+                  <el-descriptions-item :label="t('paper.seconds')">{{ t('paper.secondsValue', { n: compile.seconds }) }}</el-descriptions-item>
+                  <el-descriptions-item :label="t('paper.overfull')">{{ compile.overfull_boxes }}</el-descriptions-item>
                 </el-descriptions>
-                <h4>错误（{{ compile.errors.length }}）</h4>
+                <h4>{{ t('paper.errors', { n: compile.errors.length }) }}</h4>
                 <pre v-for="(e, i) in compile.errors" :key="i" class="code mono err">{{ typeof e === 'string' ? e : JSON.stringify(e, null, 2) }}</pre>
-                <div v-if="!compile.errors.length" class="muted">无</div>
-                <h4>警告</h4>
-                <div>未定义的引用：<span class="mono">{{ compile.undefined_citations.join(', ') || '无' }}</span></div>
-                <div>未定义的交叉引用：<span class="mono">{{ compile.undefined_refs.join(', ') || '无' }}</span></div>
-                <div>缺少的文件：<span class="mono">{{ compile.missing_files.join(', ') || '无' }}</span></div>
-                <router-link :to="`/projects/${pid}/files?path=${encodeURIComponent(compile.log_path)}`" class="link">查看完整编译日志</router-link>
+                <div v-if="!compile.errors.length" class="muted">{{ t('common.none') }}</div>
+                <h4>{{ t('paper.warnings') }}</h4>
+                <div>{{ t('paper.undefCite') }}<span class="mono">{{ compile.undefined_citations.join(', ') || t('common.none') }}</span></div>
+                <div>{{ t('paper.undefRef') }}<span class="mono">{{ compile.undefined_refs.join(', ') || t('common.none') }}</span></div>
+                <div>{{ t('paper.missingFiles') }}<span class="mono">{{ compile.missing_files.join(', ') || t('common.none') }}</span></div>
+                <router-link :to="`/projects/${pid}/files?path=${encodeURIComponent(compile.log_path)}`" class="link">{{ t('paper.compileLog') }}</router-link>
               </template>
-              <el-empty v-else description="还没有编译报告" />
+              <el-empty v-else :description="t('paper.noCompile')" />
             </el-tab-pane>
           </el-tabs>
         </el-card>
       </div>
     </PageState>
 
-    <el-drawer v-model="trace.open" :title="`证据链 ${trace.id}`" size="50%">
-      <div class="toolbar"><router-link :to="`/projects/${pid}/claims/${trace.id}`" class="link">在单独页面打开</router-link></div>
+    <el-drawer v-model="trace.open" :title="t('paper.traceTitle', { id: trace.id })" size="50%">
+      <div class="toolbar"><router-link :to="`/projects/${pid}/claims/${trace.id}`" class="link">{{ t('paper.openStandalone') }}</router-link></div>
       <el-skeleton v-if="trace.loading" :rows="6" animated />
-      <el-result v-else-if="trace.error" icon="error" title="证据链加载失败">
-        <template #extra><el-button @click="openTrace(trace.id)">重试</el-button></template>
+      <el-result v-else-if="trace.error" icon="error" :title="t('paper.traceFailed')">
+        <template #extra><el-button @click="openTrace(trace.id)">{{ t('common.retry') }}</el-button></template>
       </el-result>
       <EvidenceChain v-else-if="trace.data" :pid="pid" :trace="trace.data" />
     </el-drawer>

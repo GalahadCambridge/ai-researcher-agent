@@ -4,6 +4,8 @@ import { getLogs } from '../api/runs'
 import { subscribeRunLog } from '../api/stream'
 import { getPref, setPref } from '../utils/format'
 import { USE_MOCK } from '../mock'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 
 // 运行日志：stdout / stderr 两个标签页。运行中时实时追加（SSE），结束后一次读完。
 // 只保留最近 5,000 行（详细设计 5 第 4.6 节）。
@@ -55,7 +57,7 @@ async function readAll(stream) {
     if (rest) push(s, rest)
     s.error.value = ''
   } catch {
-    s.error.value = '读取日志失败'
+    s.error.value = t('log.readFailed')
   } finally {
     s.loading.value = false
     scrollDown(stream)
@@ -119,18 +121,18 @@ onBeforeUnmount(stopAll)
         <el-radio-button value="stdout">stdout</el-radio-button>
         <el-radio-button value="stderr">stderr</el-radio-button>
       </el-radio-group>
-      <el-tag v-if="logs[tab].live.value" type="success" size="small" effect="plain">实时更新中</el-tag>
+      <el-tag v-if="logs[tab].live.value" type="success" size="small" effect="plain">{{ t('log.live') }}</el-tag>
       <span class="spacer" />
-      <el-switch v-model="autoScroll" active-text="自动滚动到底部" size="small" />
+      <el-switch v-model="autoScroll" :active-text="t('log.autoScroll')" size="small" />
       <router-link :to="`/projects/${pid}/files?path=${encodeURIComponent(`runs/${runId}/${tab}.log`)}`">
-        <el-button size="small" text type="primary">查看完整日志</el-button>
+        <el-button size="small" text type="primary">{{ t('log.full') }}</el-button>
       </router-link>
     </div>
     <el-alert v-if="logs[tab].dropped.value" type="info" :closable="false" class="drop"
-      :title="`只显示最近 ${MAX_LINES} 行（前面 ${logs[tab].dropped.value} 行已省略），完整日志见“查看完整日志”`" />
+      :title="t('log.dropped', { max: MAX_LINES, n: logs[tab].dropped.value })" />
     <el-alert v-if="logs[tab].error.value" type="error" :closable="false" :title="logs[tab].error.value" />
     <div :ref="(el) => (boxes[tab].value = el)" v-loading="logs[tab].loading.value" class="log mono">
-      <div v-if="!logs[tab].lines.value.length && !logs[tab].loading.value" class="muted">（没有输出）</div>
+      <div v-if="!logs[tab].lines.value.length && !logs[tab].loading.value" class="muted">{{ t('log.empty') }}</div>
       <div v-for="(l, i) in logs[tab].lines.value" :key="i" class="ln">{{ l || ' ' }}</div>
     </div>
   </div>
@@ -138,7 +140,7 @@ onBeforeUnmount(stopAll)
 
 <style scoped>
 .log {
-  background: #1e1e1e; color: #d4d4d4; border-radius: 6px; padding: 10px 12px;
+  background: #262522; color: #e6e3dc; border-radius: var(--air-radius-sm); padding: 12px 14px;
   height: 420px; overflow: auto; font-size: 12.5px; line-height: 1.55;
 }
 .ln { white-space: pre-wrap; word-break: break-all; }

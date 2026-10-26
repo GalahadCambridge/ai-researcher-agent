@@ -5,6 +5,8 @@ import PageState from '../components/PageState.vue'
 import StateTag from '../components/StateTag.vue'
 import { getPaperRecord, listLiterature } from '../api/paper'
 import { useLoader, useProject, useProjectRefresh } from '../utils/useLoader'
+import { useI18n } from 'vue-i18n'
+const { t, te } = useI18n()
 
 // P8 文献。“仅基于摘要”用橙色醒目显示；点击行打开抽屉看摘要和阅读卡
 const route = useRoute()
@@ -31,70 +33,72 @@ async function open(paperId) {
 watch(() => [route.query.paper, data.value], ([p]) => { if (p && data.value && !drawer.open) open(p) }, { immediate: true })
 watch(() => drawer.open, (o) => { if (!o && route.query.paper) router.replace({ query: {} }) })
 
-const authors = (a) => (a.length > 3 ? a.slice(0, 3).join(', ') + ' 等' : a.join(', '))
-const ROLE = { methods: '方法', feasibility: '可行性', single: '综合' }
-const CONF = { high: '高', medium: '中', low: '低' }
+// 只把 http(s) 链接做成可点的，防止 javascript: 之类的地址
+const safeUrl = (u) => (/^https?:\/\//i.test(u || '') ? u : '')
+const authors = (a) => (a.length > 3 ? t('literature.etAl', { names: a.slice(0, 3).join(', ') }) : a.join(', '))
+const sub = (group, v) => (te(`literature.${group}.${v}`) ? t(`literature.${group}.${v}`) : v)
 </script>
 
 <template>
   <div>
-    <div class="page-title"><h2>文献</h2><span class="muted">共 {{ data?.length || 0 }} 篇</span></div>
+    <div class="page-title"><h2>{{ t('literature.title') }}</h2><span class="muted">{{ t('literature.count', { n: data?.length || 0 }) }}</span></div>
     <el-card shadow="never">
-      <PageState :loading="loading && !data" :error="error" :empty="!data?.length" empty-text="还没有文献（选题阶段会检索）" @retry="load()">
+      <PageState :loading="loading && !data" :error="error" :empty="!data?.length" :empty-text="t('literature.empty')" @retry="load()">
         <el-table :data="data || []" row-class-name="clickable-row" @row-click="(r) => open(r.paper_id)">
-          <el-table-column label="标题" min-width="300">
+          <el-table-column :label="t('literature.colTitle')" min-width="300">
             <template #default="{ row }">
               <div>{{ row.title }}</div>
               <div class="muted small mono">{{ row.paper_id }}</div>
             </template>
           </el-table-column>
-          <el-table-column label="作者" min-width="180"><template #default="{ row }">{{ authors(row.authors) }}</template></el-table-column>
-          <el-table-column label="年份" prop="year" width="70" />
-          <el-table-column label="会议/期刊" prop="venue" width="110" />
-          <el-table-column label="访问层级" width="120">
+          <el-table-column :label="t('literature.colAuthors')" min-width="180"><template #default="{ row }">{{ authors(row.authors) }}</template></el-table-column>
+          <el-table-column :label="t('literature.colYear')" prop="year" width="70" />
+          <el-table-column :label="t('literature.colVenue')" prop="venue" width="110" />
+          <el-table-column :label="t('literature.colAccess')" width="120">
             <template #default="{ row }"><StateTag kind="access" :value="row.access_level" :size="'default'" /></template>
           </el-table-column>
-          <el-table-column label="相关性" width="80"><template #default="{ row }">{{ row.relevance?.score ?? '—' }}</template></el-table-column>
-          <el-table-column label="精读" width="70">
+          <el-table-column :label="t('literature.colRelevance')" width="80"><template #default="{ row }">{{ row.relevance?.score ?? '—' }}</template></el-table-column>
+          <el-table-column :label="t('literature.colRead')" width="70">
             <template #default="{ row }"><el-icon v-if="row.selected_for_reading" color="var(--el-color-success)"><Select /></el-icon></template>
           </el-table-column>
         </el-table>
       </PageState>
     </el-card>
 
-    <el-drawer v-model="drawer.open" :title="drawer.paper?.title || '文献'" size="50%">
+    <el-drawer v-model="drawer.open" :title="drawer.paper?.title || t('literature.drawerTitle')" size="50%">
       <div v-if="drawer.paper" v-loading="drawer.loading">
         <div class="meta">
           <StateTag kind="access" :value="drawer.paper.access_level" />
           <span>{{ drawer.paper.authors.join(', ') }}</span>
           <span class="muted">{{ drawer.paper.venue }} {{ drawer.paper.year }}</span>
-          <a :href="drawer.paper.url" target="_blank" rel="noopener" class="link">打开原文链接 ↗</a>
+          <a v-if="safeUrl(drawer.paper.url)" :href="safeUrl(drawer.paper.url)" target="_blank" rel="noopener noreferrer" class="link">{{ t('literature.openLink') }}</a>
+          <span v-else-if="drawer.paper.url" class="muted mono">{{ drawer.paper.url }}</span>
         </div>
         <el-alert v-if="drawer.paper.access_level !== 'full_text'" type="warning" :closable="false" show-icon class="mb"
-          title="没有取得全文：下面的阅读卡只基于摘要/元数据，结论需要谨慎看待" />
-        <h4>摘要</h4>
-        <p class="abs">{{ drawer.paper.abstract || '（无摘要）' }}</p>
-        <div v-if="drawer.paper.relevance" class="muted">相关性 {{ drawer.paper.relevance.score }}：{{ drawer.paper.relevance.reason }}</div>
-        <h4>阅读卡（{{ drawer.cards.length }}）</h4>
-        <div v-if="!drawer.cards.length" class="muted">没有阅读卡（没有被选中精读）</div>
+          :title="t('literature.noFullText')" />
+        <h4>{{ t('literature.abstract') }}</h4>
+        <p class="abs">{{ drawer.paper.abstract || t('literature.noAbstract') }}</p>
+        <div v-if="drawer.paper.relevance" class="muted">{{ t('literature.relevance', { score: drawer.paper.relevance.score, reason: drawer.paper.relevance.reason }) }}</div>
+        <h4>{{ t('literature.cards', { n: drawer.cards.length }) }}</h4>
+        <div v-if="!drawer.cards.length" class="muted">{{ t('literature.noCards') }}</div>
         <el-card v-for="c in drawer.cards" :key="c.card_id" shadow="never" class="cardx">
           <template #header>
             <span class="mono">{{ c.card_id }}</span>
-            <el-tag size="small" class="ml">{{ ROLE[c.role] || c.role }}</el-tag>
-            <el-tag size="small" :type="c.based_on === 'full_text' ? 'success' : 'warning'" class="ml">{{ c.based_on === 'full_text' ? '基于全文' : '仅基于摘要' }}</el-tag>
+            <el-tag size="small" class="ml">{{ sub('role', c.role) }}</el-tag>
+            <el-tag size="small" :type="c.based_on === 'full_text' ? 'success' : 'warning'" class="ml">{{ c.based_on === 'full_text' ? t('literature.basedFull') : t('literature.basedAbstract') }}</el-tag>
           </template>
-          <div class="muted mb">与研究问题的关系：{{ c.relevance_to_question }}</div>
+          <div class="muted mb">{{ t('literature.relToQuestion', { text: c.relevance_to_question }) }}</div>
           <div v-for="(it, i) in c.items" :key="i" class="item">
             <div class="row">
               <b>{{ it.field }}</b>
-              <el-tag size="small" :type="it.kind === 'author_claim' ? 'primary' : 'info'">{{ it.kind === 'author_claim' ? '作者结论' : 'Agent 推断' }}</el-tag>
-              <span class="muted small">置信度 {{ CONF[it.confidence] || it.confidence }} · 出处 {{ it.source_loc }}</span>
+              <el-tag size="small" :type="it.kind === 'author_claim' ? 'primary' : 'info'">{{ it.kind === 'author_claim' ? t('literature.authorClaim') : t('literature.agentInference') }}</el-tag>
+              <span class="muted small">{{ t('literature.confidence', { c: sub('conf', it.confidence), loc: it.source_loc }) }}</span>
             </div>
             <div>{{ it.content }}</div>
             <blockquote v-if="it.quote" class="quote">
               “{{ it.quote }}”
-              <span v-if="it.quote_verified === true" class="ok">✓ 已核对原文</span>
-              <span v-else-if="it.quote_verified === false" class="bad">⚠ 原文中未找到</span>
+              <span v-if="it.quote_verified === true" class="ok">{{ t('literature.quoteOk') }}</span>
+              <span v-else-if="it.quote_verified === false" class="bad">{{ t('literature.quoteBad') }}</span>
             </blockquote>
           </div>
         </el-card>

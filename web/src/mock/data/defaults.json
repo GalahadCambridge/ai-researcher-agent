@@ -1,0 +1,28 @@
+{
+  "task": "tasks/smoke",
+  "mode": "fake",
+  "real_stages": [
+    "idea",
+    "plan",
+    "experiment"
+  ],
+  "allow_local_execution": false,
+  "budget": {
+    "llm_usd": {
+      "soft": 4.0,
+      "hard": 5.0
+    },
+    "wall_hours": {
+      "soft": null,
+      "hard": 6.0
+    },
+    "gpu_hours": {
+      "soft": null,
+      "hard": 2.0
+    },
+    "storage_gb": {
+      "soft": null,
+      "hard": 5.0
+    }
+  }
+}

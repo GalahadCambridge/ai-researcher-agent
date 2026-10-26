@@ -1,18 +1,204 @@
+/* 全局主题：暖灰 / 米白为底，只有一个强调色，状态色降低饱和度；深色模式用同一套变量。
+   自己的变量以 --air- 开头，下面再映射到 Element Plus 的 --el- 变量，组件就跟着变。
+   深色模式：html.dark（theme.js 根据“跟随系统 / 浅色 / 深色”设置）。 */
+
+:root {
+  --air-bg: #faf9f6;           /* 页面底色 */
+  --air-surface: #ffffff;      /* 卡片、输入框 */
+  --air-sidebar: #f3f1eb;      /* 侧边栏 */
+  --air-fill: #f2f0ea;         /* 浅色填充：悬停、代码块 */
+  --air-fill-2: #e9e6de;
+  --air-border: #e8e5dd;       /* 分隔线 */
+  --air-border-strong: #d6d2c7;
+  --air-text: #2b2a27;         /* 正文：深灰，不用纯黑 */
+  --air-text-2: #5f5c55;
+  --air-text-3: #8c887f;
+  --air-accent: #b5532f;       /* 唯一的强调色 */
+  --air-success: #4e7d5b;
+  --air-warning: #a8792a;
+  --air-danger: #b04a3e;
+  --air-info: #7a766e;
+  --air-shadow: 0 1px 2px rgba(43, 42, 39, 0.04), 0 2px 8px rgba(43, 42, 39, 0.04);
+
+  /* 字号 4 级：页面标题 / 区块标题 / 正文 / 辅助文字 */
+  --air-fs-title: 22px;
+  --air-fs-section: 15px;
+  --air-fs-body: 14px;
+  --air-fs-meta: 12.5px;
+  --air-radius: 12px;
+  --air-radius-sm: 8px;
+  --air-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --air-font-read: 'Charter', 'Georgia', 'Songti SC', 'Noto Serif CJK SC', 'SimSun', serif;
+  --air-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html.dark {
+  --air-bg: #1f1e1c;
+  --air-surface: #272624;
+  --air-sidebar: #1a1917;
+  --air-fill: #2f2e2b;
+  --air-fill-2: #383632;
+  --air-border: #3a3833;
+  --air-border-strong: #4a4740;
+  --air-text: #ecebe6;
+  --air-text-2: #bab6ad;
+  --air-text-3: #8b877e;
+  --air-accent: #d47450;
+  --air-success: #79a985;
+  --air-warning: #d1a453;
+  --air-danger: #d77467;
+  --air-info: #9b978e;
+  --air-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* ---- 映射到 Element Plus ---- */
+:root, html.dark {
+  --el-color-primary: var(--air-accent);
+  --el-color-success: var(--air-success);
+  --el-color-warning: var(--air-warning);
+  --el-color-danger: var(--air-danger);
+  --el-color-error: var(--air-danger);
+  --el-color-info: var(--air-info);
+
+  --el-bg-color: var(--air-surface);
+  --el-bg-color-page: var(--air-bg);
+  --el-bg-color-overlay: var(--air-surface);
+  --el-text-color-primary: var(--air-text);
+  --el-text-color-regular: var(--air-text);
+  --el-text-color-secondary: var(--air-text-2);
+  --el-text-color-placeholder: var(--air-text-3);
+  --el-text-color-disabled: var(--air-text-3);
+  --el-border-color: var(--air-border-strong);
+  --el-border-color-light: var(--air-border);
+  --el-border-color-lighter: var(--air-border);
+  --el-border-color-extra-light: var(--air-fill);
+  --el-border-color-dark: var(--air-border-strong);
+  --el-border-color-hover: var(--air-text-3);
+  --el-fill-color: var(--air-fill);
+  --el-fill-color-light: var(--air-fill);
+  --el-fill-color-lighter: var(--air-fill);
+  --el-fill-color-extra-light: var(--air-bg);
+  --el-fill-color-dark: var(--air-fill-2);
+  --el-fill-color-darker: var(--air-fill-2);
+  --el-fill-color-blank: var(--air-surface);
+
+  --el-font-family: var(--air-font);
+  --el-font-size-base: var(--air-fs-body);
+  --el-border-radius-base: var(--air-radius-sm);
+  --el-border-radius-small: 6px;
+  --el-border-radius-round: 20px;
+  --el-box-shadow-light: var(--air-shadow);
+  --el-box-shadow-lighter: var(--air-shadow);
+  --el-card-border-radius: var(--air-radius);
+}
+
+/* 每种状态色的深浅变化（悬停、浅底色）都由主色和底色混合得到，两种主题通用 */
+:root, html.dark {
+  --el-color-primary-light-3: color-mix(in srgb, var(--el-color-primary) 70%, var(--air-surface));
+  --el-color-primary-light-5: color-mix(in srgb, var(--el-color-primary) 50%, var(--air-surface));
+  --el-color-primary-light-7: color-mix(in srgb, var(--el-color-primary) 30%, var(--air-surface));
+  --el-color-primary-light-8: color-mix(in srgb, var(--el-color-primary) 20%, var(--air-surface));
+  --el-color-primary-light-9: color-mix(in srgb, var(--el-color-primary) 10%, var(--air-surface));
+  --el-color-primary-dark-2: color-mix(in srgb, var(--el-color-primary) 82%, var(--air-text));
+  --el-color-success-light-3: color-mix(in srgb, var(--el-color-success) 70%, var(--air-surface));
+  --el-color-success-light-5: color-mix(in srgb, var(--el-color-success) 50%, var(--air-surface));
+  --el-color-success-light-7: color-mix(in srgb, var(--el-color-success) 30%, var(--air-surface));
+  --el-color-success-light-8: color-mix(in srgb, var(--el-color-success) 20%, var(--air-surface));
+  --el-color-success-light-9: color-mix(in srgb, var(--el-color-success) 10%, var(--air-surface));
+  --el-color-success-dark-2: color-mix(in srgb, var(--el-color-success) 82%, var(--air-text));
+  --el-color-warning-light-3: color-mix(in srgb, var(--el-color-warning) 70%, var(--air-surface));
+  --el-color-warning-light-5: color-mix(in srgb, var(--el-color-warning) 50%, var(--air-surface));
+  --el-color-warning-light-7: color-mix(in srgb, var(--el-color-warning) 30%, var(--air-surface));
+  --el-color-warning-light-8: color-mix(in srgb, var(--el-color-warning) 20%, var(--air-surface));
+  --el-color-warning-light-9: color-mix(in srgb, var(--el-color-warning) 10%, var(--air-surface));
+  --el-color-warning-dark-2: color-mix(in srgb, var(--el-color-warning) 82%, var(--air-text));
+  --el-color-danger-light-3: color-mix(in srgb, var(--el-color-danger) 70%, var(--air-surface));
+  --el-color-danger-light-5: color-mix(in srgb, var(--el-color-danger) 50%, var(--air-surface));
+  --el-color-danger-light-7: color-mix(in srgb, var(--el-color-danger) 30%, var(--air-surface));
+  --el-color-danger-light-8: color-mix(in srgb, var(--el-color-danger) 20%, var(--air-surface));
+  --el-color-danger-light-9: color-mix(in srgb, var(--el-color-danger) 10%, var(--air-surface));
+  --el-color-danger-dark-2: color-mix(in srgb, var(--el-color-danger) 82%, var(--air-text));
+  --el-color-error-light-3: var(--el-color-danger-light-3);
+  --el-color-error-light-5: var(--el-color-danger-light-5);
+  --el-color-error-light-7: var(--el-color-danger-light-7);
+  --el-color-error-light-8: var(--el-color-danger-light-8);
+  --el-color-error-light-9: var(--el-color-danger-light-9);
+  --el-color-error-dark-2: var(--el-color-danger-dark-2);
+  --el-color-info-light-3: color-mix(in srgb, var(--el-color-info) 70%, var(--air-surface));
+  --el-color-info-light-5: color-mix(in srgb, var(--el-color-info) 50%, var(--air-surface));
+  --el-color-info-light-7: color-mix(in srgb, var(--el-color-info) 30%, var(--air-surface));
+  --el-color-info-light-8: color-mix(in srgb, var(--el-color-info) 20%, var(--air-surface));
+  --el-color-info-light-9: color-mix(in srgb, var(--el-color-info) 10%, var(--air-surface));
+  --el-color-info-dark-2: color-mix(in srgb, var(--el-color-info) 82%, var(--air-text));
+}
+
+/* ---- 基础 ---- */
 html, body, #app { margin: 0; height: 100%; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  background: var(--el-bg-color-page);
-  color: var(--el-text-color-primary);
+  font-family: var(--air-font);
+  font-size: var(--air-fs-body);
+  line-height: 1.6;
+  background: var(--air-bg);
+  color: var(--air-text);
+  -webkit-font-smoothing: antialiased;
 }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
-.muted { color: var(--el-text-color-secondary); }
-.page-title { display: flex; align-items: center; gap: 12px; margin: 0 0 16px; flex-wrap: wrap; }
-.page-title h2 { margin: 0; font-size: 20px; }
-.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+a { color: var(--air-accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:has(> .el-button) { text-decoration: none; }
+
+.mono { font-family: var(--air-font-mono); font-size: 0.92em; }
+.muted { color: var(--air-text-2); }
+.meta { color: var(--air-text-3); font-size: var(--air-fs-meta); }
 .spacer { flex: 1; }
-.card-gap > * + * { margin-top: 16px; }
 .clickable-row { cursor: pointer; }
+
+/* 页面标题（第 1 级）与区块标题（第 2 级） */
+.page-title { display: flex; align-items: center; gap: 12px; margin: 0 0 24px; flex-wrap: wrap; }
+.page-title h2 { margin: 0; font-size: var(--air-fs-title); font-weight: 600; letter-spacing: -0.01em; }
+.section-title { font-size: var(--air-fs-section); font-weight: 600; margin: 0; }
+
+.back { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 10px; color: var(--air-text-3); font-size: var(--air-fs-meta); }
+.back:hover { color: var(--air-text); text-decoration: none; }
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.card-gap > * + * { margin-top: 20px; }
+
 pre.code {
-  background: var(--el-fill-color-light); padding: 12px; border-radius: 6px; overflow: auto;
-  white-space: pre-wrap; word-break: break-all; margin: 0;
+  background: var(--air-fill); padding: 12px 14px; border-radius: var(--air-radius-sm); overflow: auto;
+  white-space: pre-wrap; word-break: break-all; margin: 0; font-family: var(--air-font-mono); font-size: 12.5px; line-height: 1.6;
 }
+
+/* ---- Element Plus 组件微调：圆角更大、阴影更轻、边框更淡 ---- */
+.el-card { border: 1px solid var(--air-border); background: var(--air-surface); }
+.el-card.is-always-shadow, .el-card.is-hover-shadow:hover { box-shadow: var(--air-shadow); }
+.el-card__header { border-bottom: 1px solid var(--air-border); padding: 14px 20px; font-size: var(--air-fs-section); }
+.el-card__body { padding: 20px; }
+.el-button { border-radius: var(--air-radius-sm); font-weight: 500; }
+.el-tag { border-radius: 6px; font-weight: 500; }
+.el-tag--light { border-color: transparent; }
+.el-alert { border-radius: var(--air-radius-sm); }
+.el-alert--warning.is-light { background: var(--el-color-warning-light-9); color: var(--air-text); }
+.el-alert--error.is-light { background: var(--el-color-danger-light-9); color: var(--air-text); }
+.el-alert--info.is-light { background: var(--air-fill); color: var(--air-text-2); }
+.el-alert--success.is-light { background: var(--el-color-success-light-9); color: var(--air-text); }
+.el-table { --el-table-header-bg-color: transparent; --el-table-row-hover-bg-color: var(--air-fill); --el-table-border-color: var(--air-border); background: transparent; }
+.el-table th.el-table__cell { font-weight: 500; color: var(--air-text-3); font-size: var(--air-fs-meta); }
+.el-table tr, .el-table td.el-table__cell { background: transparent; }
+.el-dialog, .el-drawer { border-radius: var(--air-radius); }
+.el-drawer { border-radius: var(--air-radius) 0 0 var(--air-radius); }
+.el-descriptions__label.el-descriptions__cell.is-bordered-label { background: var(--air-fill); color: var(--air-text-2); font-weight: 500; }
+.el-timeline-item__timestamp { color: var(--air-text-3); }
+.el-progress-bar__outer { background: var(--air-fill-2); }
+.el-collapse { border-color: var(--air-border); }
+.el-collapse-item__header, .el-collapse-item__wrap { background: transparent; border-color: var(--air-border); }
+.el-tabs__nav-wrap::after { height: 1px; background: var(--air-border); }
+.el-skeleton { --el-skeleton-color: var(--air-fill); --el-skeleton-to-color: var(--air-fill-2); }
+
+/* ---- 阅读模式：审批内容、核验报告等长文 ---- */
+.reading {
+  font-family: var(--air-font-read);
+  font-size: 15.5px;
+  line-height: 1.85;
+  max-width: 76ch;
+  color: var(--air-text);
+}
+.reading h1, .reading h2, .reading h3, .reading h4 { font-family: var(--air-font); letter-spacing: -0.01em; line-height: 1.35; }

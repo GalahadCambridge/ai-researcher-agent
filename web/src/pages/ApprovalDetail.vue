@@ -15,6 +15,8 @@ import { artifactContent, editArtifact, readFile } from '../api/artifacts'
 import { pdfUrl } from '../api/paper'
 import { isConflict, newRequestId } from '../api/client'
 import { useLoader, useProject, useProjectRefresh } from '../utils/useLoader'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 
 // P5 审批详情（详细设计 5 第 4.5 节、第 6 节）。
 // 防重复：打开时生成一个 request_id，提交中再点无效；409（已过期 / 已被处理）时提示并刷新。
@@ -94,7 +96,7 @@ async function openExtra(e) {
     const r = await artifactContent(pid.value, e.artifact_id, e.version)
     drawer.content = typeof r === 'string' ? r : r.content ?? JSON.stringify(r, null, 2)
   } catch {
-    drawer.content = '（无法读取这个文件）'
+    drawer.content = t('approval.readFailed')
   } finally {
     drawer.loading = false
   }
@@ -103,18 +105,17 @@ async function openExtra(e) {
 // ---------------------------------------------------------------- 决策
 const comment = ref('')
 const submitting = ref('')
-const DECISION_TEXT = { approved: '已批准', changes_requested: '已退回修改，系统会按你的意见生成新版本', rejected: '已拒绝' }
 
 async function submit(decision) {
   if (submitting.value) return // 提交中再点无效
   const needComment = decision !== 'approved' || blockers.value > 0
   if (needComment && !comment.value.trim()) {
-    ElMessage.warning(decision === 'approved' ? `仍有 ${blockers.value} 个阻断问题，批准时必须填写意见` : '请填写意见，说明需要怎么改 / 为什么拒绝')
+    ElMessage.warning(decision === 'approved' ? t('approval.needCommentBlocker', { n: blockers.value }) : t('approval.needComment'))
     return
   }
   if (decision === 'rejected') {
     try {
-      await ElMessageBox.confirm('拒绝后系统会问你“重写还是结束项目”。确定拒绝吗？', '拒绝', { type: 'warning', confirmButtonText: '确定拒绝', cancelButtonText: '取消' })
+      await ElMessageBox.confirm(t('approval.rejectConfirm'), t('approval.reject'), { type: 'warning', confirmButtonText: t('approval.rejectOk'), cancelButtonText: t('common.cancel') })
     } catch {
       return
     }
@@ -127,12 +128,12 @@ async function submit(decision) {
       expected_sha256: a.value.target.sha256, // 告诉后台“我审的是这个版本”
       request_id: requestId, // 网络重试时沿用同一个，后台只处理一次
     })
-    ElMessage.success(DECISION_TEXT[decision])
+    ElMessage.success(t(`approval.done.${decision}`))
     ctx.refresh()
     router.push(`/projects/${pid.value}`)
   } catch (err) {
     if (isConflict(err)) {
-      ElMessage.warning('该版本已过期或已被处理，已刷新为最新状态')
+      ElMessage.warning(t('approval.stale'))
       requestId = newRequestId()
       await load()
       ctx.refresh()
@@ -159,12 +160,12 @@ async function saveEdit() {
       base_sha256: a.value.target.sha256,
       request_id: edit.requestId,
     })
-    ElMessage.success(`已保存为人工编辑的新版本 v${r.version ?? ''}`)
+    ElMessage.success(t('approval.editSaved', { v: r.version ?? '' }))
     edit.open = false
     await load()
     ctx.refresh()
   } catch (err) {
-    if (isConflict(err)) ElMessage.warning('文件已被修改，请刷新后再编辑')
+    if (isConflict(err)) ElMessage.warning(t('approval.editStale'))
   } finally {
     edit.saving = false
   }
@@ -174,92 +175,92 @@ async function saveEdit() {
 <template>
   <PageState :loading="loading && !data" :error="error" @retry="load()">
     <div v-if="a">
+      <router-link :to="`/projects/${pid}/approvals`" class="back"><el-icon><ArrowLeft /></el-icon>{{ t('approval.backToList') }}</router-link>
       <div class="page-title">
-        <router-link :to="`/projects/${pid}/approvals`"><el-button icon="ArrowLeft" text>审批列表</el-button></router-link>
-        <h2>审批 {{ a.approval_id }}</h2>
-        <StateTag kind="kind" :value="a.kind" />
-        <span class="mono">{{ a.target.artifact_id }} v{{ a.target.version }}</span>
-        <StateTag kind="approval" :value="a.status" />
+        <h2>{{ a.summary }}</h2>
+      </div>
+      <div class="sub">
+        <StateTag kind="kind" :value="a.kind" size="small" />
+        <StateTag kind="approval" :value="a.status" size="small" />
+        <span class="meta"><span class="mono">{{ a.approval_id }}</span> · <span class="mono">{{ a.target.artifact_id }} v{{ a.target.version }}</span> · {{ t('approval.submittedAt') }} <TimeText :value="a.created_at" /></span>
       </div>
 
       <el-alert v-if="!isPending" :type="a.status === 'approved' ? 'success' : 'info'" :closable="false" show-icon class="mb">
         <template #title>
-          这个审批已处理：<StateTag kind="approval" :value="a.status" size="small" />
+          {{ t('approval.handled') }}<StateTag kind="approval" :value="a.status" size="small" />
           <span v-if="a.decided_at">（<TimeText :value="a.decided_at" />，{{ a.decided_by || '—' }}）</span>
-          <span v-if="a.decision_comment">意见：{{ a.decision_comment }}</span>
-          <router-link :to="`/projects/${pid}`" class="ml">回到总览</router-link>
+          <span v-if="a.decision_comment">{{ t('approval.comment') }}{{ a.decision_comment }}</span>
+          <router-link :to="`/projects/${pid}`" class="ml">{{ t('approval.backToOverview') }}</router-link>
         </template>
       </el-alert>
 
       <div class="cols">
-        <!-- 左：要审的内容 -->
-        <el-card shadow="never" class="left">
-          <template #header>
-            <div class="ch">
-              <b>要审的内容</b>
-              <CopyText :text="data.target_path" class="muted small" />
-              <span class="spacer" />
-              <el-button v-if="canEdit" size="small" icon="Edit" @click="openEdit">编辑</el-button>
-              <el-switch v-if="canDiff" v-model="showDiff" :active-text="`与 v${prev.version} 对比`" />
-            </div>
-          </template>
-          <template v-if="isManuscript">
-            <PdfViewer v-if="pdfRef" :src="pdfUrl(pid, pdfRef.version)" height="70vh" />
-            <el-alert v-else type="info" :closable="false" title="这一版没有 PDF" />
-            <div v-if="review" class="review">
-              <h4>核验报告摘要</h4>
-              <div class="counts">
-                <el-tag type="danger" effect="dark">阻断 {{ review.counts?.blocker || 0 }}</el-tag>
-                <el-tag type="warning">重要 {{ review.counts?.major || 0 }}</el-tag>
-                <el-tag type="info">次要 {{ review.counts?.minor || 0 }}</el-tag>
-                <el-tag :type="review.compile_ok ? 'success' : 'danger'" effect="plain">{{ review.compile_ok ? '编译成功' : '编译失败' }}</el-tag>
-                <router-link :to="`/projects/${pid}/paper`" class="ml">在“论文”页查看每条论断 →</router-link>
+        <!-- 左：要审的内容（阅读模式） -->
+        <section class="content">
+          <div class="content-bar">
+            <CopyText :text="data.target_path" class="meta path" />
+            <span class="spacer" />
+            <el-switch v-if="canDiff" v-model="showDiff" :active-text="t('approval.diffWith', { v: prev.version })" />
+            <el-button v-if="canEdit" size="small" icon="Edit" text @click="openEdit">{{ t('approval.edit') }}</el-button>
+          </div>
+          <div class="paper">
+            <template v-if="isManuscript">
+              <PdfViewer v-if="pdfRef" :src="pdfUrl(pid, pdfRef.version)" height="72vh" />
+              <el-alert v-else type="info" :closable="false" :title="t('approval.noPdf')" />
+              <div v-if="review" class="review">
+                <h3 class="section-title">{{ t('approval.reviewSummary') }}</h3>
+                <div class="counts">
+                  <el-tag type="danger">{{ t('approval.blocker', { n: review.counts?.blocker || 0 }) }}</el-tag>
+                  <el-tag type="warning">{{ t('approval.major', { n: review.counts?.major || 0 }) }}</el-tag>
+                  <el-tag type="info">{{ t('approval.minor', { n: review.counts?.minor || 0 }) }}</el-tag>
+                  <el-tag :type="review.compile_ok ? 'success' : 'danger'">{{ review.compile_ok ? t('approval.compileOk') : t('approval.compileFailed') }}</el-tag>
+                  <router-link :to="`/projects/${pid}/paper`" class="ml">{{ t('approval.seeClaims') }}</router-link>
+                </div>
+                <el-collapse v-if="reviewMd" class="mt">
+                  <el-collapse-item :title="t('approval.reviewFull')" name="r"><MarkdownView :source="reviewMd" reading /></el-collapse-item>
+                </el-collapse>
               </div>
-              <el-collapse v-if="reviewMd" class="mt">
-                <el-collapse-item title="核验报告全文" name="r"><MarkdownView :source="reviewMd" /></el-collapse-item>
-              </el-collapse>
-            </div>
-          </template>
-          <template v-else-if="data.target_content != null">
-            <DiffView v-if="showDiff && canDiff" :old-text="prev.content" :new-text="data.target_content" />
-            <MarkdownView v-else :source="data.target_content" />
-          </template>
-          <el-alert v-else type="info" :closable="false" title="这个对象不是文本文件，请查看右侧的相关材料" />
-        </el-card>
+            </template>
+            <template v-else-if="data.target_content != null">
+              <DiffView v-if="showDiff && canDiff" :old-text="prev.content" :new-text="data.target_content" />
+              <MarkdownView v-else :source="data.target_content" reading />
+            </template>
+            <el-alert v-else type="info" :closable="false" :title="t('approval.notText')" />
+          </div>
+        </section>
 
-        <!-- 右：决策区 -->
-        <div class="right card-gap">
-          <el-card shadow="never">
-            <template #header><b>变更摘要</b></template>
-            <p class="p">{{ a.summary }}</p>
-            <div class="muted small">影响范围</div>
+        <!-- 右：决策区（一个面板，用分隔线分成几块） -->
+        <aside class="side">
+          <div class="block">
+            <div class="label">{{ t('approval.impact') }}</div>
             <p class="p">{{ a.impact || '—' }}</p>
-            <div class="muted small">提交时间：<TimeText :value="a.created_at" /></div>
-            <div v-if="a.previous" class="muted small">上一个获批版本：v{{ a.previous.version }}</div>
-          </el-card>
+            <div v-if="a.previous" class="meta">{{ t('approval.previousApproved', { v: a.previous.version }) }}</div>
+          </div>
 
-          <el-card v-if="data.extra.length" shadow="never">
-            <template #header><b>相关材料</b></template>
+          <div v-if="data.extra.length" class="block">
+            <div class="label">{{ t('approval.extra') }}</div>
             <div v-for="e in data.extra" :key="e.artifact_id" class="extra" @click="openExtra(e)">
               <el-icon><Document /></el-icon>
-              <span class="mono">{{ e.artifact_id }}</span>
-              <span class="muted">v{{ e.version }}</span>
+              <span class="mono name">{{ e.artifact_id }}</span>
+              <span class="meta">v{{ e.version }}</span>
             </div>
-          </el-card>
+          </div>
 
-          <el-card v-if="isPending" shadow="never">
-            <template #header><b>你的决定</b></template>
-            <el-alert v-if="blockers" type="error" :closable="false" show-icon class="mb"
-              :title="`仍有 ${blockers} 个阻断问题`" description="批准时必须填写意见（例如为什么可以接受）。" />
-            <el-input v-model="comment" type="textarea" :rows="4"
-              placeholder="意见：退回修改和拒绝时必填，批准时可选" />
-            <div class="decide">
-              <el-button type="success" icon="Check" :loading="submitting === 'approved'" :disabled="!!submitting && submitting !== 'approved'" @click="submit('approved')">批准</el-button>
-              <el-button type="warning" icon="RefreshLeft" :loading="submitting === 'changes_requested'" :disabled="!!submitting && submitting !== 'changes_requested'" @click="submit('changes_requested')">退回修改</el-button>
-              <el-button type="danger" icon="Close" :loading="submitting === 'rejected'" :disabled="!!submitting && submitting !== 'rejected'" @click="submit('rejected')">拒绝</el-button>
+          <div v-if="isPending" class="block">
+            <div class="label">{{ t('approval.decision') }}</div>
+            <div v-if="blockers" class="blocker">
+              <el-icon><Warning /></el-icon>
+              <div><b>{{ t('approval.blockersLeft', { n: blockers }) }}</b><div class="meta">{{ t('approval.blockersHint') }}</div></div>
             </div>
-          </el-card>
-        </div>
+            <el-input v-model="comment" type="textarea" :rows="4" resize="none"
+              :placeholder="t('approval.commentPh')" />
+            <el-button type="primary" class="approve" icon="Check" :loading="submitting === 'approved'" :disabled="!!submitting && submitting !== 'approved'" @click="submit('approved')">{{ t('approval.approve') }}</el-button>
+            <div class="secondary">
+              <el-button icon="RefreshLeft" :loading="submitting === 'changes_requested'" :disabled="!!submitting && submitting !== 'changes_requested'" @click="submit('changes_requested')">{{ t('approval.requestChanges') }}</el-button>
+              <el-button type="danger" text icon="Close" :loading="submitting === 'rejected'" :disabled="!!submitting && submitting !== 'rejected'" @click="submit('rejected')">{{ t('approval.reject') }}</el-button>
+            </div>
+          </div>
+        </aside>
       </div>
 
       <el-drawer v-model="drawer.open" :title="drawer.title" size="55%">
@@ -267,12 +268,12 @@ async function saveEdit() {
         <div v-else v-loading="drawer.loading"><ContentView :name="drawer.name" :content="drawer.content" /></div>
       </el-drawer>
 
-      <el-dialog v-model="edit.open" :title="`编辑 ${a.target.artifact_id}`" width="80%" top="5vh">
-        <el-alert type="info" :closable="false" show-icon class="mb" title="保存后登记为“人工编辑”的新版本；系统会用新版本重新提交审批。" />
+      <el-dialog v-model="edit.open" :title="t('approval.editTitle', { path: a.target.artifact_id })" width="80%" top="5vh">
+        <el-alert type="info" :closable="false" show-icon class="mb" :title="t('approval.editHint')" />
         <el-input v-model="edit.text" type="textarea" :rows="24" class="mono" />
         <template #footer>
-          <el-button @click="edit.open = false">取消</el-button>
-          <el-button type="primary" :loading="edit.saving" @click="saveEdit">保存</el-button>
+          <el-button @click="edit.open = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" :loading="edit.saving" @click="saveEdit">{{ t('common.save') }}</el-button>
         </template>
       </el-dialog>
     </div>
@@ -280,20 +281,36 @@ async function saveEdit() {
 </template>
 
 <style scoped>
-.cols { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
+.page-title { margin-bottom: 10px; }
+.sub { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 32px; align-items: start; }
 @media (max-width: 1000px) { .cols { grid-template-columns: 1fr; } }
-.ch { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.small { font-size: 12px; }
-.p { margin: 4px 0 12px; line-height: 1.6; }
-.extra { display: flex; align-items: center; gap: 6px; padding: 6px 4px; cursor: pointer; border-radius: 4px; color: var(--el-color-primary); }
-.extra:hover { background: var(--el-fill-color-light); }
-.decide { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-.decide .el-button { margin-left: 0; }
-.review { margin-top: 16px; }
-.review h4 { margin: 0 0 8px; }
-.counts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.mb { margin-bottom: 12px; }
+.content-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; min-height: 32px; flex-wrap: wrap; }
+.path { min-width: 0; }
+.paper { background: var(--air-surface); border: 1px solid var(--air-border); border-radius: var(--air-radius); padding: 32px 40px; }
+@media (max-width: 700px) { .paper { padding: 20px; } }
+.side {
+  position: sticky; top: 16px; background: var(--air-surface); border: 1px solid var(--air-border);
+  border-radius: var(--air-radius); padding: 4px 20px;
+}
+.block { padding: 16px 0; }
+.block + .block { border-top: 1px solid var(--air-border); }
+.label { font-size: var(--air-fs-meta); color: var(--air-text-3); margin-bottom: 8px; font-weight: 500; }
+.p { margin: 0 0 6px; line-height: 1.6; }
+.extra { display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin: 0 -8px; cursor: pointer; border-radius: 6px; color: var(--air-text-2); }
+.extra:hover { background: var(--air-fill); color: var(--air-text); }
+.extra .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.blocker {
+  display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin-bottom: 12px; border-radius: var(--air-radius-sm);
+  background: var(--el-color-danger-light-9); color: var(--air-danger);
+}
+.blocker b { color: var(--air-text); font-weight: 600; }
+.approve { width: 100%; margin-top: 12px; }
+.secondary { display: flex; justify-content: space-between; margin-top: 8px; }
+.secondary .el-button { margin-left: 0; }
+.review { margin-top: 24px; }
+.counts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.mb { margin-bottom: 16px; }
 .mt { margin-top: 12px; }
-.ml { margin-left: 8px; color: var(--el-color-primary); }
-.right { position: sticky; top: 0; }
+.ml { margin-left: 8px; }
 </style>

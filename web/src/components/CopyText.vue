@@ -1,5 +1,7 @@
 <script setup>
 import { copyText } from '../utils/format'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 
 // 文件路径、运行编号一键复制
 defineProps({ text: { type: String, required: true }, mono: { type: Boolean, default: true } })
@@ -8,7 +10,7 @@ defineProps({ text: { type: String, required: true }, mono: { type: Boolean, def
 <template>
   <span class="copy-text" :class="{ mono }">
     <slot>{{ text }}</slot>
-    <el-icon class="copy-icon" title="复制" @click.stop="copyText(text)"><CopyDocument /></el-icon>
+    <el-icon class="copy-icon" :title="t('common.copy')" @click.stop="copyText(text)"><CopyDocument /></el-icon>
   </span>
 </template>
 

@@ -1,6 +1,8 @@
 <script setup>
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { fileObjectUrl } from '../api/artifacts'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 
 // 显示工作区里的图片（PNG 或 SVG）
 const props = defineProps({ pid: String, path: String, alt: { type: String, default: '' }, height: { type: String, default: 'auto' } })
@@ -24,7 +26,7 @@ onBeforeUnmount(() => url.value && URL.revokeObjectURL(url.value))
 
 <template>
   <img v-if="url" :src="url" :alt="alt" class="img" :style="{ height }" />
-  <div v-else-if="failed" class="muted ph">图片无法加载</div>
+  <div v-else-if="failed" class="muted ph">{{ t('image.failed') }}</div>
   <el-skeleton v-else :rows="3" animated />
 </template>
 

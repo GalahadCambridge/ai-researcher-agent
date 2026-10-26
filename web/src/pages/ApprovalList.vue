@@ -6,6 +6,8 @@ import StateTag from '../components/StateTag.vue'
 import TimeText from '../components/TimeText.vue'
 import { listApprovals } from '../api/approvals'
 import { useLoader, useProject, useProjectRefresh } from '../utils/useLoader'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 
 // P4 审批列表：待处理 / 历史
 const router = useRouter()
@@ -25,23 +27,23 @@ const open = (row) => router.push(`/projects/${pid.value}/approvals/${row.approv
 
 <template>
   <div>
-    <div class="page-title"><h2>审批</h2></div>
+    <div class="page-title"><h2>{{ t('approvals.title') }}</h2></div>
     <el-card shadow="never">
       <el-tabs v-model="tab">
-        <el-tab-pane :label="`待处理（${pendingN}）`" name="pending" />
-        <el-tab-pane label="历史" name="history" />
+        <el-tab-pane :label="t('approvals.pending', { n: pendingN })" name="pending" />
+        <el-tab-pane :label="t('approvals.history')" name="history" />
       </el-tabs>
       <PageState :loading="loading && !data" :error="error" :empty="!rows.length"
-        :empty-text="tab === 'pending' ? '没有需要你审批的内容' : '还没有审批记录'" @retry="load()">
+        :empty-text="tab === 'pending' ? t('approvals.emptyPending') : t('approvals.emptyHistory')" @retry="load()">
         <el-table :data="rows" row-class-name="clickable-row" @row-click="open">
-          <el-table-column label="编号" width="100"><template #default="{ row }"><span class="mono">{{ row.approval_id }}</span></template></el-table-column>
-          <el-table-column label="类别" width="110"><template #default="{ row }"><StateTag kind="kind" :value="row.kind" /></template></el-table-column>
-          <el-table-column label="对象与版本" min-width="200">
+          <el-table-column :label="t('approvals.colId')" width="100"><template #default="{ row }"><span class="mono">{{ row.approval_id }}</span></template></el-table-column>
+          <el-table-column :label="t('approvals.colKind')" width="130"><template #default="{ row }"><StateTag kind="kind" :value="row.kind" /></template></el-table-column>
+          <el-table-column :label="t('approvals.colTarget')" min-width="200">
             <template #default="{ row }"><span class="mono">{{ row.target.artifact_id }} v{{ row.target.version }}</span></template>
           </el-table-column>
-          <el-table-column label="摘要" prop="summary" min-width="260" show-overflow-tooltip />
-          <el-table-column label="提交时间" width="120"><template #default="{ row }"><TimeText :value="row.created_at" /></template></el-table-column>
-          <el-table-column label="状态" width="140"><template #default="{ row }"><StateTag kind="approval" :value="row.status" /></template></el-table-column>
+          <el-table-column :label="t('approvals.colSummary')" prop="summary" min-width="260" show-overflow-tooltip />
+          <el-table-column :label="t('approvals.colCreated')" width="120"><template #default="{ row }"><TimeText :value="row.created_at" /></template></el-table-column>
+          <el-table-column :label="t('approvals.colStatus')" width="150"><template #default="{ row }"><StateTag kind="approval" :value="row.status" /></template></el-table-column>
         </el-table>
       </PageState>
     </el-card>

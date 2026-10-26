@@ -1,21 +1,22 @@
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
-import 'dayjs/locale/zh-cn'
 import { ElMessage } from 'element-plus'
+import { t } from '../i18n'
 
-dayjs.extend(relativeTime)
-dayjs.locale('zh-cn')
+export { getPref, setPref } from './prefs'
 
-export const fullTime = (t) => (t ? dayjs(t).format('YYYY-MM-DD HH:mm:ss') : '')
-export const shortTime = (t) => (t ? dayjs(t).format('MM-DD HH:mm') : '')
-export const fromNow = (t) => (t ? dayjs(t).fromNow() : '')
+dayjs.extend(relativeTime) // 语言由 i18n/index.js 设置
+
+export const fullTime = (v) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : '')
+export const shortTime = (v) => (v ? dayjs(v).format('MM-DD HH:mm') : '')
+export const fromNow = (v) => (v ? dayjs(v).fromNow() : '')
 
 export function duration(start, end) {
   if (!start) return ''
   const s = Math.max(0, (end ? dayjs(end) : dayjs()).diff(dayjs(start), 'second', true))
-  if (s < 60) return `${s.toFixed(s < 10 ? 1 : 0)} 秒`
-  if (s < 3600) return `${Math.floor(s / 60)} 分 ${Math.round(s % 60)} 秒`
-  return `${Math.floor(s / 3600)} 小时 ${Math.round((s % 3600) / 60)} 分`
+  if (s < 60) return t('time.seconds', { n: s.toFixed(s < 10 ? 1 : 0) })
+  if (s < 3600) return t('time.minSec', { m: Math.floor(s / 60), s: Math.round(s % 60) })
+  return t('time.hourMin', { h: Math.floor(s / 3600), m: Math.round((s % 3600) / 60) })
 }
 
 export function num(v, digits = 4) {
@@ -28,26 +29,9 @@ export function num(v, digits = 4) {
 export async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text)
-    ElMessage.success('已复制')
+    ElMessage.success(t('common.copied'))
   } catch {
-    ElMessage.warning('复制失败，请手动选择文本')
-  }
-}
-
-// 只用来存“界面偏好”（第 5.4 节），读写失败不影响使用
-export function getPref(key, fallback) {
-  try {
-    const v = localStorage.getItem('air.' + key)
-    return v === null ? fallback : JSON.parse(v)
-  } catch {
-    return fallback
-  }
-}
-export function setPref(key, value) {
-  try {
-    localStorage.setItem('air.' + key, JSON.stringify(value))
-  } catch {
-    /* 忽略 */
+    ElMessage.warning(t('common.copyFailed'))
   }
 }
 

@@ -1,6 +1,8 @@
 <script setup>
 import { computed } from 'vue'
 import { diffLines } from 'diff'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 
 // 与上一版的差异。内容超过 3,000 行时退化为左右并列显示两版全文（详细设计 5 第 4.5 节）
 const props = defineProps({ oldText: { type: String, default: '' }, newText: { type: String, default: '' } })
@@ -24,14 +26,14 @@ const stats = computed(() => ({
 
 <template>
   <div v-if="tooBig" class="side">
-    <el-alert type="info" :closable="false" show-icon title="内容较长，改为左右并列显示两版全文" />
+    <el-alert type="info" :closable="false" show-icon :title="t('diff.tooBig')" />
     <div class="cols">
-      <div><div class="muted">上一版</div><pre class="code mono">{{ oldText }}</pre></div>
-      <div><div class="muted">这一版</div><pre class="code mono">{{ newText }}</pre></div>
+      <div><div class="muted">{{ t('diff.old') }}</div><pre class="code mono">{{ oldText }}</pre></div>
+      <div><div class="muted">{{ t('diff.new') }}</div><pre class="code mono">{{ newText }}</pre></div>
     </div>
   </div>
   <div v-else>
-    <div class="muted stats"><span class="a">+{{ stats.add }} 行</span> <span class="d">−{{ stats.del }} 行</span></div>
+    <div class="muted stats"><span class="a">{{ t('diff.added', { n: stats.add }) }}</span> <span class="d">{{ t('diff.removed', { n: stats.del }) }}</span></div>
     <div class="diff mono">
       <div v-for="(r, i) in rows" :key="i" :class="['line', r.type]">
         <span class="sign">{{ r.type === 'add' ? '+' : r.type === 'del' ? '−' : ' ' }}</span>{{ r.text || ' ' }}

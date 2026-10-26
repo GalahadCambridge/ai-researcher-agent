@@ -5,6 +5,8 @@ import PageState from '../components/PageState.vue'
 import EvidenceChain from '../components/EvidenceChain.vue'
 import { claimTrace } from '../api/paper'
 import { useLoader, useProject } from '../utils/useLoader'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 
 // P11 证据链（单独页面；论文页里是抽屉）
 const route = useRoute()
@@ -17,9 +19,9 @@ watch(cid, () => load())
 
 <template>
   <div>
+    <router-link :to="`/projects/${pid}/paper`" class="back"><el-icon><ArrowLeft /></el-icon>{{ t('evidence.backToPaper') }}</router-link>
     <div class="page-title">
-      <router-link :to="`/projects/${pid}/paper`"><el-button icon="ArrowLeft" text>论文与论断</el-button></router-link>
-      <h2>证据链 {{ cid }}</h2>
+      <h2>{{ t('paper.traceTitle', { id: cid }) }}</h2>
     </div>
     <el-card shadow="never">
       <PageState :loading="loading && !data" :error="error" @retry="load()">
