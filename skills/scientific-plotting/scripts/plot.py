@@ -52,6 +52,33 @@ def ordered(values: list) -> list:
     ]
 
 
+def _execution_count(caption: str, match: re.Match, group_labels: set[str]) -> bool:
+    """Recognize local execution qualifiers around a generic runs/seeds count.
+
+    Do not search the whole sentence: an excluded-run clause must not conceal a
+    wrong sample size elsewhere. Explicit n= statements remain authoritative.
+    """
+    before, after = caption[:match.start()], caption[match.end():]
+    prefix = (
+        r"(?:\b(?:total(?:\s+of)?|failures?(?:\s+occurred)?|failed|excluded|discarded|trial|smoke)"
+        r"(?:\s+(?:runs|seeds|observations))?|总计|总共|共计|共执行|累计|"
+        r"排除(?:了)?|剔除(?:了)?|失败|试运行|筛选后剩余)\s*[:：,，]?\s*$"
+    )
+    suffix = (
+        r"^\s*[,，]?\s*(?:(?:which|that)\s+)?"
+        r"(?:(?:were|was|are|is|have been|had been)\s+)?"
+        r"(?:in\s+total\b|overall\b|(?:excluded|discarded|failed)\b(?!\s+(?:runs|seeds|observations))|"
+        r"failures?\s+occurred(?=\s*(?:[.;。；!?！？]|$))|"
+        r"filtered\s+out\b|(?:executed|attempted|performed)\s+in\s+total\b|"
+        r"remained\s+after\s+filtering\b|被(?:排除|剔除)|(?:失败|总计)(?!\s*\d)|用于试运行)"
+    )
+    # A real group may itself be named "trial" or "total". Preserve the existing
+    # explicit prefix-binding grammar rather than interpreting its label as metadata.
+    bound_prefix = any(re.search(r"(?<!\w)" + re.escape(label) + r"\s*[:,]?\s*\(?\s*$", before)
+                       for label in group_labels)
+    return bool((not bound_prefix and re.search(prefix, before, re.I)) or re.search(suffix, after, re.I))
+
+
 def validate_caption_counts(caption: str, rows: list[AggregateRow]) -> None:
     """Bind explicit counts to canonical groups or unique human group labels.
 
@@ -61,6 +88,10 @@ def validate_caption_counts(caption: str, rows: list[AggregateRow]) -> None:
     """
     counts = list(re.finditer(r"\bn\s*=\s*(\d+)|(?:over|across)\s+(\d+)\s+(?:seeds|runs|observations)|"
                               r"(\d+)\s*(?:个)?(?:种子|次运行|个观测)", caption, re.I))
+    # Only generic shorthand needs disambiguation. Never discard an explicit n=
+    # assertion, even when another clause discusses exclusions or execution totals.
+    group_labels = {str(v) for row in rows for v in row.group.values()}
+    counts = [m for m in counts if m.group(1) is not None or not _execution_count(caption, m, group_labels)]
     def count_of(match):
         return int(next(v for v in match.groups() if v))
 
