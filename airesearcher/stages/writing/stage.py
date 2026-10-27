@@ -10,11 +10,12 @@ from __future__ import annotations
 import json
 import re
 from pathlib import PurePosixPath
+from types import SimpleNamespace
 
 from pydantic import ConfigDict
 
 from airesearcher.core.archive import dir_manifest, manifest_bytes
-from airesearcher.core.errors import AirError
+from airesearcher.core.errors import AirError, ValidationFailed
 from airesearcher.core.fsutil import atomic_write_bytes, atomic_write_json, atomic_write_text, sha256_bytes, sha256_file
 from airesearcher.core.models.claim import CheckReport, Claim, CompileReport, Issue
 from airesearcher.core.models.common import VersionRef
@@ -1298,7 +1299,25 @@ class WritingStage:
                 8 if ctx.project.evidence_check else 6,
                 "steps",
             )
-            generated = writer.generate_section(section)
+            if writer.claims is None:
+                generated = writer.generate_section(section)
+            else:
+                name = "section-" + section + "-" + fingerprint + "-attempts"
+                def response_for(saved):
+                    return SimpleNamespace(parsed=saved["response"], call_id=saved["call_id"],
+                                           prompt_id=saved["prompt_id"], prompt_version=saved["prompt_version"])
+                def request(section=section, name=name):
+                    journal = _receipt(ctx, name)
+                    history = journal.get("attempts", [])
+                    reason = next((a.get("reason", "") for a in reversed(history) if a.get("reason")), "")
+                    return writer.request_section(section, rejection_reason=reason)
+                def validate_payload(payload, section=section):
+                    try:
+                        writer.validate_generated(section, payload)
+                    except ValidationFailed as exc:
+                        raise ValueError(str(exc)) from exc
+                saved = attempts.complete(ctx, name, _receipt, _save, request, validate_payload, allow_skip=False)
+                generated = writer.finish_section(section, response_for(saved))
             # Persist validated output before installing the file: a crash can replay this write for free.
             receipt = {
                 "fingerprint": fingerprint,

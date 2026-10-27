@@ -138,9 +138,15 @@ def test_generated_measurements_cannot_bypass_value_refs(tmp_path, monkeypatch, 
         return response
     monkeypatch.setattr(SampleWritingLLM, 'call', literal)
     tick = e.tick()
-    assert isinstance(tick.result, Error)
-    assert 'ValueRef' in tick.result.message
-    assert not (p.root / 'paper/sections/introduction.tex').exists()
+    from airesearcher.engine.stage import Continue
+    assert isinstance(tick.result, Continue)
+    path = p.root / 'paper/sections/introduction.tex'
+    if number in {'3 seeds', 'n = 8', '2026 samples'}:
+        assert path.exists()
+    else:
+        assert not path.exists()
+        journals = list((p.root / 'paper/.writing').glob('section-*-attempts.json'))
+        assert 'ValueRef' in journals[0].read_text(encoding='utf-8')
 
 
 def test_unreceipted_section_regenerates_only_after_explicit_answer(tmp_path):

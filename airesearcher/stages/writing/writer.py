@@ -347,16 +347,18 @@ class Writer:
             ).encode("utf-8")
         )
 
-    def generate_section(self, section: str, *, prompt_version: int | None = None) -> GeneratedSection:
+    def request_section(self, section: str, *, prompt_version: int | None = None, rejection_reason=""):
         self._provenance()
         context = self.section_context(section)
+        context["rejection_reason"] = rejection_reason
         encoded = _json(context)
-        response = self.llm.complete(
+        return self.llm.complete(
             role="writing.writer",
             prompt_id=PROMPT_ID,
             tier="strong",
             prompt_version=prompt_version,
             response_schema=SectionOutput,
+            max_retries=0 if self.claims is not None else 2,
             variables={
                 "section": section,
                 "skill_rules": self.skill.instructions,
@@ -364,15 +366,26 @@ class Writer:
                 "evidence": LLMGateway.wrap_untrusted(encoded, f"bundle:{section}"),
             },
         )
-        output = SectionOutput.model_validate(response.parsed)
+
+    def generate_section(self, section: str, *, prompt_version: int | None = None) -> GeneratedSection:
+        return self.finish_section(section, self.request_section(section, prompt_version=prompt_version))
+
+    def validate_generated(self, section, parsed):
+        output = SectionOutput.model_validate(parsed)
         if self.claims is not None:
             output = output.model_copy(update={"latex": binding.insert_markers(output.latex, self.claims, section)})
         if self.claims is not None:
             from airesearcher.services import evidence
             surface = evidence._numeric_surface(output.latex)
-            if evidence.NUMBER.search(surface):
-                raise ValidationFailed("Generated experimental numbers must use bound Claim/ValueRef airval macros")
+            result = self.unbound_result(surface, evidence.NUMBER)
+            if result:
+                raise ValidationFailed("Generated experimental numbers must use bound Claim/ValueRef airval macros: "
+                                       + result)
         citations = self.validate_section(output, section)
+        return output, citations
+
+    def finish_section(self, section, response):
+        output, citations = self.validate_generated(section, response.parsed)
         fingerprint = self.section_fingerprint(section, prompt_version=response.prompt_version)
         return GeneratedSection(
             output,
@@ -383,6 +396,32 @@ class Writer:
             response.prompt_id,
             response.prompt_version,
         )
+
+    def unbound_result(self, surface, number_pattern):
+        """Classify canonical numeric tokens by result context, not their existence.
+
+        Configuration counts and identifier suffixes are not measurements. Bound
+        airval/claim identifiers and TeX layout are already masked by evidence.
+        """
+        metrics = {row.metric for source in self.bundle.aggregates for row in source.data.rows}
+        terms = metrics | {"accuracy", "F1", "score", "precision", "recall", "loss", "AUC",
+                           "mean", "std", "CI", "p", "p-value", "effect size", "failure rate"}
+        result = r"(?<![\w])(?:" + "|".join(re.escape(t) for t in sorted(terms)) + r")"
+        for match in number_pattern.finditer(surface):
+            before, after = surface[max(0, match.start()-80):match.start()], surface[match.end():]
+            identifier = re.search(r"([A-Za-z][\w-]*)-$", before)
+            if identifier and identifier[1].lower() not in {t.lower() for t in terms}:
+                continue  # SST-2, not a negative measurement.
+            if re.search(result + r"(?:\s*(?:=|:|was|is|of|equals|reached|at))*\s*$", before, re.I):
+                return surface[max(0, match.start()-40):match.end()+20]
+            if re.match(r"\s*(?:seeds?|epochs?|(?:training\s+)?samples?)\b", after, re.I):
+                continue
+            if re.search(r"(?:learning rate|batch size|dropout(?: rate)?|training split|epochs?|seeds?)"
+                         r"\s*(?:=|:|of)?\s*$", before, re.I):
+                continue
+            if re.match(r"\s*(?:\\?%|percent(?:age)?\b)", after, re.I):
+                return surface[max(0, match.start()-40):match.end()+20]
+        return False
 
     def write_section(self, output: SectionOutput) -> Path:
         self._provenance()

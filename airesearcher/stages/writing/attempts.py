@@ -11,7 +11,7 @@ class DecisionRequired(Exception):
         self.result = result
 
 
-def complete(ctx, name, load, save, call, validate):
+def complete(ctx, name, load, save, call, validate, *, allow_skip=True):
     journal = load(ctx, name) or {"attempts": [], "window_start": 0, "answers": []}
     records = journal["attempts"]
 
@@ -51,7 +51,7 @@ def complete(ctx, name, load, save, call, validate):
                 raise ValueError("Stale semantic recovery answer")
             journal["answers"].append(answer.question_id)
             journal.setdefault("decisions", []).append(answer.model_dump(mode="json"))
-            if answer.choice == "skip":
+            if answer.choice == "skip" and allow_skip:
                 journal["skipped"] = "Model responses exhausted; user skipped; human approval required"
                 persist()
                 return None
@@ -63,7 +63,8 @@ def complete(ctx, name, load, save, call, validate):
             ref = persist()
             raise DecisionRequired(Stop(text, Question(text=text, refs=[ref], options=[
                 QuestionOption(id="retry", label="Retry once (may incur additional model charges)"),
-                QuestionOption(id="skip", label="Skip unit; semantic review INCOMPLETE; require human approval"),
+                *([QuestionOption(id="skip", label="Skip unit; semantic review INCOMPLETE; require human approval")]
+                  if allow_skip else []),
                 QuestionOption(id="end", label="End project", default=True),
             ])))
     attempt = {"number": len(records) + 1, "status": "started"}
@@ -72,7 +73,9 @@ def complete(ctx, name, load, save, call, validate):
     try:
         response = call()
         payload = response.parsed.model_dump(mode="json") if isinstance(response.parsed, BaseModel) else response.parsed
-        attempt.update(response=payload, raw=response.text, call_id=response.call_id, status="returned")
+        attempt.update(response=payload, raw=response.text, call_id=response.call_id, status="returned",
+                       prompt_id=getattr(response, "prompt_id", None),
+                       prompt_version=getattr(response, "prompt_version", None))
         persist()  # A completed call is durable before validating or installing output.
     except LLMOutputError as exc:
         attempt.update(status="rejected", reason=str(exc), raw=getattr(exc, "response_text", None),
