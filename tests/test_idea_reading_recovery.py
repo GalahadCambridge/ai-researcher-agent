@@ -247,3 +247,53 @@ def test_pinned_legacy_prompts_still_replay_without_changing_shared_cards(air_ho
     assert len(cards(project)) == 2 and all(c.prompt_version == 3 for c in cards(project))
     assert all(c.schema_name == "ReaderOutput" for c in engine.llm.backend.calls
                if c.prompt_id.endswith("_reader"))
+
+
+@pytest.mark.parametrize("concurrency", [1, 2])
+def test_empty_source_does_not_block_readable_papers_or_offer_paid_retry(air_home, concurrency):
+    from airesearcher.stages.idea.storage import append_papers
+
+    project, engine, papers = seed(air_home, count=2, concurrency=concurrency)
+    papers[0].abstract = ""
+    append_papers(engine.build_context(), [papers[0]])
+    drive(engine, S.Paused)
+    assert len(cards(project)) == 2 and all(c.paper_id == papers[1].paper_id for c in cards(project))
+    assert len(engine.llm.backend.calls) == 2
+    q = project.questions.pending()
+    assert {o.id for o in q.options} == {"skip", "end"}
+    assert q.refs[0] == project.archive.latest("idea/reading_status.json")
+    report = read(project, "idea/reading_status.json")
+    assert report["done"] == 2 and len(report["failed"]) == 2
+    assert all(t["attempts"] == 0 and t["retryable"] is False for t in report["failed"])
+    project.questions.answer(q.question_id, "skip", request_id="accept-empty-source")
+    drive(engine, S.Paused)
+    assert engine.ck.scratch["idea"]["phase"] == "refine"
+    assert len(read(project, "idea/merge_input.json")["incomplete_reading"]) == 2
+    assert not any('s2:test0' in str(c.messages) for c in engine.llm.backend.calls if c.prompt_id.endswith('_reader'))
+
+
+def test_all_empty_sources_only_offer_end_without_calling_models(air_home):
+    from airesearcher.stages.idea.storage import append_papers
+
+    project, engine, papers = seed(air_home)
+    papers[0].abstract = ""
+    append_papers(engine.build_context(), papers)
+    drive(engine, S.Paused)
+    assert not engine.llm.backend.calls and not cards(project)
+    assert {o.id for o in project.questions.pending().options} == {"end"}
+
+
+def test_reading_status_saved_once_per_change_and_not_for_timing_only(air_home):
+    project, engine, _ = seed(air_home, count=5, concurrency=1)
+    while engine.ck.scratch["idea"]["phase"] == "read":
+        engine.tick()
+    status = project.archive.latest("idea/reading_status.json")
+    assert status.version == 10
+    events = [e for e in project.events.query(types=["artifact.created"])
+              if any(r.artifact_id == "idea/reading_status.json" for r in e.refs)]
+    assert len(events) == 10
+    state = engine.ck.scratch["idea"]
+    before = state["reading_active_seconds"]
+    readers.read_step(engine.build_context(), state)
+    assert project.archive.latest("idea/reading_status.json") == status
+    assert state["reading_active_seconds"] > before

@@ -244,9 +244,10 @@ def test_coordinator_invalid_evidence_is_rejected(air_home, bad):
             result["themes"][0]["points"].pop()
         return result
     project, engine, _ = seed(air_home, output=output)
-    engine.tick()
-    result = engine.tick().result
-    assert isinstance(result, Error) and result.retryable
+    drive(engine, S.Paused)
+    assert project.questions.pending()
+    assert len(engine.llm.backend.calls) == 2
+    assert [a["status"] for a in read(project, "merge_attempts.json")["attempts"]] == ["failed", "failed"]
     assert not (project.root / "idea/merge_coordinator.json").exists()
 
 

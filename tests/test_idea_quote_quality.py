@@ -73,3 +73,18 @@ def test_cached_quality_audit_is_read_only_and_never_calls_model(air_home):
     assert len(engine.llm.backend.calls) == calls
     assert all((project.root / name).read_bytes() == content for name, content in before.items())
     assert json.loads(json.dumps(report))["rechecked_quote_matches"] == 0
+
+
+@pytest.mark.parametrize("location", ["p.2, table 1", "p.2, section 4.1", "p.2, abstract", "p.2; Appendix F"])
+def test_page_with_section_or_table_label_still_checks_the_declared_page(location):
+    checker = QuoteVerifier("[p.1]\nWrong page quotation.\n[p.2]\nExact passage on the declared page.")
+    checked = checker.check(item("Exact passage on the declared page", location), "full_text")
+    assert checked.quote_verified is True
+    assert checker.check(item("Wrong page quotation", location), "full_text").quote_verified is False
+
+
+@pytest.mark.parametrize("location", ["table 1", "section 2", "p.2, table 1 p.1",
+                                      "p.2, arbitrary text", "p.999, table 1"])
+def test_locator_labels_cannot_substitute_for_pages_or_smuggle_other_pages(location):
+    checker = QuoteVerifier("[p.1]\nHidden text.\n[p.2]\nVisible text.")
+    assert checker.check(item("Hidden text", location), "full_text").quote_verified is False

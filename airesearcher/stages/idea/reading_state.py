@@ -16,6 +16,8 @@ def receipt_path(task):
 
 def sync_task(task, saved):
     task.update(status=saved["status"], attempts=saved["attempts"], last_error=saved.get("last_error", ""))
+    if "retryable" in saved:
+        task["retryable"] = saved["retryable"]
 
 
 def write_receipt(ctx, task, saved):
@@ -78,11 +80,19 @@ def reading_decision(ctx, state, tasks, receipts):
     if not blocked:
         state.pop("reading_decision", None)
         return None
+    retryable = [task for task in blocked if receipts[task["card_id"]].get("retryable", True)]
+    # Frozen empty input cannot be repaired by regeneration; finish readable tasks before asking to skip.
+    if not retryable and any(task["status"] in {"pending", "started"} for task in tasks):
+        return None
     waiting = state.get("reading_decision")
     answer = ctx.answer
     if (waiting and answer and answer.question_id == state.get("asked")
             and answer.answered_by == "user" and answer.choice in {"retry", "skip"}):
         targets = waiting["card_ids"]
+        if answer.choice == "retry":
+            targets = [cid for cid in targets if receipts[cid].get("retryable", True)]
+            if not targets:
+                raise ValueError("These tasks have no readable source; paid retries cannot repair them")
         if answer.choice == "skip" and not any(task["status"] == "done" for task in tasks):
             raise ValueError("Reading cannot continue with no successful cards")
         for task in tasks:
@@ -112,7 +122,9 @@ def reading_decision(ctx, state, tasks, receipts):
             f"{len(blocked)} blocked task(s). Project model spend recorded so far: USD {used:.6f}. "
             "Retrying these tasks may incur additional charges; in-flight/failed transport costs may be uncertain. "
             "Inspect the saved attempts before deciding. Blocked tasks: " + ", ".join(ids))
-    options = [QuestionOption(id="retry", label="Retry blocked tasks (may incur additional model charges)")]
+    text += " Tasks with no readable frozen source cannot be retried."
+    options = ([QuestionOption(id="retry", label="Retry repairable tasks (may incur additional model charges)")]
+               if retryable else [])
     if any(task["status"] == "done" for task in tasks):
         options.append(QuestionOption(id="skip", label="Accept missing reading and continue with valid cards"))
     options.append(QuestionOption(id="end", label="End this project", default=True))

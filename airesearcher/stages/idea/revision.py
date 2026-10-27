@@ -160,6 +160,9 @@ def incremental_step(ctx, state, stage):
 
     scoped = scoped_context(ctx, state)
     child = state["revision_literature"]
+    # The engine stores child-stage questions on the outer idea state.
+    if ctx.answer is not None and ctx.answer.question_id == state.get("asked"):
+        child["asked"] = ctx.answer.question_id
     try:
         prepare_incremental(ctx, scoped, state)
         phase = child["phase"]

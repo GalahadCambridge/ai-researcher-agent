@@ -1,4 +1,4 @@
-"""Authorize bounded selection retries without discarding earlier attempts or costs."""
+"""Authorize bounded literature retries without discarding earlier attempts or costs."""
 
 from airesearcher.core.models.question import Question, QuestionOption
 from airesearcher.engine.stage import Stop
@@ -25,7 +25,8 @@ def request_retry(ctx, state, name, path, attempts, reason):
                  QuestionOption(id="end", label="End this project", default=True)],
         refs=[ref],
     )
-    raise SelectionNeedsDecision(Stop("A decision is required before another selection call.", question=question))
+    raise SelectionNeedsDecision(Stop("A decision is required before another literature synthesis or selection call.",
+                                      question=question))
 
 
 def prepare_window(ctx, state, name, path, attempts):

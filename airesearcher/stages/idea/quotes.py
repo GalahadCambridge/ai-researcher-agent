@@ -54,6 +54,11 @@ class QuoteVerifier:
             return None
         numbers = set()
         for group in groups:
+            # Recognize bounded section/table labels, never free-form text or extra page numbers.
+            label = re.fullmatch(r"(?:abstract|(?:section|sec\.?|table|fig(?:ure)?\.?|appendix)"
+                                 r"\s+[A-Za-z0-9]+(?:[.\-][A-Za-z0-9]+)*)", group, re.I)
+            if label:
+                continue
             page = re.fullmatch(r"pp?\.?\s*(\d+)(?:\s*[-–—]\s*(\d+))?", group, re.I)
             if not page:
                 return None
@@ -61,7 +66,7 @@ class QuoteVerifier:
             if last < first or last - first > 20:
                 return None
             numbers.update(range(first, last + 1))
-        if len(numbers) > 40 or not all(str(number) in self.page_text for number in numbers):
+        if not numbers or len(numbers) > 40 or not all(str(number) in self.page_text for number in numbers):
             return None
         pieces, previous = [], None
         for number in sorted(numbers):

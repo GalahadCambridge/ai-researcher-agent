@@ -10,6 +10,7 @@ from airesearcher.core.models.literature import ReadingCard
 from airesearcher.engine.stage import Continue, Error
 from airesearcher.services.literature import load_papers
 
+from .attempts import SelectionNeedsDecision
 from .conflicts import (
     add_coordinator_conflicts,
     conflict_refs,
@@ -18,6 +19,7 @@ from .conflicts import (
     rule_conflicts,
     verified_acceptance,
 )
+from .coordinator import request_coordinator
 from .models import Adjudication, CoordinatorOutput, ReadingConflict, ReadingSummary, ResearchGap
 from .quotes import QuoteVerifier
 from .render import render_reading_summary
@@ -85,11 +87,22 @@ def _snapshot(ctx):
 
 
 def _validate_output(output, refs):
-    evidence = [point.evidence for theme in output.themes for point in theme.points]
-    evidence += [point.evidence for point in output.feasibility_notes] + [gap.evidence for gap in output.gaps]
-    evidence += [conflict.evidence for conflict in output.conflicts]
-    if any(not item or len(set(item)) != len(item) or any(ref not in refs for ref in item) for item in evidence):
-        raise ValueError("Coordinator evidence must cite distinct existing reading-card items")
+    groups = [(f"themes[{i}].points[{j}]", point.evidence, False)
+              for i, theme in enumerate(output.themes) for j, point in enumerate(theme.points)]
+    groups += [(f"feasibility_notes[{i}]", point.evidence, False)
+               for i, point in enumerate(output.feasibility_notes)]
+    groups += [(f"conflicts[{i}]", conflict.evidence, False) for i, conflict in enumerate(output.conflicts)]
+    for gap in output.gaps:
+        # Unsupported candidates remain open questions, never established research gaps.
+        if not gap.evidence:
+            gap.status = "to_verify"
+        groups.append((f"gaps[{gap.gap_id}]", gap.evidence, True))
+    for location, item, allow_empty in groups:
+        unknown = [ref for ref in item if ref not in refs]
+        if (not item and not allow_empty) or len(set(item)) != len(item) or unknown:
+            raise ValueError(f"{location}: evidence must cite distinct existing reading-card items; "
+                             f"empty={not item}, duplicates={len(set(item)) != len(item)}, unknown={unknown}")
+    evidence = [item for _, item, _ in groups]
     covered = {refs[ref][0].card_id for item in evidence for ref in item}
     if covered != {card.card_id for card, _ in refs.values()}:
         raise ValueError("Coordinator output must cover every successful reading card")
@@ -97,7 +110,7 @@ def _validate_output(output, refs):
         raise ValueError("Coordinator output contains duplicate gap IDs")
 
 
-def _coordinate(ctx, snapshot, refs, rules):
+def _coordinate(ctx, state, snapshot, refs, rules):
     if not refs:
         return {"input_sha256": snapshot["input_sha256"],
                 "output": CoordinatorOutput(themes=[], feasibility_notes=[], gaps=[], conflicts=[]).model_dump(),
@@ -106,20 +119,22 @@ def _coordinate(ctx, snapshot, refs, rules):
               "based_on": card["based_on"], "relevance_to_question": card["relevance_to_question"], "items": [
                   {"ref": f"{card['card_id']}#{i}", **item} for i, item in enumerate(card["items"])]}
              for card in snapshot["cards"]]
-    out = ctx.llm.complete(
-        role="idea.coordinator", prompt_id="idea/coordinator_merge", tier="strong",
-        response_schema=CoordinatorOutput,
+    result = request_coordinator(
+        ctx, state, snapshot["input_sha256"],
         variables={"goal": snapshot["goal"], "schema_json": CoordinatorOutput.model_json_schema(),
                    "merge_block": ctx.llm.wrap_untrusted(json.dumps({
                        "cards": cards, "gap_candidates": snapshot["gaps"],
                        "rule_conflicts": [c.model_dump(mode="json") for c in rules],
                        "incomplete_reading": snapshot["incomplete_reading"],
                    }, ensure_ascii=False), source="merge_input")},
+        validate=lambda output: _validate_output(output, refs),
     )
-    _validate_output(out.parsed, refs)
-    conflicts = add_coordinator_conflicts(out.parsed.conflicts, refs, rules)
-    return {"input_sha256": snapshot["input_sha256"], "output": out.parsed.model_dump(mode="json"),
-            "conflicts": [c.model_dump(mode="json") for c in conflicts], "trace": _trace(out)}
+    if result is None:
+        return None
+    output = CoordinatorOutput.model_validate(result["output"])
+    conflicts = add_coordinator_conflicts(output.conflicts, refs, rules)
+    return {"input_sha256": snapshot["input_sha256"], **result,
+            "conflicts": [c.model_dump(mode="json") for c in conflicts]}
 
 
 def _review(ctx, conflict, snapshot, refs, receipts):
@@ -207,7 +222,10 @@ def merge_step(ctx, state):
         cards = [ReadingCard.model_validate(card) for card in snapshot["cards"]]
         refs = indexed_items(cards)
         if not ctx.archive.latest(coordinator_path):
-            save_json(ctx, coordinator_path, _coordinate(ctx, snapshot, refs, rule_conflicts(refs)))
+            coordinated = _coordinate(ctx, state, snapshot, refs, rule_conflicts(refs))
+            if coordinated is None:
+                return Continue("Invalid coordinator response saved; one targeted repair remains")
+            save_json(ctx, coordinator_path, coordinated)
             return Continue("Coordinator synthesis and conflict candidates saved")
         coordinated = _load(ctx, coordinator_path)
         if coordinated["input_sha256"] != snapshot["input_sha256"]:
@@ -248,7 +266,9 @@ def merge_step(ctx, state):
             "review_attempts": sum(r["status"] != "skipped" for r in receipts),
             "note": "Original reading cards are preserved. Rule matches and model reviews are not factual guarantees.",
         })
-    except (ValueError, KeyError, OSError) as exc:
-        return Error(f"Merge input or output validation failed: {exc}", retryable=True)
+    except SelectionNeedsDecision as exc:
+        return exc.stop
+    except (ValueError, KeyError, TypeError, OSError) as exc:
+        return Error(f"Merge input or output validation failed: {exc}", retryable=False)
     state["phase"] = "refine"
     return Continue("Reading summary and conflict ledger saved; research-question refinement comes next")

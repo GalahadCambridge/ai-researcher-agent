@@ -12,6 +12,7 @@ from airesearcher.core.project import Project
 from airesearcher.engine.engine import ProjectEngine
 from airesearcher.engine.stage import Error
 from airesearcher.llm.gateway import LLMGateway
+from airesearcher.stages.idea import readers
 from airesearcher.stages.idea.quotes import QuoteVerifier
 from airesearcher.stages.idea.readers import FEASIBILITY_FIELDS, METHOD_FIELDS, card_id
 from airesearcher.stages.idea.stage import IdeaStage
@@ -162,11 +163,23 @@ def test_saved_receipt_restores_card_without_reading_again(air_home):
     assert [r.prompt_id for r in resumed.llm.backend.calls] == ["idea/gap_analyst", "idea/coordinator_merge"]
 
 
-def test_concurrency_limits_inflight_without_queued_extra_tasks(air_home):
+@pytest.mark.parametrize("receipt_delay", [0, 0.15], ids=["normal", "slow-receipt"])
+def test_concurrency_limits_inflight_without_queued_extra_tasks(air_home, monkeypatch, receipt_delay):
+    original_start = readers.start_attempt
+
+    def delayed_start(*args, **kwargs):
+        # Reproduce slow receipt persistence without assuming how quickly workers are scheduled.
+        if receipt_delay:
+            time.sleep(receipt_delay)
+        return original_start(*args, **kwargs)
+
+    monkeypatch.setattr(readers, "start_attempt", delayed_start)
+
     class Tracker(DemoLLM):
         def __init__(self):
             super().__init__(scripts())
             self.mutex = threading.Lock()
+            self.readers_ready = threading.Barrier(2)
             self.active = self.peak = 0
 
         def call(self, req):
@@ -174,7 +187,9 @@ def test_concurrency_limits_inflight_without_queued_extra_tasks(air_home):
                 self.active += 1
                 self.peak = max(self.peak, self.active)
             try:
-                time.sleep(0.03)
+                if req.role.startswith("idea.reader."):
+                    # Only reader requests arrive in pairs; gap and coordinator calls remain single.
+                    self.readers_ready.wait(timeout=10)
                 return super().call(req)
             finally:
                 with self.mutex:
@@ -204,8 +219,10 @@ def test_no_text_does_not_call_model_or_fabricate_card(air_home):
     drive(engine, S.Paused)
     assert not cards(project) and not engine.llm.backend.calls
     report = json.loads((project.root / "idea/reading_status.json").read_text(encoding="utf-8"))
-    assert len(report["failed"]) == 1
-    assert project.questions.pending() and report["status_counts"].get("pending") == 1
+    assert len(report["failed"]) == 2
+    assert all(t["attempts"] == 0 and t["retryable"] is False for t in report["failed"])
+    assert {o.id for o in project.questions.pending().options} == {"end"}
+    assert project.questions.pending() and report["status_counts"] == {"failed": 2}
 
 
 def test_gap_unknown_evidence_is_rejected(air_home):

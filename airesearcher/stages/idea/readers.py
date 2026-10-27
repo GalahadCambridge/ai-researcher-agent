@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from airesearcher.core.fsutil import now, sha256_bytes
 from airesearcher.core.models.literature import ReadingCard
-from airesearcher.engine.stage import Continue, Error
+from airesearcher.engine.stage import Continue, Error, Stop
 from airesearcher.llm.gateway import extract_json
 from airesearcher.services.literature import load_papers
 
@@ -191,7 +191,7 @@ def _reading_report(ctx, state, manifest, tasks, sources, receipts):
         "note": "Text matching does not verify semantics. Missing reading requires explicit user acknowledgement.",
         "active_seconds": state.get("reading_active_seconds", 0),
     }
-    save_json(ctx, "idea/reading_status.json", report)
+    state["_reading_report"] = report
     failed = counts.get("failed", 0)
     pending = counts.get("pending", 0) + counts.get("started", 0)
     ctx.progress(f"Reading: {len(cards)} valid, {failed} blocked, {pending} pending, "
@@ -201,18 +201,26 @@ def _reading_report(ctx, state, manifest, tasks, sources, receipts):
 
 
 def read_step(ctx, state):
-    started = time.perf_counter()
+    started, result = time.perf_counter(), None
     try:
-        return _read_step(ctx, state)
+        result = _read_step(ctx, state)
+        return result
     finally:
         state["reading_active_seconds"] = state.get("reading_active_seconds", 0.0) + time.perf_counter() - started
-        if ctx.archive.latest("idea/reading_status.json"):
-            path = ctx.root / "idea/reading_status.json"
-            report = json.loads(path.read_text(encoding="utf-8"))
+        report = state.pop("_reading_report", None)
+        if report is not None:
             report["active_seconds"] = state["reading_active_seconds"]
             report["timing_definition"] = ("Reading-step active wall time; "
                                            "excludes inter-step waits and offline downtime.")
-            save_json(ctx, "idea/reading_status.json", report)
+            path = "idea/reading_status.json"
+            previous = (json.loads((ctx.root / path).read_text(encoding="utf-8"))
+                        if ctx.archive.latest(path) else {})
+            def substantive(value):
+                return {k: v for k, v in value.items() if k != "active_seconds"}
+            if substantive(previous) != substantive(report):
+                save_json(ctx, path, report)
+            if isinstance(result, Stop) and result.question is not None:
+                result.question.refs = [ctx.archive.latest(path)]
 
 
 def _read_step(ctx, state):
@@ -243,6 +251,12 @@ def _read_step(ctx, state):
                                 interrupted=True)
             if saved["status"] == "done":
                 _restore_card(ctx, task, source, saved)
+            elif not source["text"].strip() and saved["status"] != "skipped":
+                if saved.get("retryable") is not False:
+                    saved.update(status="failed", retryable=False,
+                                 last_error="The frozen input has no readable full text or abstract; "
+                                            "retrying cannot supply missing source text.")
+                    write_receipt(ctx, task, saved)
         _reading_report(ctx, state, manifest, tasks, sources, receipts)
         decision = reading_decision(ctx, state, tasks, receipts)
         if decision is not None:
@@ -260,10 +274,6 @@ def _read_step(ctx, state):
                 if ctx.budget.status().exhausted:
                     break
                 source, saved = sources[task["paper_id"]], receipts[task["card_id"]]
-                if not source["text"].strip():
-                    saved.update(status="failed", last_error="The paper has no readable full text or abstract")
-                    write_receipt(ctx, task, saved)
-                    break
                 prompt_id = f"idea/{task['role']}_reader"
                 version = ctx.llm.prompts.load(prompt_id, ctx.project.prompt_pins.get(prompt_id)).version
                 job = {**task, "prompt_version": version, "validation_errors": saved.get("last_error", "")}
