@@ -1,9 +1,10 @@
 """Internal idea-stage output schemas; frozen handoff models remain unchanged."""
 
 import re
+from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, create_model, field_validator
 
 from airesearcher.core.models.idea import SelectedIdea
 from airesearcher.core.models.literature import CardItem
@@ -62,6 +63,30 @@ class ScreenBatch(BaseModel):
 class ReaderOutput(BaseModel):
     items: list[CardItem]
     relevance_to_question: str = Field(min_length=1)
+
+
+class BoundedReadingItem(CardItem):
+    """One concise fact; quotation verification remains the responsibility of code."""
+
+    model_config = ConfigDict(extra="forbid")
+    content: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=800)]
+    source_loc: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
+
+
+@lru_cache
+def reader_output_schema(role: str, fields: tuple[str, ...]) -> type[BaseModel]:
+    """Describe an exact ordered field tuple without changing the public ReadingCard model."""
+    item_types = tuple(create_model(
+        f"{role.title()}{name.title().replace('_', '')}Item",
+        __base__=BoundedReadingItem, field=(Literal[name], ...),
+    ) for name in fields)
+    return create_model(
+        f"{role.title()}ReaderOutput",
+        __config__=ConfigDict(extra="forbid"),
+        items=(tuple[item_types], ...),
+        relevance_to_question=(Annotated[str, StringConstraints(
+            strip_whitespace=True, min_length=1, max_length=600)], ...),
+    )
 
 
 class ResearchGap(BaseModel):

@@ -12,10 +12,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from airesearcher.core.fsutil import now, sha256_bytes
 from airesearcher.core.models.literature import ReadingCard
 from airesearcher.engine.stage import Continue, Error
+from airesearcher.llm.gateway import extract_json
 from airesearcher.services.literature import load_papers
 
-from .models import GapAnalysis, ReaderOutput
+from .models import GapAnalysis, ReaderOutput, reader_output_schema
 from .quotes import QuoteVerifier
+from .reading_state import load_receipt, mark_failed, reading_decision, start_attempt, write_receipt
 from .storage import save_json
 
 METHOD_FIELDS = ["method", "task", "dataset", "metric", "baseline", "main_result", "setting", "limitation"]
@@ -78,24 +80,49 @@ def _validate_items(items, role, source, audit=None):
 
 
 def _read_one(ctx, source, task, goal):
-    if not source["text"].strip():
-        raise ValueError("The paper has no readable full text or abstract")
+    """Generate once; the scheduler saves the raw response before any card validation."""
     role = task["role"]
-    prompt = f"idea/{role}_reader"
-    out = ctx.llm.complete(
-        role=f"idea.reader.{role}", prompt_id=prompt, tier="fast", response_schema=ReaderOutput,
+    version = task["prompt_version"]
+    schema = reader_output_schema(role, tuple(ROLE_FIELDS[role])) if version >= 4 else ReaderOutput
+    example = {"items": [{"field": field, "content": "Not mentioned", "kind": "agent_inference",
+                           "source_loc": "abstract", "quote": None, "confidence": "low"}
+                          for field in ROLE_FIELDS[role]], "relevance_to_question": "State the limited relevance."}
+    return ctx.llm.complete(
+        role=f"idea.reader.{role}", prompt_id=f"idea/{role}_reader", prompt_version=version,
+        tier="fast", response_schema=None if version >= 4 else ReaderOutput, max_retries=0,
         variables={"research_question": goal, "paper_id": source["paper_id"], "based_on": source["based_on"],
-                   "required_fields": json.dumps(ROLE_FIELDS[role]), "schema_json": ReaderOutput.model_json_schema(),
+                   "required_fields": json.dumps(ROLE_FIELDS[role]), "schema_json": schema.model_json_schema(),
+                   "example_json": json.dumps(example), "validation_errors": task.get("validation_errors", ""),
+                   "previous_output": ctx.llm.wrap_untrusted(task.get("previous_output", ""),
+                                                            source="previous_invalid_reading_output"),
                    "paper_block": ctx.llm.wrap_untrusted(source["text"], source=source["paper_id"])},
     )
-    if not out.parsed.relevance_to_question.strip():
+
+
+def _parse_response(response, source, task):
+    if response.get("finish_reason") == "length":
+        raise ValueError("Output reached the length limit; return a shorter complete JSON object")
+    out = ReaderOutput.model_validate_json(extract_json(response["text"]))
+    # Diagnose duplicate names explicitly before the fixed tuple reports positional errors.
+    fields = [item.field for item in out.items]
+    expected = ROLE_FIELDS[task["role"]]
+    duplicates = {field: count for field, count in Counter(fields).items() if count > 1}
+    missing, extra = sorted(set(expected) - set(fields)), sorted(set(fields) - set(expected))
+    if duplicates or missing or extra:
+        raise ValueError(f"Required role fields must appear exactly once; missing={missing}, "
+                         f"extra={extra}, duplicates={duplicates}. Return one item per field.")
+    if response["prompt_version"] >= 4:
+        schema = reader_output_schema(task["role"], tuple(expected))
+        out = schema.model_validate_json(extract_json(response["text"]))
+    if not out.relevance_to_question.strip():
         raise ValueError("Relevance to the research question must not be empty")
     audit = []
-    card = ReadingCard(card_id=task["card_id"], paper_id=source["paper_id"], role=role,
-                       based_on=source["based_on"], items=_validate_items(out.parsed.items, role, source, audit),
-                       relevance_to_question=out.parsed.relevance_to_question, model=out.model,
-                       prompt_id=out.prompt_id, prompt_version=out.prompt_version,
-                       call_id=out.call_id, created_at=now())
+    checked = _validate_items(out.items, task["role"], source, audit)
+    card = ReadingCard(card_id=task["card_id"], paper_id=source["paper_id"], role=task["role"],
+                       based_on=source["based_on"], items=checked,
+                       relevance_to_question=out.relevance_to_question, model=response["model"],
+                       prompt_id=response["prompt_id"], prompt_version=response["prompt_version"],
+                       call_id=response["call_id"], created_at=now())
     return card, audit
 
 
@@ -109,14 +136,79 @@ def _save_card(ctx, card):
     save_json(ctx, path, content, "reading_card")
 
 
+def _finish_response(ctx, task, source, saved, response):
+    try:
+        if response["input_sha256"] != source["input_sha256"]:
+            raise ValueError("Saved reading response belongs to different input")
+        card, audit = _parse_response(response, source, task)
+    except (ValueError, KeyError, TypeError) as exc:
+        mark_failed(ctx, task, saved, f"{type(exc).__name__}: {exc}")
+        ctx.events.append("literature.reading_failed", f"Invalid reading card: {task['card_id']}",
+                          actor="agent:idea", data={"card_id": task["card_id"], "attempts": saved["attempts"],
+                                                   "error": saved["last_error"], "call_id": response.get("call_id")})
+        return
+    saved.update(status="done", last_error="", card=card.model_dump(mode="json"), quote_checks=audit,
+                 response_path=saved["history"][-1]["response_path"])
+    saved["history"][-1].update(status="done", call_id=card.call_id)
+    write_receipt(ctx, task, saved)
+    _save_card(ctx, card)
+
+
+def _restore_card(ctx, task, source, saved):
+    card = ReadingCard.model_validate(saved["card"])
+    if (card.card_id, card.paper_id, card.role, card.based_on) != (
+            task["card_id"], task["paper_id"], task["role"], source["based_on"]):
+        raise ValueError("Reading-card identity does not match the task")
+    card.items = _validate_items(card.items, task["role"], source)
+    _save_card(ctx, card)
+    if saved.get("quote_checks") is not None:
+        path = f"idea/quote_checks/{card.card_id}.json"
+        data = {"items": saved["quote_checks"], "input_sha256": source["input_sha256"], "call_id": card.call_id}
+        if not ctx.archive.latest(path) or json.loads((ctx.root / path).read_text(encoding="utf-8")) != data:
+            save_json(ctx, path, data)
+
+
+def _reading_report(ctx, state, manifest, tasks, sources, receipts):
+    cards, audits = [], []
+    for task in tasks:
+        if task["status"] == "done":
+            saved = receipts[task["card_id"]]
+            _restore_card(ctx, task, sources[task["paper_id"]], saved)
+            cards.append(ReadingCard.model_validate(saved["card"]))
+            audits.extend(saved.get("quote_checks", []))
+    items = [item for card in cards for item in card.items]
+    counts = dict(Counter(t["status"] for t in tasks))
+    report = {
+        "quote_check_reasons": dict(Counter(a["reason"] for a in audits)),
+        "reading_mode": manifest["reading_mode"], "planned_tasks": len(tasks), "done": len(cards),
+        "failed": [dict(t) for t in tasks if t["status"] in {"failed", "skipped"}],
+        "status_counts": counts, "card_ids": [card.card_id for card in cards],
+        "quote_verified_count": sum(i.quote_verified is True for i in items),
+        "quote_failed_count": sum(i.quote_verified is False for i in items),
+        "without_quote_count": sum(i.quote_verified is None for i in items),
+        "source_warnings": [{"paper_id": p["paper_id"], "warning": p["warning"]}
+                            for p in manifest["papers"] if p["warning"]],
+        "note": "Text matching does not verify semantics. Missing reading requires explicit user acknowledgement.",
+        "active_seconds": state.get("reading_active_seconds", 0),
+    }
+    save_json(ctx, "idea/reading_status.json", report)
+    failed = counts.get("failed", 0)
+    pending = counts.get("pending", 0) + counts.get("started", 0)
+    ctx.progress(f"Reading: {len(cards)} valid, {failed} blocked, {pending} pending, "
+                 f"{counts.get('skipped', 0)} accepted missing",
+                 done=len(cards), total=len(tasks), unit="reading tasks")
+    return report
+
+
 def read_step(ctx, state):
     started = time.perf_counter()
     try:
         return _read_step(ctx, state)
     finally:
         state["reading_active_seconds"] = state.get("reading_active_seconds", 0.0) + time.perf_counter() - started
-        if state.get("phase") == "gap" and ctx.archive.latest("idea/reading_status.json"):
-            report = json.loads((ctx.root / "idea/reading_status.json").read_text(encoding="utf-8"))
+        if ctx.archive.latest("idea/reading_status.json"):
+            path = ctx.root / "idea/reading_status.json"
+            report = json.loads(path.read_text(encoding="utf-8"))
             report["active_seconds"] = state["reading_active_seconds"]
             report["timing_definition"] = ("Reading-step active wall time; "
                                            "excludes inter-step waits and offline downtime.")
@@ -134,77 +226,73 @@ def _read_step(ctx, state):
         {"paper_id": pid, "role": role, "card_id": card_id(pid, role), "status": "pending", "attempts": 0}
         for pid in sources for role in roles
     ])
-    for task in tasks:
-        path = f"idea/reading_receipts/{task['card_id']}.json"
-        if not ctx.archive.latest(path):
-            continue
-        saved = json.loads((ctx.root / path).read_text(encoding="utf-8"))
-        source = sources[task["paper_id"]]
-        if saved["input_sha256"] != source["input_sha256"]:
-            return Error((
-                "Cached reading input does not match; use a separate project or regenerate the "
-                "input"
-            ), retryable=False)
-        if saved["status"] == "done":
-            card = ReadingCard.model_validate(saved["card"])
-            if (card.card_id, card.paper_id, card.role, card.based_on) != (
-                    task["card_id"], task["paper_id"], task["role"], source["based_on"]):
-                return Error("Reading-card identity does not match the task", retryable=False)
-            card.items = _validate_items(card.items, task["role"], source)
-            _save_card(ctx, card)
-            if saved.get("quote_checks") is not None:
-                save_json(ctx, f"idea/quote_checks/{card.card_id}.json", {"items": saved["quote_checks"],
-                          "input_sha256": source["input_sha256"], "call_id": card.call_id})
-        task.update(status=saved["status"], attempts=saved["attempts"], last_error=saved.get("last_error", ""))
-    pending = [t for t in tasks if t["status"] == "pending"][:6]
-    if pending:
-        # Workers only call/read/validate; task state and artifact writes stay on the scheduling thread.
-        with ThreadPoolExecutor(max_workers=min(concurrency, len(pending), 6)) as pool:
-            futures = {pool.submit(_read_one, ctx, sources[t["paper_id"]], t, manifest["goal"]): t for t in pending}
-            for future in as_completed(futures):
-                task = futures[future]
-                task["attempts"] += 1
-                saved = {"input_sha256": sources[task["paper_id"]]["input_sha256"],
-                         "attempts": task["attempts"], "last_error": ""}
-                try:
-                    card, audit = future.result()
-                    task.update(status="done", last_error="")
-                    saved.update(status="done", card=card.model_dump(mode="json"), quote_checks=audit)
-                except Exception as exc:
-                    task.update(status="failed" if task["attempts"] >= 2 else "pending",
-                                last_error=f"{type(exc).__name__}: {exc}")
-                    saved.update(status=task["status"], last_error=task["last_error"])
-                save_json(ctx, f"idea/reading_receipts/{task['card_id']}.json", saved)
-                if task["status"] == "done":
-                    _save_card(ctx, card)
-        return Continue(f"Reading task progress: {sum(t['status'] == 'done' for t in tasks)}/{len(tasks)} completed")
-    cards = [ReadingCard.model_validate_json((ctx.root / f"idea/reading_cards/{t['card_id']}.json").read_text(
-        encoding="utf-8")) for t in tasks if t["status"] == "done"]
-    items = [item for card in cards for item in card.items]
-    audits = []
-    for card in cards:
-        path = f"idea/quote_checks/{card.card_id}.json"
-        if ctx.archive.latest(path):
-            audits.extend(json.loads((ctx.root / path).read_text(encoding="utf-8"))["items"])
-    report = {"quote_check_reasons": dict(Counter(a["reason"] for a in audits)),
-              "reading_mode": manifest["reading_mode"], "planned_tasks": len(tasks), "done": len(cards),
-              "failed": [t for t in tasks if t["status"] == "failed"], "card_ids": [c.card_id for c in cards],
-              "quote_verified_count": sum(i.quote_verified is True for i in items),
-              "quote_failed_count": sum(i.quote_verified is False for i in items),
-              "without_quote_count": sum(i.quote_verified is None for i in items),
-              "source_warnings": [{"paper_id": p["paper_id"], "warning": p["warning"]}
-                                  for p in manifest["papers"] if p["warning"]],
-              "note": (
-                  "Text matching does not verify semantics or conclusions; failed tasks and items "
-                  "without evidence must be retained."
-              )}
-    save_json(ctx, "idea/reading_status.json", report)
-    state["phase"] = "gap"
-    return Continue(
-        f"Reading cards ready: {len(cards)} cards, {len(report['failed'])} failed tasks; "
-        f"gap candidates will be generated next"
-    )
+    receipts = {}
+    try:
+        for task in tasks:
+            source = sources[task["paper_id"]]
+            saved = load_receipt(ctx, task, source)
+            receipts[task["card_id"]] = saved
+            if saved["status"] == "started":
+                path = saved["history"][-1]["response_path"] if saved["history"] else None
+                if path and ctx.archive.latest(path):
+                    response = json.loads((ctx.root / path).read_text(encoding="utf-8"))
+                    _finish_response(ctx, task, source, saved, response)
+                else:
+                    mark_failed(ctx, task, saved,
+                                "Reading was interrupted before a response was saved; prior cost is uncertain.",
+                                interrupted=True)
+            if saved["status"] == "done":
+                _restore_card(ctx, task, source, saved)
+        _reading_report(ctx, state, manifest, tasks, sources, receipts)
+        decision = reading_decision(ctx, state, tasks, receipts)
+        if decision is not None:
+            return decision
+    except (ValueError, KeyError, TypeError) as exc:
+        return Error(f"Reading recovery validation failed: {exc}", retryable=False)
 
+    # Admit only in-flight workers: no queued batch continues charging after a terminal failure.
+    pending = sorted((t for t in tasks if t["status"] == "pending"), key=lambda t: -t["attempts"])
+    pending = pending[:min(concurrency, 6)]
+    if pending:
+        with ThreadPoolExecutor(max_workers=len(pending)) as pool:
+            futures = {}
+            for task in pending:
+                if ctx.budget.status().exhausted:
+                    break
+                source, saved = sources[task["paper_id"]], receipts[task["card_id"]]
+                if not source["text"].strip():
+                    saved.update(status="failed", last_error="The paper has no readable full text or abstract")
+                    write_receipt(ctx, task, saved)
+                    break
+                prompt_id = f"idea/{task['role']}_reader"
+                version = ctx.llm.prompts.load(prompt_id, ctx.project.prompt_pins.get(prompt_id)).version
+                job = {**task, "prompt_version": version, "validation_errors": saved.get("last_error", "")}
+                if saved["history"]:
+                    old_path = saved["history"][-1]["response_path"]
+                    if ctx.archive.latest(old_path):
+                        job["previous_output"] = json.loads(
+                            (ctx.root / old_path).read_text(encoding="utf-8")).get("text", "")[:12000]
+                response_path = start_attempt(ctx, task, saved, version)
+                futures[pool.submit(_read_one, ctx, source, job, manifest["goal"])] = (task, response_path)
+            for future in as_completed(futures):
+                task, response_path = futures[future]
+                source, saved = sources[task["paper_id"]], receipts[task["card_id"]]
+                try:
+                    out = future.result()
+                except Exception as exc:
+                    mark_failed(ctx, task, saved, f"Model request failed ({type(exc).__name__}): {str(exc)[:1800]}")
+                    continue
+                response = {"text": out.text, "finish_reason": out.finish_reason, "usage": out.usage,
+                            "call_id": out.call_id, "model": out.model, "prompt_id": out.prompt_id,
+                            "prompt_version": out.prompt_version, "input_sha256": source["input_sha256"]}
+                save_json(ctx, response_path, response)
+                _finish_response(ctx, task, source, saved, response)
+        _reading_report(ctx, state, manifest, tasks, sources, receipts)
+        decision = reading_decision(ctx, state, tasks, receipts)
+        return decision or Continue("Reading batch saved; inspect valid, blocked and pending counts.")
+    _reading_report(ctx, state, manifest, tasks, sources, receipts)
+    state["phase"] = "gap"
+    return Continue("Reading complete; missing tasks were explicitly acknowledged before gap analysis.")
 
 def gap_step(ctx, state):
     path = "idea/gaps.json"

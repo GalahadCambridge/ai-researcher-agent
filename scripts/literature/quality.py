@@ -51,24 +51,30 @@ def audit_cached_reading(workspace):
         if (call["prompt_id"], call["prompt_version"], call["model"]) != (
                 card["prompt_id"], card["prompt_version"], card["model"]):
             raise ValueError("The archived card does not match its call trace")
-        prompt = gateway.prompts.load(card["prompt_id"], card["prompt_version"])
-        system, user = prompt.render({"research_question": manifest["goal"], "paper_id": source["paper_id"],
-            "based_on": source["based_on"], "required_fields": json.dumps(ROLE_FIELDS[card["role"]]),
-            "schema_json": ReaderOutput.model_json_schema(),
-            "paper_block": gateway.wrap_untrusted(source["text"], source=source["paper_id"])})
-        candidates = gateway.resolve(call["role"], card["prompt_id"], "fast", prompt.tier)
-        entry = next((m.entry for m in candidates if m.entry.litellm_model == card["model"]), None)
-        if entry is None:
-            unavailable.append({"card_id": cid, "reason": "original_model_configuration_unavailable"})
-            continue
-        key = LLMCache.key(entry.litellm_model,
-            [{"role": "system", "content": system + UNTRUSTED_NOTICE}, {"role": "user", "content": user}],
-            "ReaderOutput", entry.temperature)
-        try:
-            cached = LLMCache().get(key)
-        except CacheMiss:
-            unavailable.append({"card_id": cid, "reason": "original_reply_cache_unavailable"})
-            continue
+        if receipt.get("response_path"):
+            key = "archive:" + receipt["response_path"]
+            cached = archived_json(project, receipt["response_path"])
+            if cached["call_id"] != card["call_id"] or cached["input_sha256"] != source_hash:
+                raise ValueError("The saved reading response does not match the card or source")
+        else:
+            prompt = gateway.prompts.load(card["prompt_id"], card["prompt_version"])
+            system, user = prompt.render({"research_question": manifest["goal"], "paper_id": source["paper_id"],
+                "based_on": source["based_on"], "required_fields": json.dumps(ROLE_FIELDS[card["role"]]),
+                "schema_json": ReaderOutput.model_json_schema(),
+                "paper_block": gateway.wrap_untrusted(source["text"], source=source["paper_id"])})
+            candidates = gateway.resolve(call["role"], card["prompt_id"], "fast", prompt.tier)
+            entry = next((m.entry for m in candidates if m.entry.litellm_model == card["model"]), None)
+            if entry is None:
+                unavailable.append({"card_id": cid, "reason": "original_model_configuration_unavailable"})
+                continue
+            key = LLMCache.key(entry.litellm_model,
+                [{"role": "system", "content": system + UNTRUSTED_NOTICE}, {"role": "user", "content": user}],
+                "ReaderOutput", entry.temperature)
+            try:
+                cached = LLMCache().get(key)
+            except CacheMiss:
+                unavailable.append({"card_id": cid, "reason": "original_reply_cache_unavailable"})
+                continue
         output = ReaderOutput.model_validate_json(extract_json(cached["text"]))
         if {item.field for item in output.items} != set(ROLE_FIELDS[card["role"]]):
             raise ValueError("The cached reply does not cover the required role fields")

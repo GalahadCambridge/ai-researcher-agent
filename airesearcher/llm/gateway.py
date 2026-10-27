@@ -105,6 +105,7 @@ class LLMResponse(BaseModel):
     prompt_id: str
     prompt_version: int
     cached: bool = False
+    finish_reason: str | None = None
 
 
 class ToolLoopResult(BaseModel):
@@ -351,7 +352,7 @@ class LLMGateway:
             raise LLMOutputError(f"{prompt_id}：{attempts} 次尝试后仍未得到可用结果（{schema_name}）：{error}")
         return LLMResponse(text=text, parsed=parsed, call_id=call_id, model=used.entry.litellm_model,
                            prompt_id=prompt.id,
-                           prompt_version=prompt.version, cached=cached,
+                           prompt_version=prompt.version, cached=cached, finish_reason=raw.finish_reason,
                            usage={"input_tokens": total_in, "output_tokens": total_out, "usd": round(total_usd, 6)})
 
     def _usd(self, raw: RawCompletion, m: ResolvedModel) -> float:

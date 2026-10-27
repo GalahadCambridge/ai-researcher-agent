@@ -1,5 +1,6 @@
 """Test final handoff, exact-version approvals, revision recovery, and incremental reading with fake models."""
 
+import json
 
 from airesearcher.core.models.common import ProjectState as S
 from airesearcher.core.models.idea import parse_selected_md
@@ -167,7 +168,10 @@ def test_cached_recovery_reuses_paid_reading_without_calling_backend(air_home):
     seed_cached_run(target, original.root)
     assert not target.archive.latest("idea/selected.md")
     assert target.config.llm_cache == "replay"
-    assert target.config.prompt_pins["idea/methods_reader"] == 3
+    calls = [json.loads(line) for line in (original.root / ".llm/calls.jsonl").read_text(
+        encoding="utf-8").splitlines()]
+    versions = {c["prompt_version"] for c in calls if c["prompt_id"] == "idea/methods_reader"}
+    assert versions == {target.config.prompt_pins["idea/methods_reader"]}
     engine = ProjectEngine(target, llm=demo_gateway(target),
                            stages={"idea": IdeaStage(source, fulltext_download=False)}, retry_delay=0)
     for _ in range(50):

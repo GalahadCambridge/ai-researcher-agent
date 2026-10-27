@@ -74,7 +74,7 @@ def test_two_roles_actual_source_and_trace(air_home):
     result = cards(project)
     assert {c.role for c in result} == {"methods", "feasibility"}
     assert all(c.paper_id == papers[0].paper_id and c.based_on == "abstract_only" for c in result)
-    assert all(c.call_id and c.model and c.prompt_version == 3 for c in result)
+    assert all(c.call_id and c.model and c.prompt_version == 4 for c in result)
     assert all(i.quote_verified is True and i.kind == "author_claim" for c in result for i in c.items)
     assert engine.ck.scratch["idea"]["phase"] == "refine"
     assert not project.approvals.pending() and not (project.root / "idea/selected.md").exists()
@@ -162,7 +162,7 @@ def test_saved_receipt_restores_card_without_reading_again(air_home):
     assert [r.prompt_id for r in resumed.llm.backend.calls] == ["idea/gap_analyst", "idea/coordinator_merge"]
 
 
-def test_concurrency_and_max_six_tasks_per_step(air_home):
+def test_concurrency_limits_inflight_without_queued_extra_tasks(air_home):
     class Tracker(DemoLLM):
         def __init__(self):
             super().__init__(scripts())
@@ -182,8 +182,8 @@ def test_concurrency_and_max_six_tasks_per_step(air_home):
     backend = Tracker()
     project, engine, _ = seed(air_home, count=4, backend=backend)
     engine.tick()
-    assert len(backend.calls) == 6 and backend.peak == 2
-    assert sum(t["status"] == "pending" for t in engine.ck.scratch["idea"]["read_tasks"]) == 2
+    assert len(backend.calls) == 2 and backend.peak == 2
+    assert sum(t["status"] == "pending" for t in engine.ck.scratch["idea"]["read_tasks"]) == 6
     drive(engine, S.Paused)
     assert len(cards(project)) == 8 and backend.peak == 2
 
@@ -204,7 +204,8 @@ def test_no_text_does_not_call_model_or_fabricate_card(air_home):
     drive(engine, S.Paused)
     assert not cards(project) and not engine.llm.backend.calls
     report = json.loads((project.root / "idea/reading_status.json").read_text(encoding="utf-8"))
-    assert len(report["failed"]) == 2
+    assert len(report["failed"]) == 1
+    assert project.questions.pending() and report["status_counts"].get("pending") == 1
 
 
 def test_gap_unknown_evidence_is_rejected(air_home):
