@@ -269,10 +269,11 @@ air dev check /tmp/ws
 | 流程引擎（状态机、检查点、重启恢复）、档案（版本、血缘、人工编辑检测）、审批、提问、预算、权限、事件日志 | **真实** |
 | 后台 API（FastAPI）、命令行 `air` | **真实**（SSE 每秒检查一次变化后推送） |
 | LLM 网关：`complete()`、工具调用循环 `tool_loop()`、按阶段选模型（提示文件、格式校验与重试、记账、调用日志、录制/回放） | **真实**；已用假模型测试，真实模型测试见第 9 节 |
-| 本地执行器 + 运行包装器、冒烟任务 `tasks/smoke` | **真实但精简**（没有环境 pip freeze、数据校验、GPU 串行），实验同学接手补全 |
+| 本地执行器 + 运行包装器、冒烟任务 `tasks/smoke` | **真实**：LocalExecutor 捕获 pip freeze/环境与硬件信息，执行数据检查、GPU 串行及 OOM 判定；模拟 executor 明确标记未采集的信息 |
 | 汇总统计 `services/runs.py`、引用核验 `services/literature.py` | **真实** |
-| 证据核验 `services/evidence.py` | **部分**：只做了数字重算、过期证据、结论相反、引用不存在四项检查 |
-| 文献检索、选题、实验计划、编码 Agent、分析决策、论文写作 | **假实现**（固定内容，不调用大模型） |
+| 证据核验 `services/evidence.py` | **真实**：确定性证据检查与追溯；`audit()` 仍留待 Phase 3 |
+| 论文写作 `stages/writing` | **真实**：绘图、Claim 绑定、LaTeX 编译、语义审查及有界定点修订；已做真实 Plan/Experiment → Writing 离线集成验证；真实模型仅验证部分链路，尚未完成集成后的完整轨迹 |
+| 文献检索、选题、实验计划、编码 Agent、分析决策 | **真实实现已集成**；默认项目仍可选择假阶段，真实 Plan/Experiment 的离线验证使用 FakeLLM/FakeExecutor，不产生研究结论 |
 | 测试替身 `FakeLLM`、`FakeExecutor`、`FakeLiterature`；skill 版本登记与 `air skills verify` | **真实**（给组员写测试用） |
 | SQLite 索引 | **没做**：目前直接读文件（数据量小，够用） |
 | GUI（`web/`，Vue 3 + Element Plus） | **真实**：P1~P14 全部页面、SSE 实时更新、审批防重复与过期处理；用法见 [web/README.md](web/README.md) |

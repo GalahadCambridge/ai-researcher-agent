@@ -1,0 +1,520 @@
+"""Template source selection, filling, dependencies, immutability and real uploads."""
+
+from __future__ import annotations
+
+import io
+import json
+import shutil
+import subprocess
+import zipfile
+from types import SimpleNamespace
+
+import pytest
+
+from airesearcher.core import templates
+from airesearcher.core.fsutil import sha256_file
+from airesearcher.skills.loader import SkillLoader
+from airesearcher.stages.writing import template as tpl
+from airesearcher.stages.writing._latex import TemplateError, active_text, commands
+from airesearcher.stages.writing.compile import compile_paper
+
+REAL_TEX = pytest.mark.skipif(not (shutil.which("latexmk") and shutil.which("kpsewhich")), reason="TeX not installed")
+BASE = "\\documentclass{article}\n\\title{Sample}\n\\author{Author}\n\\begin{document}\n\\maketitle\n"
+END = "\n\\end{document}\n"
+BODY = "\\section{Check}\nDeterministic inserted body.\n"
+
+
+@pytest.mark.parametrize("slashes", [1, 2, 3, 4, 5, 6])
+def test_command_start_parity_preserves_crlf_and_original_offsets(slashes):
+    prefix = "Example \\verb|\\ref{fake}%| % \\label{fake}\r\nText"
+    text = prefix + "\\" * slashes + "ref{fig:known}\r\n\\textbf{Heading\\\\}"
+    clean = active_text(text)
+    assert len(clean) == len(text)
+    assert [(i, c) for i, c in enumerate(clean) if c in "\r\n"] == [
+        (i, c) for i, c in enumerate(text) if c in "\r\n"]
+    found = commands(text)
+    refs = [c for c in found if c.name == "ref"]
+    assert len(refs) == slashes % 2
+    for c in found:
+        assert text[c.start:c.end].startswith("\\" + c.name + "{")
+        assert text[c.value_start:c.value_end] == c.value
+    if refs:
+        assert refs[0].start == len(prefix) + slashes - 1
+        assert refs[0].value == "fig:known"
+    assert found[-1].value == r"Heading\\"
+
+
+def original_at(tmp_path, content=None):
+    root = tmp_path / "original"
+    root.mkdir()
+    (root / "entry.tex").write_text(content or BASE + "%% AIR:BODY\n" + END, encoding="utf-8")
+    return root
+
+
+def hashes(root):
+    return {p.relative_to(root).as_posix(): sha256_file(p) for p in root.rglob("*") if p.is_file()}
+
+
+@pytest.fixture
+def installed_dependencies(monkeypatch):
+    monkeypatch.setattr(tpl.shutil, "which", lambda name: "/tools/kpsewhich")
+    calls = []
+
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0, stdout="/texmf/" + args[-1])
+
+    monkeypatch.setattr(tpl.subprocess, "run", run)
+    return calls
+
+
+def test_default_resolution_and_deterministic_inspection(tmp_path, installed_dependencies):
+    skill = SkillLoader().load("latex-writing", allow_unverified=True)
+    source = tpl.resolve_template(tmp_path, skill=skill)
+    before = hashes(source.original)
+    check = tpl.inspect_template(source.original)
+    assert check.entry_candidates == ["main.tex"] and check.entry == "main.tex"
+    assert check.entry_chosen_by == "auto" and not check.selection_required
+    assert not check.missing and all(d.resolution == "system" for d in check.dependencies)
+    assert check.to_bytes() == tpl.inspect_template(source.original).to_bytes()
+    assert str(tmp_path).encode() not in check.to_bytes()
+    assert source.check_path == tmp_path / "paper/.template_check_default.json"
+    tpl.prepare_template(source.original, tmp_path / "paper", BODY)
+    assert hashes(source.original) == before
+
+
+def test_single_zero_multiple_and_explicit_entry(tmp_path, installed_dependencies):
+    root = original_at(tmp_path)
+    assert tpl.inspect_template(root).entry == "entry.tex"
+    (root / "comment.tex").write_text("% \\documentclass{ignored}\n\\section{Part}\n", encoding="utf-8")
+    assert tpl.inspect_template(root).entry_candidates == ["entry.tex"]
+    (root / "other.tex").write_text(BASE + END, encoding="utf-8")
+    check = tpl.inspect_template(root)
+    assert check.selection_required and check.entry is None
+    assert check.entry_candidates == ["entry.tex", "other.tex"]
+    assert tpl.inspect_template(root, entry="other.tex").entry_chosen_by == "user"
+    with pytest.raises(TemplateError, match="selection"):
+        tpl.prepare_template(root, tmp_path / "paper", BODY)
+    with pytest.raises(TemplateError, match="not a detected"):
+        tpl.inspect_template(root, entry="comment.tex")
+    (root / "entry.tex").unlink()
+    (root / "other.tex").unlink()
+    check = tpl.inspect_template(root)
+    assert check.entry is None and "No top-level" in check.diagnostics[0]
+
+
+def test_local_and_system_dependencies(tmp_path, installed_dependencies):
+    root = original_at(tmp_path, BASE.replace("{article}", "{local}") +
+                       "\\usepackage{localstyle,graphicx}\n\\bibliographystyle{custom}\n"
+                       "\\input{parts/body}\n\\bibliography{refs}\n" + END)
+    (root / "local.cls").write_text("\\LoadClass{article}\n", encoding="utf-8")
+    (root / "localstyle.sty").write_text("% local style\n", encoding="utf-8")
+    (root / "custom.bst").write_text("% controlled local style\n", encoding="utf-8")
+    (root / "refs.bib").write_text("% controlled bibliography\n", encoding="utf-8")
+    (root / "parts").mkdir()
+    (root / "parts/body.tex").write_text("Text.\n", encoding="utf-8")
+    check = tpl.inspect_template(root)
+    assert not check.missing
+    resolved = {d.name: d.resolution for d in check.dependencies}
+    local_names = ("local.cls", "localstyle.sty", "custom.bst", "refs.bib", "parts/body.tex")
+    assert all(resolved[n] == "local" for n in local_names)
+    assert resolved["article.cls"] == resolved["graphicx.sty"] == "system"
+    assert all(kwargs["shell"] is False and kwargs["timeout"] == 10 for _, kwargs in installed_dependencies)
+
+
+def test_missing_and_unavailable_dependency_lookup(tmp_path, monkeypatch):
+    root = original_at(tmp_path, BASE + "\\usepackage{absent}\n\\bibliographystyle{absent}\n" + END)
+    monkeypatch.setattr(tpl.shutil, "which", lambda name: "/tools/kpsewhich")
+    monkeypatch.setattr(tpl.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=1, stdout=""))
+    check = tpl.inspect_template(root)
+    assert check.missing == [{"kind": "bst", "name": "absent.bst"}, {"kind": "cls", "name": "article.cls"},
+                             {"kind": "sty", "name": "absent.sty"}]
+    with pytest.raises(TemplateError, match="inspection failed"):
+        tpl.prepare_template(root, tmp_path / "paper", BODY)
+    monkeypatch.setattr(tpl.shutil, "which", lambda name: None)
+    check = tpl.inspect_template(root)
+    assert check.missing == [] and {d.resolution for d in check.dependencies} == {"unresolved"}
+    assert "unresolved" in check.diagnostics[0]
+
+
+def test_dependency_timeout(tmp_path, monkeypatch):
+    root = original_at(tmp_path)
+    monkeypatch.setattr(tpl.shutil, "which", lambda name: "kpsewhich")
+
+    def timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired("kpsewhich", 10)
+
+    monkeypatch.setattr(tpl.subprocess, "run", timeout)
+    assert tpl.inspect_template(root).dependencies[0].resolution == "unresolved"
+
+
+def test_marker_preserves_template_and_structural_hooks():
+    text = BASE + "Before marker.\n%% AIR:BODY\nAfter marker.\n\\bibliographystyle{plain}\n" + END
+    filled = tpl.fill_template(text, BODY, preamble="\\newcommand{\\optionalhook}{Future}",
+                               title="A & B_1", author="Anonymous")
+    assert "Before marker." in filled and "After marker." in filled
+    assert "%% AIR:BODY" not in filled and BODY.strip() in filled
+    assert r"\title{A \& B\_1}" in filled and r"\author{Anonymous}" in filled
+    assert filled.index(r"\newcommand") < filled.index(r"\begin{document}")
+    assert tpl.fill_template(text, BODY) == tpl.fill_template(text, BODY)
+
+
+@pytest.mark.parametrize("bibliography", [r"\bibliographystyle{plain}\bibliography{refs}",
+                                          r"\printbibliography[title=References]",
+                                          r"\begin{thebibliography}{9}\bibitem{x}Reference.\end{thebibliography}", ""])
+def test_no_marker_preserves_preamble_maketitle_bibliography(bibliography):
+    text = BASE + "% old sample comment\n\\section{Old}\nOLD SAMPLE\n" + bibliography + END
+    filled = tpl.fill_template(text, BODY)
+    assert BASE.rstrip() in filled and "OLD SAMPLE" not in filled
+    assert bibliography in filled and BODY.strip() in filled and filled.endswith(END)
+
+
+def test_titlepage_and_no_maketitle():
+    text = BASE.replace("\\maketitle\n", "\\begin{titlepage}Custom cover.\\end{titlepage}\n") + "OLD" + END
+    assert "Custom cover." in tpl.fill_template(text, BODY)
+    assert "OLD" not in tpl.fill_template(text, BODY)
+    text = "\\documentclass{article}\n\\begin{document}OLD" + END
+    assert "OLD" not in tpl.fill_template(text, BODY)
+
+
+@pytest.mark.parametrize("text", [
+    BASE + "%% AIR:BODY\n%% AIR:BODY\n" + END,
+    "%% AIR:BODY\n" + BASE + END,
+    BASE + "\\begin{verbatim}\n%% AIR:BODY\n\\end{verbatim}\n" + END,
+    BASE + "\\begin{center}\\bibliography{refs}\\end{center}" + END,
+    BASE + "Missing end",
+])
+def test_unsafe_structures_are_rejected(text):
+    with pytest.raises(TemplateError):
+        tpl.fill_template(text, BODY)
+
+
+def test_comments_are_not_commands():
+    text = "% \\documentclass{wrong}\n" + BASE + "Text \\% literal. % \\bibliography{fake}\nOLD" + END
+    assert [c.value for c in commands(text) if c.name == "documentclass"] == ["article"]
+    assert "fake" not in tpl.fill_template(text, BODY)
+
+
+@pytest.mark.parametrize("resource", ["../escape", "/outside", "C:/outside", "..\\outside", "\\variable", "-shell"])
+def test_unsafe_resource_paths(tmp_path, resource):
+    root = original_at(tmp_path, BASE + f"\\input{{{resource}}}" + END)
+    with pytest.raises(TemplateError):
+        tpl.inspect_template(root)
+
+
+def test_prepare_preserves_local_assets_and_rejects_overwrite(tmp_path, installed_dependencies):
+    root = original_at(tmp_path)
+    (root / "style.sty").write_text("% local asset\n", encoding="utf-8")
+    (root / "image.png").write_bytes(b"controlled asset")
+    before = hashes(root)
+    dest = tmp_path / "paper"
+    entry = tpl.prepare_template(root, dest, BODY)
+    assert entry == dest / "main.tex" and not (dest / "entry.tex").exists()
+    assert (dest / "style.sty").read_bytes() == (root / "style.sty").read_bytes()
+    assert (dest / "image.png").read_bytes() == (root / "image.png").read_bytes()
+    assert hashes(root) == before
+    for target in (root, root / "inside", dest):
+        with pytest.raises(TemplateError):
+            tpl.prepare_template(root, target, BODY)
+
+
+def test_symlinks_rejected_for_inspection_preparation_and_metadata(tmp_path, installed_dependencies):
+    root = original_at(tmp_path)
+    outside = tmp_path / "outside"
+    outside.write_text("untouched", encoding="utf-8")
+    try:
+        (root / "linked.sty").symlink_to(outside)
+    except OSError:
+        pytest.skip("symlink creation unavailable")
+    with pytest.raises(TemplateError):
+        tpl.inspect_template(root)
+    with pytest.raises(TemplateError):
+        tpl.prepare_template(root, tmp_path / "paper", BODY)
+    (root / "linked.sty").unlink()
+    source = tpl.TemplateSource(root, tmp_path / "check.json", tmp_path / "report.json", tmp_path)
+    (tmp_path / "check.json").symlink_to(outside)
+    with pytest.raises(TemplateError):
+        tpl.write_check(source, tpl.inspect_template(root))
+    assert outside.read_text(encoding="utf-8") == "untouched"
+
+
+@pytest.mark.parametrize("selection", [{"id": "../tpl-01", "version": 1}, {"id": "tpl-01", "version": 0},
+                                      {"id": "tpl-01", "version": True}, {"id": "tpl-01", "version": 999}])
+def test_invalid_upload_never_falls_back(tmp_path, selection):
+    with pytest.raises(TemplateError):
+        tpl.resolve_template(tmp_path, selection)
+
+
+@REAL_TEX
+@pytest.mark.parametrize("marker", [True, False])
+def test_real_uploaded_template_check_prepare_compile_and_metadata(project, marker):
+    body = "%% AIR:BODY\n" if marker else "OLD SAMPLE\n"
+    text = BASE.replace("{article}", "{local}") + body + END
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, "w") as archive:
+        archive.writestr("user/entry.tex", text)
+        archive.writestr("user/local.cls", "\\NeedsTeXFormat{LaTeX2e}\n\\ProvidesClass{local}\n\\LoadClass{article}\n")
+        archive.writestr("user/local.sty", "% Supporting asset\n")
+    info = templates.import_zip(project, data.getvalue(), "user-template.zip")
+    source = tpl.resolve_template(project.root, project.config.template)
+    before, config_before = hashes(source.original), (project.root / "project.yaml").read_bytes()
+    check = tpl.check_template(source)
+    assert check.minimal_compile_ok and check.report.ok, check
+    assert check.report.log_path == source.log_path.relative_to(project.root).as_posix()
+    assert check.report.pages == 1
+    first_bytes = check.to_bytes()
+    tpl.write_check(source, check)
+    assert templates.template_info(project, info.template_id, info.version).check == json.loads(first_bytes)
+    assert (project.root / check.compile_report).exists()
+    assert source.log_path.is_file() and "air-template-" not in source.log_path.read_text(encoding="utf-8")
+    assert first_bytes == tpl.check_template(source).to_bytes()
+    assert b"air-template-" not in first_bytes
+    tpl.prepare_template(source.original, project.root / "prepared-paper", BODY)
+    report = compile_paper(project.root / "prepared-paper")
+    assert report.ok and report.pages == 1, report
+    assert hashes(source.original) == before
+    assert (project.root / "project.yaml").read_bytes() == config_before
+
+
+@REAL_TEX
+def test_real_minimal_compile_failure_and_disabled_are_honest(tmp_path):
+    root = original_at(tmp_path, BASE + "\\notARealCommand\n" + END)
+    source = tpl.TemplateSource(root, tmp_path / "check.json", tmp_path / "report.json", tmp_path)
+    before = hashes(root)
+    check = tpl.check_template(source)
+    assert not check.minimal_compile_ok and check.report.errors
+    assert hashes(root) == before
+    disabled = tpl.check_template(source, enabled=False)
+    assert not disabled.minimal_compile_ok and disabled.report.engine == "disabled"
+
+
+def test_skill_can_verify_structure_without_tex(monkeypatch):
+    monkeypatch.setattr(tpl.shutil, "which", lambda name: None)
+    report = SkillLoader().verify("latex-writing", update_registry=False)
+    assert report.ok, report.steps
+
+
+def test_ambiguous_or_missing_template_does_not_compile(tmp_path, installed_dependencies, monkeypatch):
+    root = original_at(tmp_path)
+    (root / "other.tex").write_text(BASE + END, encoding="utf-8")
+    source = tpl.TemplateSource(root, tmp_path / "check.json", tmp_path / "report.json", tmp_path)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Ambiguous templates must not compile")
+
+    monkeypatch.setattr(tpl, "compile_paper", forbidden)
+    check = tpl.check_template(source)
+    assert check.selection_required and not check.minimal_compile_ok and check.compile_report is None
+    (root / "entry.tex").unlink()
+    (root / "other.tex").unlink()
+    check = tpl.check_template(source)
+    assert not check.minimal_compile_ok and check.entry is None
+
+
+def test_entry_rename_collision_and_reserved_build_are_rejected(tmp_path, installed_dependencies):
+    root = original_at(tmp_path)
+    (root / "main.tex").write_text("Supporting text only.\n", encoding="utf-8")
+    with pytest.raises(TemplateError, match="overwrite"):
+        tpl.prepare_template(root, tmp_path / "paper", BODY)
+    (root / "main.tex").unlink()
+    (root / "build").mkdir()
+    with pytest.raises(TemplateError, match="reserved"):
+        tpl.prepare_template(root, tmp_path / "paper", BODY)
+
+
+@pytest.mark.parametrize("body", [r"\end{document}", r"\documentclass{other}"])
+def test_inserted_document_boundaries_rejected(body):
+    with pytest.raises(TemplateError, match="boundaries"):
+        tpl.fill_template(BASE + "%% AIR:BODY\n" + END, body)
+
+
+def test_selected_entry_only_checks_its_reachable_dependencies(tmp_path, monkeypatch):
+    root = original_at(tmp_path)
+    (root / "unused.tex").write_text(BASE + "\\usepackage{unusedMissing}\n" + END, encoding="utf-8")
+    (root / "unused.sty").write_text("\\RequirePackage{unrelatedMissing}\n", encoding="utf-8")
+    monkeypatch.setattr(tpl.shutil, "which", lambda name: "kpsewhich")
+
+    def lookup(args, **kwargs):
+        present = args[-1] == "article.cls"
+        return SimpleNamespace(returncode=0 if present else 1, stdout="/texmf/article.cls" if present else "")
+
+    monkeypatch.setattr(tpl.subprocess, "run", lookup)
+    assert tpl.inspect_template(root).selection_required
+    chosen = tpl.inspect_template(root, entry="entry.tex")
+    assert not chosen.missing and [d.name for d in chosen.dependencies] == ["article.cls"]
+    assert tpl.inspect_template(root, entry="unused.tex").missing == [{"kind": "sty", "name": "unusedMissing.sty"}]
+
+
+def test_recursive_dependency_cycle_is_finite(tmp_path, installed_dependencies):
+    root = original_at(tmp_path, BASE + "\\input{part}\n" + END)
+    (root / "part.tex").write_text("\\input{part}\n\\usepackage{graphicx}\n", encoding="utf-8")
+    check = tpl.inspect_template(root)
+    assert [(d.name, d.resolution) for d in check.dependencies] == [
+        ("article.cls", "system"), ("graphicx.sty", "system"), ("part.tex", "local"), ("part.tex", "local")]
+
+
+@pytest.mark.parametrize("verb", [r"\verb", r"\verb*"])
+@pytest.mark.parametrize("delimiter", ["|", "!", "+", "%", "\\"])
+def test_scanner_inline_literals_hide_percent_and_fake_commands(verb, delimiter):
+    payload = r"\maketitle%\input{fake}\begin{document}\end{document}"
+    if delimiter == "%":
+        payload = payload.replace("%", "")  # percent itself is the delimiter
+    elif delimiter == "\\":
+        payload = "% literal characters"  # no embedded delimiter
+    literal = verb + delimiter + payload + delimiter
+    text = "Example: " + literal + "\r\n" + r"\input{real}"
+    clean = active_text(text)
+    assert clean == "Example: " + " " * len(literal) + "\r\n" + r"\input{real}"
+    [command] = commands(text)
+    assert (command.name, command.value) == ("input", "real")
+    assert (command.start, command.end) == (text.index(r"\input{real}"), len(text))
+    assert text[command.value_start:command.value_end] == "real"
+
+
+@pytest.mark.parametrize("environment", ["verbatim", "verbatim*", "lstlisting", "minted"])
+def test_scanner_literal_environments_preserve_offsets(environment):
+    options = "{text}" if environment == "minted" else ""
+    literal = (f"\\begin{{{environment}}}" + options + "\r\n% fake comment\r\n"
+               + r"\maketitle\input{fake}\begin{document}\end{document}"
+               + "\r\n" + f"\\end{{{environment}}}")
+    text = literal + "\r\n" + r"\input{real}"
+    clean = active_text(text)
+    assert clean == "".join(c if c in "\r\n" else " " for c in literal) + "\r\n" + r"\input{real}"
+    assert len(clean) == len(text)
+    assert [i for i, c in enumerate(clean) if c in "\r\n"] == [i for i, c in enumerate(text) if c in "\r\n"]
+    [command] = commands(text)
+    assert text[command.start:command.end] == r"\input{real}"
+    assert text[command.value_start:command.value_end] == command.value == "real"
+
+
+@pytest.mark.parametrize("comment", [
+    r"% \verb|unclosed \input{fake}",
+    r"% \verb*+\maketitle%+",
+    r"% \begin{verbatim}",
+    r"% \begin{minted}{text}",
+    r"% \end{verbatim} \input{fake}",
+])
+def test_scanner_comment_literals_cannot_consume_real_commands(comment):
+    text = comment + "\n" + r"\input{real}" + "\n% ordinary comment\n"
+    clean = active_text(text)
+    assert clean == " " * len(comment) + "\n" + r"\input{real}" + "\n" + " " * len("% ordinary comment") + "\n"
+    [command] = commands(text)
+    assert command.name == "input" and command.value == "real"
+    assert command.start == text.index(r"\input{real}")
+
+
+@pytest.mark.parametrize("count", range(6))
+def test_scanner_percent_escape_parity(count):
+    prefix = "\\" * count
+    text = prefix + "% text\n" + r"\input{real}"
+    assert active_text(text) == prefix + ("% text" if count % 2 else " " * len("% text")) + "\n" + r"\input{real}"
+
+
+@pytest.mark.parametrize("text", [
+    r"\verb", r"\verb*", r"\verb|unclosed \maketitle",
+    "\\verb|unclosed\n\\input{fake}|", r"\verb*+unclosed \end{document}",
+    r"\verb |unsupported spaced delimiter|",
+    *[f"\\begin{{{name}}}\n% literal\n\\input{{fake}}" for name in
+      ("verbatim", "verbatim*", "lstlisting", "minted")],
+])
+def test_scanner_malformed_literals_fail_explicitly(text):
+    with pytest.raises(TemplateError, match="literal|verb"):
+        active_text(text)
+    with pytest.raises(TemplateError, match="literal|verb"):
+        commands(text)
+
+
+@pytest.mark.parametrize("brace", ["{", "}"])
+@pytest.mark.parametrize("count", range(6))
+def test_scanner_brace_escape_parity_and_original_positions(brace, count):
+    slashes = "\\" * count
+    if brace == "}":
+        argument = "X" + slashes + "}" + ("Y" if count % 2 else "")
+        # With even parity the first brace closes the command, not its value.
+        argument = argument if count % 2 else argument[:-1]
+    else:
+        argument = "X" + slashes + "{Y" + ("}" if count % 2 == 0 else "")
+    raw_command = r"\textbf{" + argument + "}"
+    text = "prefix " + raw_command + " suffix"
+    [command] = commands(text)
+    assert command.name == "textbf" and command.value == argument
+    assert command.start == len("prefix ") and command.end == len("prefix " + raw_command)
+    assert text[command.start:command.end] == raw_command
+    assert text[command.value_start:command.value_end] == argument
+
+
+def test_scanner_nested_braces_and_linebreak_fill():
+    argument = r"A {B \{C\} D} Heading\\"
+    text = r"\textbf{" + argument + "}"
+    [command] = commands(text)
+    assert command.value == argument and command.end == len(text)
+    document = "\\documentclass{article}\n\\begin{document}\n\\textbf{Heading\\\\}\nText.\n" + END
+    expected = "\\documentclass{article}\n\\begin{document}\nNEW BODY\n" + END.lstrip("\n")
+    assert tpl.fill_template(document, "NEW BODY") == expected
+
+
+@pytest.mark.parametrize("text", [r"\textbf{unclosed", r"\textbf{nested {unclosed}", r"\textbf{escaped \}"])
+def test_scanner_really_unbalanced_arguments_still_fail(text):
+    with pytest.raises(TemplateError, match=r"Unbalanced argument of \\textbf"):
+        commands(text)
+
+
+@pytest.mark.parametrize("marker", [False, True])
+@pytest.mark.parametrize("literal", [r"\verb|\maketitle%|", r"\verb*!\input{fake}%\end{document}!",
+                                    r"\textbf{Heading\\}"])
+def test_scanner_fill_keeps_document_structure_and_marker_surroundings(marker, literal):
+    prefix = "\\documentclass{article}\n\\begin{document}\nExample: " + literal + "\n"
+    text = prefix + ("%% AIR:BODY\n" if marker else "OLD SAMPLE\n") + END
+    filled = tpl.fill_template(text, "NEW BODY")
+    if marker:
+        assert filled.startswith(prefix) and literal in filled
+        assert "%% AIR:BODY" not in filled
+    else:
+        assert filled == "\\documentclass{article}\n\\begin{document}\nNEW BODY\n" + END.lstrip("\n")
+    assert "NEW BODY" in filled and "OLD SAMPLE" not in filled
+    assert [(c.name, c.value) for c in commands(filled)] == [
+        ("documentclass", "article"), ("begin", "document"),
+        *([("textbf", "Heading\\\\")] if marker and literal.startswith(r"\textbf") else []), ("end", "document")]
+
+
+@REAL_TEX
+@pytest.mark.parametrize("marker", [False, True])
+@pytest.mark.parametrize("literal", [r"\verb|\maketitle%|", r"\verb*!\input{fake}%\end{document}!",
+                                    r"\textbf{Heading\\}"])
+def test_scanner_real_original_and_filled_documents_compile(tmp_path, marker, literal):
+    text = ("\\documentclass{article}\n\\begin{document}\nExample: " + literal + "\n"
+            + ("%% AIR:BODY\n" if marker else "OLD SAMPLE\n") + END)
+    original = tmp_path / "original.tex"
+    original.write_text(text, encoding="utf-8")
+    original_bytes = original.read_bytes()
+    # Compile the legal source before invoking the scanner, proving the input is valid TeX.
+    original_work = tmp_path / "original-paper"
+    original_work.mkdir()
+    (original_work / "main.tex").write_bytes(original_bytes)
+    original_report = compile_paper(original_work)
+    assert original_report.ok and original_report.pages == 1, original_report
+    filled = tpl.fill_template(text, "NEW BODY")
+    assert "NEW BODY" in filled and "OLD SAMPLE" not in filled
+    assert (literal in filled) is marker
+    assert filled.endswith(END.lstrip("\n"))
+    filled_work = tmp_path / "filled-paper"
+    filled_work.mkdir()
+    (filled_work / "main.tex").write_text(filled, encoding="utf-8")
+    report = compile_paper(filled_work)
+    assert report.ok and report.pages == 1 and not report.errors, report
+    assert (filled_work / "build/main.pdf").stat().st_size > 1000
+    assert original.read_bytes() == original_bytes
+
+
+@pytest.mark.parametrize(("before", "after"), [
+    (r"% \begin{verbatim}", r"% \end{verbatim}"),
+    (r"\verb|\begin{verbatim}|", r"\verb|\end{verbatim}|"),
+    (r"\verb*+\begin{minted}+", r"\verb*+\end{minted}+"),
+])
+def test_scanner_fake_literal_environments_do_not_hide_body_marker(before, after):
+    prefix = "\\documentclass{article}\n\\begin{document}\n" + before + "\n"
+    suffix = "\n" + after + END
+    text = prefix + "%% AIR:BODY" + suffix
+    filled = tpl.fill_template(text, "NEW BODY")
+    assert filled == prefix + "NEW BODY\n" + suffix
+    assert "%% AIR:BODY" not in filled

@@ -1,0 +1,8 @@
+name: scientific-plotting
+version: 0.1.0
+description: Deterministic, traceable scientific figures from archived Aggregate data
+owner: 论文
+inputs: {aggregate: Aggregate, spec: FigureSpec}
+outputs: {figure: Figure, artifact: "spec/data/script/metadata/PDF/PNG"}
+validators: [check_output]
+requires: [matplotlib>=3.8]

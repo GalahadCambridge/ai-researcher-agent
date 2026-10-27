@@ -1,0 +1,22 @@
+{
+  "unit": {
+    "claim_id": "CL1",
+    "sentence": "This works on all datasets.",
+    "section": "results",
+    "location": {
+      "file": "paper/sections/results.tex",
+      "line": 1
+    }
+  },
+  "response": {
+    "claim_id": "CL1",
+    "sentence": "This works on all datasets.",
+    "issues": [
+      {
+        "code": "OVERCLAIM_SCOPE",
+        "detail": "Only one dataset evaluated.",
+        "suggestion": "Restrict scope to the evaluated dataset."
+      }
+    ]
+  }
+}

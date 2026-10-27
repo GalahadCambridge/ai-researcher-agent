@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "engine": "latexmk -pdf",
+  "entry": "main.tex",
+  "errors": [],
+  "undefined_citations": [],
+  "undefined_refs": [],
+  "missing_files": [],
+  "overfull_boxes": 1,
+  "pages": 3,
+  "log_path": "paper/build/source-c2d632b64feb492174aeeba1b2162b8b9a739dc2c5c7ee5fc516165faf6f812b/main.log",
+  "seconds": 0.266
+}

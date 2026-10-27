@@ -254,9 +254,28 @@ def compute_aggregate(
     )
 
 
-def recompute_aggregate(root: Path, aggregate_id: str) -> Aggregate:
+def recompute_aggregate(root: Path, aggregate_id: str, version: int | None = None) -> Aggregate:
     """从原始 metrics.jsonl 重新计算（论文核验用），用的是存档中该汇总记录的计划版本。"""
-    stored = load_aggregate(root, aggregate_id)
+    stored = load_aggregate(root, aggregate_id, version=version)
+    if version is not None:
+        # Historical checks recompute only the recorded supporting runs, never
+        # discover new runs or substitute another plan's latest Aggregate.
+        rows = []
+        for row in stored.rows:
+            values = [_run_value(root, rid, row.metric) for rid in row.run_ids]
+            if not values or any(v is None for v in values):
+                continue  # exact missing support is reported by evidence.check
+            description = stats.describe(values)
+            rows.append(row.model_copy(update={**description, "values": values}))
+        contrasts = []
+        for contrast in stored.contrasts:
+            a = next((r for r in rows if r.group == contrast.a and r.metric == contrast.metric), None)
+            b = next((r for r in rows if r.group == contrast.b and r.metric == contrast.metric), None)
+            if a is not None and b is not None:
+                diff, t, p = stats.welch(a.values, b.values)
+                contrasts.append(contrast.model_copy(update={"diff_mean": diff, "welch_t": t, "p_value": p,
+                                                            "n_a": a.n, "n_b": b.n}))
+        return stored.model_copy(update={"rows": rows, "contrasts": contrasts})
     plan = parse_plan_md(_archive(Path(root)).read_text(stored.plan_ref))
     comp = Comparison.model_validate(stored.comparison)
     return compute_aggregate(root, plan, stored.plan_ref, comp, stored.eval_condition)

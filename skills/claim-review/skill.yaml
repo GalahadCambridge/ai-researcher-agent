@@ -1,0 +1,8 @@
+name: claim-review
+version: 0.1.0
+description: Exact-sentence semantic review and evidence-preserving targeted revision
+owner: 论文
+inputs: {unit: "one exact sentence and bounded frozen scope", response: "untrusted structured model output"}
+outputs: {issues: "validated semantic Issues"}
+validators: [check_output]
+requires: []

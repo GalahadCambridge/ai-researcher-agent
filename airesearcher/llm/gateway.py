@@ -349,7 +349,9 @@ class LLMGateway:
         call_id = self._record(role, prompt.id, prompt.version, used, total_in, total_out, total_usd,
                                cached, attempts, error is None, schema_name)
         if error is not None:
-            raise LLMOutputError(f"{prompt_id}：{attempts} 次尝试后仍未得到可用结果（{schema_name}）：{error}")
+            exc = LLMOutputError(f"{prompt_id}：{attempts} 次尝试后仍未得到可用结果（{schema_name}）：{error}")
+            exc.call_id, exc.response_text = call_id, text
+            raise exc
         return LLMResponse(text=text, parsed=parsed, call_id=call_id, model=used.entry.litellm_model,
                            prompt_id=prompt.id,
                            prompt_version=prompt.version, cached=cached, finish_reason=raw.finish_reason,
