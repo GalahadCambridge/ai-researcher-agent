@@ -367,6 +367,11 @@ class Writer:
         output = SectionOutput.model_validate(response.parsed)
         if self.claims is not None:
             output = output.model_copy(update={"latex": binding.insert_markers(output.latex, self.claims, section)})
+        if self.claims is not None:
+            from airesearcher.services import evidence
+            surface = evidence._numeric_surface(output.latex)
+            if evidence.NUMBER.search(surface):
+                raise ValidationFailed("Generated experimental numbers must use bound Claim/ValueRef airval macros")
         citations = self.validate_section(output, section)
         fingerprint = self.section_fingerprint(section, prompt_version=response.prompt_version)
         return GeneratedSection(

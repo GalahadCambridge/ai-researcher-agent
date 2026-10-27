@@ -16,7 +16,7 @@ from pydantic import ConfigDict
 from airesearcher.core.archive import dir_manifest, manifest_bytes
 from airesearcher.core.errors import AirError
 from airesearcher.core.fsutil import atomic_write_bytes, atomic_write_json, atomic_write_text, sha256_bytes, sha256_file
-from airesearcher.core.models.claim import CheckReport, Claim, CompileReport
+from airesearcher.core.models.claim import CheckReport, Claim, CompileReport, Issue
 from airesearcher.core.models.common import VersionRef
 from airesearcher.core.models.figure import Figure, FigureSpec
 from airesearcher.core.models.plan import parse_plan_md
@@ -25,6 +25,7 @@ from airesearcher.engine.stage import Continue, Error, NeedsApproval, StageConte
 from airesearcher.llm.gateway import LLMOutputError
 from airesearcher.services import evidence, literature, runs
 
+from . import attempts, recovery
 from . import claims as binding
 from . import review as semantic
 from ._latex import TemplateError, safe_path
@@ -91,7 +92,19 @@ class WritingStage:
 
     def step(self, ctx: StageContext) -> StepResult:
         try:
+            pending = _receipt(ctx, "reconcile")
+            if pending.get("done") and ctx.answer and pending.get("answer") == ctx.answer.question_id:
+                return Continue("Reconciliation answer already applied")
+            if pending and not pending.get("done"):
+                return recovery.recover(ctx, None, _receipt, _save, _path, atomic_write_bytes)
             return self._step(ctx)
+        except recovery.ReconcileRequired as exc:
+            try:
+                return recovery.recover(ctx, exc, _receipt, _save, _path, atomic_write_bytes)
+            except (AirError, ValueError, OSError, KeyError) as error:
+                return Error(f"Writing reconciliation stopped: {error}", retryable=False)
+        except attempts.DecisionRequired as exc:
+            return exc.result
         except (AirError, ValueError, OSError, KeyError, LLMOutputError) as exc:
             return Error(f"Writing stopped: {exc}", retryable=False)
 
@@ -194,7 +207,9 @@ class WritingStage:
         if ctx.answer and ctx.answer.question_id not in meta.setdefault("answers", []):
             wait = meta.get("waiting", {})
             choice = ctx.answer.choice
-            if wait.get("kind") == "figure_unit":
+            if ctx.questions.record(ctx.answer.question_id).question.text.startswith("Semantic unit "):
+                pass  # The bounded-attempt journal validates and consumes this answer.
+            elif wait.get("kind") == "figure_unit":
                 self._answer_figure_unit(ctx, wait, figure_keys, selected)
                 if not new_basis:
                     s["phase"] = "figures"
@@ -320,12 +335,14 @@ class WritingStage:
         paths = [_path(ctx, "paper/claims.jsonl"), _path(ctx, "paper/air_values.tex")]
         if not receipt:
             if any(p.exists() for p in paths):
-                raise ValueError("unreceipted claim/value files require explicit reconciliation")
+                raise recovery.ReconcileRequired("unreceipted claim/value files",
+                                                {p.relative_to(ctx.root).as_posix(): None for p in paths})
             return None
         claims = [Claim.model_validate(raw) for raw in receipt["claims"]]
         for path, expected in zip(paths, (binding.claims_bytes(claims), binding.values_tex(claims)), strict=True):
             if path.exists() and path.read_bytes() != expected:
-                raise ValueError(f"code-owned {path.name} changed; explicit reconciliation required")
+                raise recovery.ReconcileRequired(f"code-owned {path.name} changed",
+                                                {path.relative_to(ctx.root).as_posix(): expected})
             if not path.exists():
                 atomic_write_bytes(path, expected)
         return claims
@@ -356,7 +373,8 @@ class WritingStage:
             path = _path(ctx, "paper/" + name)
             allowed = [content] + ([old_bytes[name]] if pending.get("previous") else [])
             if path.exists() and path.read_bytes() not in allowed:
-                raise ValueError(f"pending {name} conflicts with an intervening edit; explicit reconciliation required")
+                raise recovery.ReconcileRequired(f"pending {name} conflicts with an intervening edit",
+                                                {"paper/" + name: content})
             if not path.exists() or path.read_bytes() != content:
                 atomic_write_bytes(path, content)
         _save(ctx, "bound-claims", {"basis": pending["basis"], "claims": pending["claims"]})
@@ -505,6 +523,11 @@ class WritingStage:
         s.update(deterministic_basis=basis, deterministic_report=receipt["report"], phase="review")
         return self._review(ctx, s, meta, writer)
 
+    def _incomplete(self, unit):
+        return Issue(code="SEMANTIC_INCOMPLETE", severity="major", claim_id=unit["claim_id"],
+                     location=unit["location"], sentence=unit["sentence"],
+                     detail="Responses exhausted / user skipped. Semantic review INCOMPLETE; human approval required.")
+
     def _semantic_route(self, ctx, prompt_id, role):
         prompt = ctx.llm.prompts.load(prompt_id, ctx.project.prompt_pins.get(prompt_id))
         skill = ctx.skills.load("claim-review")
@@ -561,7 +584,9 @@ class WritingStage:
             numbers = [int(p.stem.removeprefix("review_v")) for p in _path(ctx, "paper/review").glob("review_v*.json")]
             # Reserve a number before calls; a crash cannot overwrite an older review.
             for path in _path(ctx, "paper/.writing").glob("semantic-*.json"):
-                numbers.append(json.loads(path.read_text(encoding="utf-8"))["number"])
+                previous = json.loads(path.read_text(encoding="utf-8"))
+                if "number" in previous:
+                    numbers.append(previous["number"])
             cycle = self._cycle(s)
             history = meta.setdefault("semantic_rounds", {}).setdefault(cycle, [])
             receipt = {
@@ -578,38 +603,35 @@ class WritingStage:
                 "report": None,
             }
             _save(ctx, name, receipt)
-        # Reject persisted untrusted output before issuing any further calls on restart.
-        for unit, saved in zip(receipt["units"], receipt["responses"], strict=False):
-            if "rejected" in saved:
-                raise ValueError("untrusted semantic response rejected: " + saved["rejected"])
-            semantic.normalize(unit, saved["response"])
-        for unit in receipt["units"][len(receipt["responses"]) :]:
-            try:
-                response = self._semantic_call(
-                    ctx,
-                    semantic.REVIEW_PROMPT,
-                    "writing.reviewer",
-                    semantic.ReviewResponse,
-                    semantic.model_context(unit),
-                )
-                saved = {
-                    "response": semantic.ReviewResponse.model_validate(response.parsed).model_dump(mode="json"),
-                    "call_id": response.call_id,
-                }
-            except LLMOutputError as exc:
-                saved = {"rejected": str(exc)}
-            receipt["responses"].append(saved)
-            _save(ctx, name, receipt)  # response durable before normalization or artifact writes
-            if "rejected" in saved:
-                raise ValueError("untrusted semantic response rejected: " + saved["rejected"])
-            semantic.normalize(unit, saved["response"])
         issues = []
-        for unit, saved in zip(receipt["units"], receipt["responses"], strict=False):
-            if "rejected" in saved:
-                raise ValueError("untrusted semantic response rejected: " + saved["rejected"])
-            issues.extend(semantic.normalize(unit, saved["response"]))
-        if len(receipt["responses"]) != len(receipt["units"]):
-            raise ValueError("semantic review incomplete")
+        for index, unit in enumerate(receipt["units"]):
+            if index < len(receipt["responses"]) and "rejected" not in receipt["responses"][index]:
+                saved = receipt["responses"][index]
+                if saved.get("skipped"):
+                    issues.append(self._incomplete(unit))
+                    continue
+                try:
+                    issues.extend(semantic.normalize(unit, saved["response"]))
+                except ValueError:
+                    pass  # Legacy response was persisted before failed normalization.
+                else:
+                    continue
+            saved = attempts.complete(
+                ctx, f"{name}-{index}-attempts", _receipt, _save,
+                lambda unit=unit: self._semantic_call(ctx, semantic.REVIEW_PROMPT, "writing.reviewer",
+                                            semantic.ReviewResponse, semantic.model_context(unit)),
+                lambda value, unit=unit: semantic.normalize(unit, value),
+            )
+            result = saved or {"skipped": True}
+            if index == len(receipt["responses"]):
+                receipt["responses"].append(result)
+            else:
+                receipt.setdefault("legacy_rejected", []).append(receipt["responses"][index])
+                receipt["responses"][index] = result
+            _save(ctx, name, receipt)
+            issues.extend(semantic.normalize(unit, saved["response"]) if saved else [self._incomplete(unit)])
+        issues.extend(self._incomplete(x["unit"]) for x in meta.get("semantic_incomplete", [])
+                      if x["cycle"] == self._cycle(s))
         combined = semantic.merge(report, issues)
         receipt["report"] = combined.model_dump(mode="json")
         _save(ctx, name, receipt)
@@ -638,7 +660,8 @@ class WritingStage:
         if basis not in history:
             history.append(basis)
         _save(ctx, "runtime", meta)
-        targets = semantic.revision_targets(combined, receipt["units"])
+        targets = [(u, items) for u, items in semantic.revision_targets(combined, receipt["units"])
+                   if not any(i.code == "SEMANTIC_INCOMPLETE" for i in items)]
         more = len(history) < semantic.round_limit(ctx.project.paper.get("max_review_rounds", 2))
         s.update(
             review_ref=refs["json"].model_dump(),
@@ -690,26 +713,43 @@ class WritingStage:
         for index, (unit, issues) in enumerate(targets):
             claim = next((c for c in claims if c.claim_id == unit["claim_id"]), None)
             context, placeholders = semantic.revision_context(unit, issues, claim)
+            if index < len(receipt["responses"]) and not receipt["responses"][index].get("skipped"):
+                previous = receipt["responses"][index]
+                try:
+                    if "rejected" in previous:
+                        raise ValueError(previous["rejected"])
+                    semantic.validate_revision(context, placeholders, previous["response"], claim)
+                except ValueError:
+                    if len(receipt["responses"]) != index + 1:
+                        raise ValueError("Ambiguous legacy revision response order; reconcile explicitly") from None
+                    receipt.setdefault("legacy_rejected", []).append(receipt["responses"].pop())
+                    _save(ctx, name, receipt)
             if index == len(receipt["responses"]):
                 history = meta.get("semantic_rounds", {}).get(self._cycle(s), [])
                 if len(history) >= semantic.round_limit(ctx.project.paper.get("max_review_rounds", 2)):
                     s["phase"] = "submit"
                     return Continue("Current review-round budget exhausted; retain residual issues for human review")
-                try:
-                    response = self._semantic_call(
-                        ctx, semantic.REVISE_PROMPT, "writing.reviser", semantic.RevisionResponse, context
-                    )
-                    saved = {
-                        "response": semantic.RevisionResponse.model_validate(response.parsed).model_dump(mode="json"),
-                        "call_id": response.call_id,
-                    }
-                except LLMOutputError as exc:
-                    saved = {"rejected": str(exc)}
-                receipt["responses"].append(saved)
+                saved = attempts.complete(
+                    ctx, f"{name}-{index}-attempts", _receipt, _save,
+                    lambda context=context: self._semantic_call(ctx, semantic.REVISE_PROMPT, "writing.reviser",
+                                                semantic.RevisionResponse, context),
+                    lambda value, context=context, placeholders=placeholders, claim=claim:
+                        semantic.validate_revision(context, placeholders, value, claim),
+                )
+                receipt["responses"].append(saved or {"skipped": True})
                 _save(ctx, name, receipt)
             saved = receipt["responses"][index]
+            if saved.get("skipped"):
+                note = {"unit": unit, "reason": "user skipped revision", "cycle": self._cycle(s)}
+                if note not in meta.setdefault("semantic_incomplete", []):
+                    meta["semantic_incomplete"].append(note)
+                _save(ctx, "runtime", meta)
+                continue
             if "rejected" in saved:
-                raise ValueError("untrusted revision rejected: " + saved["rejected"])
+                # Migrate old rejected receipts into the bounded recovery path.
+                receipt.setdefault("legacy_rejected", []).append(receipt["responses"].pop())
+                _save(ctx, name, receipt)
+                return Continue("Legacy rejected revision retained; bounded recovery pending")
             replacement, revised = semantic.validate_revision(context, placeholders, saved["response"], claim)
             relative = unit["location"]["file"]
             a, b = unit["location"]["start"], unit["location"]["end"]
@@ -740,6 +780,8 @@ class WritingStage:
             raise ValueError("source changed during semantic revision; preserve human edits and recheck")
         old["paper/claims.jsonl"] = _path(ctx, "paper/claims.jsonl").read_text(encoding="utf-8")
         new["paper/claims.jsonl"] = binding.claims_bytes(claims).decode()
+        old["paper/air_values.tex"] = _path(ctx, "paper/air_values.tex").read_text(encoding="utf-8")
+        new["paper/air_values.tex"] = binding.values_tex(claims).decode("utf-8")
         transaction = {
             "basis": basis,
             "review_basis": s["semantic_basis"],
@@ -763,13 +805,17 @@ class WritingStage:
             for relative, new in pending["new"].items():
                 path = _path(ctx, relative)
                 if not path.exists() or path.read_bytes() != new.encode():
-                    raise ValueError("pending semantic revision conflicts with an intervening human edit: " + relative)
+                    raise recovery.ReconcileRequired(
+                        "pending semantic revision conflicts with an intervening human edit: "
+                                                     + relative, {relative: new.encode()})
             return
         # Validate ALL targets before writing ANY: half-installed states allow only exact old/new bytes.
         for relative, new in pending["new"].items():
             path = _path(ctx, relative)
             if not path.exists() or path.read_bytes() not in {pending["old"][relative].encode(), new.encode()}:
-                raise ValueError("pending semantic revision conflicts with an intervening human edit: " + relative)
+                raise recovery.ReconcileRequired(
+                        "pending semantic revision conflicts with an intervening human edit: "
+                                                     + relative, {relative: new.encode()})
         current = dir_manifest(_path(ctx, "paper"), PAPER_EXCLUDE)
         excluded = {p.removeprefix("paper/") for p in pending["new"]}
         if {k: v for k, v in current if k not in excluded} != {
@@ -1212,7 +1258,8 @@ class WritingStage:
             receipt = _receipt(ctx, f"section-{section}")
             path = _path(ctx, f"paper/sections/{section}.tex")
             if not receipt and path.exists():
-                raise ValueError(f"unreceipted existing section {section}; preserve/reconcile it before generation")
+                raise recovery.ReconcileRequired(f"unreceipted existing section {section}",
+                                                {f"paper/sections/{section}.tex": None})
             if receipt.get("fingerprint") == fingerprint:
                 if not receipt.get("installed", True) or not path.exists():
                     output = SectionOutput.model_validate(receipt["output"])
@@ -1220,10 +1267,9 @@ class WritingStage:
                     expected = _section_bytes(output)
                     if path.exists():
                         if path.read_bytes() != expected:
-                            raise ValueError(
-                                f"pending generated section {section} conflicts with an existing different file; "
-                                "explicit reconciliation required"
-                            )
+                            raise recovery.ReconcileRequired(
+                                f"pending generated section {section} conflicts with local edit",
+                                                            {f"paper/sections/{section}.tex": expected})
                         writer.read_section(section)
                     else:
                         writer.write_section(output)
@@ -1243,9 +1289,9 @@ class WritingStage:
                 and path.exists()
                 and (receipt.get("human_edited") or sha256_file(path) != receipt.get("file_sha256"))
             ):
-                raise ValueError(
-                    f"human-edited {section} has stale factual/writing inputs; reconcile the edit explicitly"
-                )
+                raise recovery.ReconcileRequired(f"human-edited {section} has stale factual/writing inputs",
+                                                {f"paper/sections/{section}.tex": None,
+                                                 f"paper/.writing/section-{section}.json": None})
             ctx.progress(
                 f"Paper: writing {section.replace('_', ' ')}",
                 5 if ctx.project.evidence_check else 4,
@@ -1564,6 +1610,31 @@ class WritingStage:
             report = CheckReport.model_validate_json(ctx.archive.get(ref))
             if report.paper_ref != paper or paper not in ctx.archive.version_info(ref).parents:
                 raise ValueError("review report does not correspond to the exact manuscript")
+            incomplete = [x for x in meta.get("semantic_incomplete", []) if x["cycle"] == self._cycle(s)]
+            if incomplete:
+                note_name = "semantic-incomplete-" + _hash([ref.model_dump(), incomplete])
+                note = _receipt(ctx, note_name)
+                if not note:
+                    report = semantic.merge(report, [self._incomplete(x["unit"]) for x in incomplete
+                        if not any(i.code == "SEMANTIC_INCOMPLETE" and i.sentence == x["unit"]["sentence"]
+                                   for i in semantic.all_issues(report))])
+                    numbers = [int(p.stem.removeprefix("review_v"))
+                               for p in _path(ctx, "paper/review").glob("review_v*.json")]
+                    for p in _path(ctx, "paper/.writing").glob("semantic-*.json"):
+                        numbers.append(json.loads(p.read_text(encoding="utf-8")).get("number", 0))
+                    note = {"number": max(numbers, default=0) + 1, "report": report.model_dump(mode="json")}
+                    _save(ctx, note_name, note)
+                report = CheckReport.model_validate(note["report"])
+                if report.paper_ref != paper:
+                    raise ValueError("Incomplete review report belongs to a different manuscript")
+                path = f"paper/review/review_v{note['number']}.json"
+                data = binding.encoded(note["report"]) + b"\n"
+                target = _path(ctx, path)
+                if target.exists() and target.read_bytes() != data:
+                    raise ValueError("Incomplete review report changed; reconcile explicitly")
+                atomic_write_bytes(target, data)
+                ref = ctx.archive.put(path, "review_report", target,
+                                      parents=[paper, _ref(s["claims_ref"])], producer="agent:writing/review")
             extra = [ref, _ref(s["claims_ref"]), *self._register_build(ctx, paper)]
             s["paper_ref"] = paper.model_dump()
             s["extra_refs"] = [r.model_dump() for r in extra]
@@ -1572,7 +1643,9 @@ class WritingStage:
                 target=paper,
                 kind="manuscript",
                 extra_refs=extra,
-                summary=f"{'RESIDUAL BLOCKER/MAJOR ISSUES: ' if counts.get('blocker') or counts.get('major') else ''}"
+                summary=("SEMANTIC INCOMPLETE; HUMAN REVIEW REQUIRED. " if incomplete or
+                         any(i.code == "SEMANTIC_INCOMPLETE" for i in semantic.all_issues(report)) else "")
+                + f"{'RESIDUAL BLOCKER/MAJOR ISSUES: ' if counts.get('blocker') or counts.get('major') else ''}"
                 f"Manuscript v{paper.version}: {len(report.claims)} claims; combined review: "
                 f"{counts.get('supported', 0)} supported, {counts.get('partially_supported', 0)} partially supported, "
                 f"{counts.get('unsupported', 0)} unsupported, {counts.get('contradicted', 0)} contradicted, "

@@ -17,6 +17,7 @@ from pathlib import Path
 import matplotlib
 
 matplotlib.use("Agg")
+from matplotlib import font_manager  # noqa: E402
 from matplotlib import pyplot as plt  # noqa: E402
 
 from airesearcher.core.models.aggregate import Aggregate, AggregateRow  # noqa: E402
@@ -341,6 +342,17 @@ def errors(row: AggregateRow, spec: FigureSpec) -> list[list[float]] | None:
     return [[(row.mean - row.ci95[0]) * spec.scale], [(row.ci95[1] - row.mean) * spec.scale]]
 
 
+def presentation_style():
+    """Use installed named CJK fallbacks; never require or download a font.
+
+    DejaVu remains first, preserving Latin glyphs. When no CJK font is present,
+    Matplotlib keeps its existing missing-glyph warning rather than changing text.
+    """
+    names = {font.name for font in font_manager.fontManager.ttflist}
+    candidates = ("Noto Sans CJK SC", "Noto Sans CJK TC", "Source Han Sans SC", "Microsoft YaHei", "PingFang SC")
+    return {**STYLE, "font.family": ["DejaVu Sans", *(n for n in candidates if n in names)]}
+
+
 def draw(spec: FigureSpec, rows: list[AggregateRow]):
     """Return a Matplotlib Figure; callers close it. No random offsets or interpolation."""
     xs = ordered([r.group[spec.x] for r in rows])
@@ -397,7 +409,7 @@ def draw(spec: FigureSpec, rows: list[AggregateRow]):
 def render(spec: FigureSpec, data: Path, out: Path) -> None:
     rows, _condition = read_data(data, spec)
     out.mkdir(parents=True, exist_ok=True)
-    with plt.rc_context(STYLE):
+    with plt.rc_context(presentation_style()):
         fig = draw(spec, rows)
         try:
             fig.savefig(out / f"{spec.fig_id}.pdf", metadata={"CreationDate": None, "ModDate": None})

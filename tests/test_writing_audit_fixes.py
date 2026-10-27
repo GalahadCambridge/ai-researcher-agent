@@ -5,7 +5,7 @@ import json
 import pytest
 
 from airesearcher.core.models.claim import Comparison
-from airesearcher.engine.stage import Error
+from airesearcher.engine.stage import Error, Stop
 from airesearcher.stages.writing import review as r
 from airesearcher.stages.writing import stage as module
 from scripts.writing.demo import SampleWritingLLM, prepare_sample, run
@@ -61,9 +61,9 @@ def test_pending_revision_precedes_figure_invalidation(tmp_path, monkeypatch, hu
     if human:
         for _ in range(5):
             result = reopened.tick().result
-            if isinstance(result, Error):
+            if isinstance(result, Stop):
                 break
-        assert isinstance(result, Error) and "intervening" in result.message
+        assert isinstance(result, Stop) and "intervening" in result.reason
         assert path.read_bytes() == changed
     else:
         for _ in range(8):

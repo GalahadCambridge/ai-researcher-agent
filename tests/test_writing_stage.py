@@ -15,7 +15,7 @@ from airesearcher.core.models.frontmatter import render_front_matter
 from airesearcher.core.models.plan import parse_plan_md
 from airesearcher.core.project import Project
 from airesearcher.engine.engine import ProjectEngine
-from airesearcher.engine.stage import Continue, Error
+from airesearcher.engine.stage import Continue, Error, Stop
 from airesearcher.llm.gateway import LLMGateway
 from airesearcher.services import runs
 from airesearcher.stages import load_stage
@@ -682,7 +682,8 @@ def test_unknown_existing_section_is_not_overwritten(writing):
     path.parent.mkdir(parents=True)
     path.write_text("Human-authored fragment without a model receipt.", encoding="utf-8")
     result = e.tick().result
-    assert isinstance(result, Error) and "unreceipted" in result.message
+    assert isinstance(result, Stop) and "unreceipted" in result.reason
+    assert {o.id for o in result.question.options} == {"restore", "end"}
     assert path.read_text(encoding="utf-8") == "Human-authored fragment without a model receipt."
     assert not writing_calls(e)
 
@@ -816,7 +817,8 @@ def test_pending_section_compare_before_install(writing, monkeypatch, existing):
     assert len(e.llm.backend.calls) == calls
     if existing == "human":
         assert sha256_file(path) == before
-        assert isinstance(result, Error) and "reconciliation" in result.message
+        assert isinstance(result, Stop) and "reconciliation" in result.reason
+        assert {o.id for o in result.question.options} == {"restore", "end"}
         assert not writes and not receipt(p, "section-introduction")["installed"]
     else:
         assert isinstance(result, Continue)

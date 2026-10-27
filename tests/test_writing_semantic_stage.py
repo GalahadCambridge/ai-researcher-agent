@@ -6,7 +6,7 @@ from dataclasses import replace
 import pytest
 
 from airesearcher.core.models.claim import CheckReport
-from airesearcher.engine.stage import Continue, Error
+from airesearcher.engine.stage import Continue, Error, Stop
 from airesearcher.services import evidence
 from airesearcher.stages.writing import review as r
 from airesearcher.stages.writing import stage as module
@@ -150,17 +150,20 @@ def test_invalid_reviewer_output_is_untrusted_and_durable(sample, monkeypatch, i
     p, e = sample
     scenario(monkeypatch, invalid=invalid)
     to_phase(e, "verify")
-    tick = e.tick()
-    assert isinstance(tick.result, Error)
+    from airesearcher.engine.stage import Continue, Stop
+    assert isinstance(e.tick().result, Continue)
     assert not list((p.root / "paper/review").glob("review_v*.json"))
-    n = len(calls(e, r.REVIEW_PROMPT))
-    e.request_action("resume")
     reopened = restart(p, e)
-    for _ in range(4):
-        tick = reopened.tick()
-        if isinstance(tick.result, Error):
-            break
-    assert isinstance(tick.result, Error) and len(calls(e, r.REVIEW_PROMPT)) == n
+    assert isinstance(reopened.tick().result, Continue)
+    assert isinstance(reopened.tick().result, Stop)
+    assert len(calls(e, r.REVIEW_PROMPT)) == 2
+    journals = list((p.root / "paper/.writing").glob("*-attempts.json"))
+    attempts = json.loads(journals[0].read_text(encoding="utf-8"))["attempts"]
+    assert len(attempts) == 2 and all(a["status"] == "rejected" for a in attempts)
+    n = len(calls(e, r.REVIEW_PROMPT))
+    reopened = restart(p, reopened)
+    reopened.tick()
+    assert p.questions.pending() and len(calls(e, r.REVIEW_PROMPT)) == n
 
 
 def test_no_evidence_targeted_surrounding_prose(sample, monkeypatch):
@@ -317,9 +320,9 @@ def test_pending_revision_never_overwrites_intervening_human_edit(sample, monkey
     reopened = restart(p, e)
     for _ in range(4):
         tick = reopened.tick()
-        if isinstance(tick.result, Error):
+        if isinstance(tick.result, Stop):
             break
-    assert isinstance(tick.result, Error) and "intervening" in tick.result.message
+    assert isinstance(tick.result, Stop) and "intervening" in tick.result.reason
     assert path.read_bytes() == changed and len(calls(reopened, r.REVISE_PROMPT)) == 1
 
 

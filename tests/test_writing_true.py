@@ -5,7 +5,7 @@ import json
 import pytest
 
 from airesearcher.core.models.claim import CheckReport
-from airesearcher.engine.stage import Error
+from airesearcher.engine.stage import Error, Stop
 from airesearcher.services import evidence
 from airesearcher.stages.writing import claims as binding
 from scripts.writing.demo import prepare_sample, run
@@ -90,7 +90,7 @@ def test_one_correction_and_coverage_failure(writing_true, monkeypatch):
     monkeypatch.setattr(SampleWritingLLM, "call", wrong)
     for _ in range(30):
         tick = e.tick()
-        if isinstance(tick.result, Error):
+        if isinstance(tick.result, (Error, Stop)):
             break
     assert isinstance(tick.result, Error) and "coverage" in tick.result.message
     assert len(claim_calls(e)) == 2 and not writing_calls(e)
@@ -108,9 +108,13 @@ def test_code_owned_edits_fail_closed(writing_true, relative):
     calls = len(e.llm.backend.calls)
     for _ in range(4):
         tick = e.tick()
-        if isinstance(tick.result, Error):
+        if isinstance(tick.result, (Error, Stop)):
             break
-    assert isinstance(tick.result, Error)
+    if relative.endswith("results.tex"):
+        assert isinstance(tick.result, Error)
+    else:
+        assert isinstance(tick.result, Stop)
+        assert {o.id for o in tick.result.question.options} == {"restore", "end"}
     assert path.read_text(encoding="utf-8") == changed and len(e.llm.backend.calls) == calls
 
 
