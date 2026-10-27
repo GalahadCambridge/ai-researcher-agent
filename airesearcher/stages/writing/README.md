@@ -289,7 +289,7 @@ Writing entry checkpoint and drives **ProjectEngine**, never Writer.generate_dra
 No real-model key, model dependency or online citation request is required. FakeLLM
 proves orchestration, recovery, prompts, schemas, artifacts, compilation and approval
 lifecycle; it does not prove prose quality, semantic citation correctness or real-model
-discipline. The new retained example is in `examples/writing/phase-2a-5-stage/`.
+discipline. The new retained example is in `examples/writing/final/`.
 
 
 ## Phase 2B-1: deterministic evidence binding
@@ -375,7 +375,7 @@ lack full Literature records and Figure versions, so their restricted local-ID/B
 fallback remains for compatibility. Historical raw run metrics are not separately
 versioned by this patch. `audit()` remains deferred to Phase 3.
 
-See `examples/writing/phase-2b-1-evidence` for real TeX/FakeLLM reproduction. Shared
+See `examples/writing/final` for real TeX/FakeLLM reproduction. Shared
 models, dependencies, engine and StageContext are unchanged. `latex-writing@0.3.0`
 and `writing/section v3` describe both modes; `claim-review@0.1.0` owns semantic policy.
 

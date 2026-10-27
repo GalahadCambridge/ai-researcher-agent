@@ -8,10 +8,7 @@ evaluated scope; real recompilation, deterministic recheck and semantic rereview
 produce round two with two supported Claims and zero blocker/major/minor issues.
 The final state is ManuscriptPending, approval ap-0007. No approval was granted.
 
-- [before/results.tex](before/results.tex) and [before/claims.jsonl](before/claims.jsonl)
-  preserve the initial wording. These are explicitly flawed synthetic test inputs.
-- [review/review_v1.md](review/review_v1.md) and [review/review_v2.md](review/review_v2.md)
-  record the exact historical paper/claims refs, combined findings and completed rounds.
+- [review/review_v2.md](review/review_v2.md) records the final review and exact paper/claim refs.
 - [generation.json](generation.json) records implementation/artifact hashes, calls,
   both actually compiled manuscript refs and their exact archived PDF/report refs.
 - Final source is at this directory's root, with sections and Figure PDFs. Numeric
@@ -19,7 +16,7 @@ The final state is ManuscriptPending, approval ap-0007. No approval was granted.
 
 The code baseline is 57ec9d8317bcb57784fa80b382a9a6b989b709ff plus the Phase 2B-2
 implementation recorded by file hashes. Inputs are a disposable copy of the public
-sample fixture. Neither canonical fixtures nor earlier examples were rewritten.
+sample fixture. Canonical fixtures were not rewritten. Earlier development snapshots are available in Git history.
 There were two Figure planner calls, one Claim planner, eight section calls,
 twelve sentence-review calls (six units per round), one reviser and no compile repair.
 These are FakeLLM engineering checks, not real-model validation or Phase 3 evaluation.
