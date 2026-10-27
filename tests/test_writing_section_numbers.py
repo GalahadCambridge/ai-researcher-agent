@@ -12,7 +12,8 @@ from .test_writing_stage import restart, to_phase
 @pytest.mark.parametrize('text', ['We evaluate on SST-2.', r'We evaluate on \textsc{SST-2}.',
     'Each configuration uses 3 seeds.', 'Following Devlin et al. (2019),',
     'We fine-tune for 3 epochs with a learning rate of 2e-5 and batch size 16.',
-    'We use GPT-4o and 2026 training samples.'])
+    'We use GPT-4o and 2026 training samples.',
+    r'We use validation split 20\% and dropout 10\%.'])
 def test_setup_numbers_allowed(tmp_path, monkeypatch, text):
     p, e = prepare_sample(tmp_path / 'project', compile_enabled=False, evidence_check=True)
     original = SampleWritingLLM.call
@@ -80,3 +81,21 @@ def test_rejected_section_then_corrected_response_reaches_approval(tmp_path, mon
     e = restart(p, e)
     e.tick()
     assert len(seen) == 2
+
+
+def test_ambiguous_result_percentage_is_still_reported(tmp_path, monkeypatch):
+    p, e = prepare_sample(tmp_path / 'project', compile_enabled=False, evidence_check=True)
+    original = SampleWritingLLM.call
+    def call(self, request):
+        response = original(self, request)
+        if request.prompt_id == 'writing/section' and context_of(request)['section'] == 'results':
+            data = json.loads(response.text)
+            data['latex'] += r' An improvement of 8.3\% was observed.'
+            response.text = json.dumps(data)
+        return response
+    monkeypatch.setattr(SampleWritingLLM, 'call', call)
+    approval = run(e)
+    from airesearcher.services import evidence
+    report = evidence.check(p.root)
+    assert any(i.code == 'NUM_UNBOUND' and i.severity == 'major' for i in report.unbound_issues)
+    assert 'MAJOR' in approval.summary

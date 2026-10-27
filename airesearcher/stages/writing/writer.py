@@ -419,8 +419,8 @@ class Writer:
             if re.search(r"(?:learning rate|batch size|dropout(?: rate)?|training split|epochs?|seeds?)"
                          r"\s*(?:=|:|of)?\s*$", before, re.I):
                 continue
-            if re.match(r"\s*(?:\\?%|percent(?:age)?\b)", after, re.I):
-                return surface[max(0, match.start()-40):match.end()+20]
+            # Percentages without a metric/statistic anchor are ambiguous (e.g.
+            # validation splits). Keep them for canonical NUM_UNBOUND reporting.
         return False
 
     def write_section(self, output: SectionOutput) -> Path:
