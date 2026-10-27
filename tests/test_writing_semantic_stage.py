@@ -157,13 +157,22 @@ def test_invalid_reviewer_output_is_untrusted_and_durable(sample, monkeypatch, i
     assert isinstance(reopened.tick().result, Continue)
     assert isinstance(reopened.tick().result, Stop)
     assert len(calls(e, r.REVIEW_PROMPT)) == 2
-    journals = list((p.root / "paper/.writing").glob("*-attempts.json"))
-    attempts = json.loads(journals[0].read_text(encoding="utf-8"))["attempts"]
+    basis = module.WritingStage()._review_basis(reopened.build_context(), reopened.ck.scratch["writing"])
+    review_name = f"semantic-{basis}"
+    assert r.model_context(receipt(p, review_name)["units"][0]) == context_of(calls(e, r.REVIEW_PROMPT)[0])
+    # The first invalid unit stops review; select its identity, never directory order.
+    directory = p.root / "paper/.writing"
+    journal = directory / f"{review_name}-0-attempts.json"
+    assert set(directory.glob("semantic-*-attempts.json")) == {journal}
+    assert list(directory.glob("section-*-attempts.json"))
+    assert len(list(directory.glob("*-attempts.json"))) > 1
+    attempts = json.loads(journal.read_text(encoding="utf-8"))["attempts"]
     assert len(attempts) == 2 and all(a["status"] == "rejected" for a in attempts)
     n = len(calls(e, r.REVIEW_PROMPT))
     reopened = restart(p, reopened)
     reopened.tick()
     assert p.questions.pending() and len(calls(e, r.REVIEW_PROMPT)) == n
+    assert json.loads(journal.read_text(encoding="utf-8"))["attempts"] == attempts
 
 
 def test_no_evidence_targeted_surrounding_prose(sample, monkeypatch):
