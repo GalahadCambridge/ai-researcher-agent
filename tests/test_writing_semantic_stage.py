@@ -157,7 +157,9 @@ def test_invalid_reviewer_output_is_untrusted_and_durable(sample, monkeypatch, i
     assert isinstance(reopened.tick().result, Continue)
     assert isinstance(reopened.tick().result, Stop)
     assert len(calls(e, r.REVIEW_PROMPT)) == 2
-    journals = list((p.root / "paper/.writing").glob("*-attempts.json"))
+    # Section generation has separate journals; inspect only this review's budget.
+    journals = list((p.root / "paper/.writing").glob("semantic-*-attempts.json"))
+    assert len(journals) == 1
     attempts = json.loads(journals[0].read_text(encoding="utf-8"))["attempts"]
     assert len(attempts) == 2 and all(a["status"] == "rejected" for a in attempts)
     n = len(calls(e, r.REVIEW_PROMPT))
