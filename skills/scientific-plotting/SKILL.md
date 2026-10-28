@@ -5,10 +5,14 @@ to load an archived Aggregate through `services.runs`, render it, validate the c
 artifact, and register its Aggregate parent. `default_spec(aggregate)` selects numeric-x
 lines (with one categorical hue), or categorical bars. Set `distribution=True` for
 actual per-run points. Explicit FigureSpec also supports boxes from actual observations.
+Optional `facets` names additional grouping fields for deterministic panels (at most
+8 fields / 16 panels). Panels retain every source row, use common x/hue ordering
+and share the y axis. No filtering or pooling occurs; omitted varying dimensions
+and duplicate plotted coordinates remain invalid. Old specs default to no facets.
 
 - Statistical values must come from Aggregate rows. Never invent, interpolate, smooth,
   or reconstruct seed values from summary statistics. No LLM, image generation, or network.
-- Use the frozen FigureSpec and Figure models. Do not assume percentages or accuracy.
+- Use the backward-compatible FigureSpec and Figure models. Do not assume percentages or accuracy.
 - Specify units in `ylabel`, e.g. `Latency (ms)`, or explicitly say `dimensionless` / `无量纲`.
 - Positive finite `scale` multiplies means, standard deviations, CI bounds and observations.
   `data.csv` retains unscaled source columns and explicit `display_*` scaled columns.

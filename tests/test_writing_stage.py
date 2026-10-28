@@ -432,7 +432,17 @@ def test_figure_planner_rejects_extra_values_and_code(writing):
     spec = default_spec(agg, ylabel="Score (dimensionless)").model_dump()
     e.llm.backend.script[module.FIGURE_PROMPT] = [{**spec, "values": [999], "code": "malicious"}]
     result = e.tick().result
-    assert isinstance(result, Error)
+    assert isinstance(result, module.Continue)
+    assert isinstance(e.tick().result, module.Continue)
+    assert isinstance(e.tick().result, module.Stop)
+    journals = list((p.root / "paper/.writing").glob("figure-fig_c1-*-attempts.json"))
+    assert len(journals) == 1
+    attempts = json.loads(journals[0].read_bytes())["attempts"]
+    assert len(attempts) == 2 and all(a["status"] == "rejected" and a["reason"] for a in attempts)
+    assert all(json.loads(a["raw"])["values"] == [999] and json.loads(a["raw"])["code"] == "malicious"
+               for a in attempts)
+    assert len([c for c in e.llm.backend.calls if c.prompt_id == module.FIGURE_PROMPT]) == 2
+    assert {option.id for option in p.questions.pending().options} == {"retry", "end"}
     assert not (p.root / "artifacts/figures/fig_c1").exists()
 
 

@@ -195,6 +195,7 @@ def test_already_valid_spec_does_not_ask_or_change(tmp_path):
 
 
 def test_blank_xlabel_with_unknown_group_is_not_invented(sample):
+    from airesearcher.engine.stage import Continue
     p, e = sample
     from airesearcher.services import runs
     from airesearcher.stages.writing.figures import default_spec
@@ -203,14 +204,19 @@ def test_blank_xlabel_with_unknown_group_is_not_invented(sample):
     spec.update(xlabel="", x="invented", ylabel="")
     e.llm.backend.script[module.FIGURE_PROMPT] = [spec]
     result = e.tick().result
-    assert isinstance(result, Error) and "grouping field" in result.message
-    saved = receipt(p, "figure-fig_c1")
-    assert saved["original_proposal"] == json.loads(saved["original_response"])
-    assert saved["original_proposal"]["x"] == "invented" and not saved["spec"]["xlabel"].strip()
+    assert isinstance(result, Continue)
+    paths = list((p.root / "paper/.writing").glob("figure-fig_c1-*-attempts.json"))
+    assert len(paths) == 1
+    saved = json.loads(paths[0].read_bytes())["attempts"][0]
+    assert saved["status"] == "rejected" and "grouping field" in saved["reason"]
+    assert saved["response"] == json.loads(saved["raw"])
+    assert saved["response"]["x"] == "invented" and not saved["response"]["xlabel"].strip()
+    assert len(calls(e)) == 1 and not (p.root / "artifacts/figures/fig_c1").exists()
     assert not p.questions.pending()
 
 
 def test_unit_answer_does_not_mask_other_scientific_failures(sample):
+    from airesearcher.engine.stage import Continue
     p, e = sample
     from airesearcher.services import runs
     from airesearcher.stages.writing.figures import default_spec
@@ -221,7 +227,11 @@ def test_unit_answer_does_not_mask_other_scientific_failures(sample):
     ask(p, e)
     e = answer(p, e, "score (dimensionless)")
     result = e.tick().result
-    assert isinstance(result, Error) and "uncertainty" in result.message
+    assert isinstance(result, Continue)
+    saved = receipt(p, "figure-fig_c1")
+    assert saved["status"] == "rejected" and "uncertainty" in saved["rejection_reason"]
+    journal = receipt(p, saved["attempt_journal"])
+    assert len(journal["attempts"]) == 1 and journal["attempts"][0]["status"] == "rejected"
     assert not (p.root / "artifacts/figures/fig_c1").exists()
     assert len(calls(e)) == 1
 

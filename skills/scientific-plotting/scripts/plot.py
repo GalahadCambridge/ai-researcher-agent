@@ -208,8 +208,13 @@ def validate_rows(spec: FigureSpec, rows: list[AggregateRow], condition: str) ->
         raise ValueError("x and hue must be distinct grouping fields")
     keys = set(rows[0].group)
     axes = {spec.x} | ({spec.hue} if spec.hue else set())
+    if len(set(spec.facets)) != len(spec.facets) or axes.intersection(spec.facets):
+        raise ValueError("facets must be distinct grouping fields, separate from x/hue")
+    axes.update(spec.facets)
     if not axes <= keys:
         raise ValueError("unknown grouping field in x/hue")
+    if len({canonical({k: r.group[k] for k in spec.facets}) for r in rows}) > 16:
+        raise ValueError("facet presentation exceeds 16 panels")
     coords, runs = set(), set()
     for row in rows:
         if set(row.group) != keys or row.metric != spec.metric:
@@ -281,7 +286,8 @@ def select_rows(aggregate: Aggregate, spec: FigureSpec) -> list[AggregateRow]:
     validate_rows(spec, rows, aggregate.eval_condition)
     xs = ordered([r.group[spec.x] for r in rows])
     hs = ordered([r.group[spec.hue] for r in rows]) if spec.hue else [None]
-    return sorted(rows, key=lambda r: (hs.index(r.group[spec.hue]) if spec.hue else 0,
+    return sorted(rows, key=lambda r: (canonical({k: r.group[k] for k in spec.facets}),
+                                       hs.index(r.group[spec.hue]) if spec.hue else 0,
                                        xs.index(r.group[spec.x])))
 
 
@@ -353,10 +359,27 @@ def presentation_style():
     return {**STYLE, "font.family": ["DejaVu Sans", *(n for n in candidates if n in names)]}
 
 
-def draw(spec: FigureSpec, rows: list[AggregateRow]):
+def draw(spec: FigureSpec, rows: list[AggregateRow], *, ax=None, x_order=None, hue_order=None):
     """Return a Matplotlib Figure; callers close it. No random offsets or interpolation."""
-    xs = ordered([r.group[spec.x] for r in rows])
-    hues = ordered([r.group[spec.hue] for r in rows]) if spec.hue else [None]
+    xs = x_order if x_order is not None else ordered([r.group[spec.x] for r in rows])
+    hues = hue_order if hue_order is not None else (ordered([r.group[spec.hue] for r in rows]) if spec.hue else [None])
+    if spec.facets:
+        panels = sorted({canonical({k: r.group[k] for k in spec.facets}) for r in rows})
+        if len(panels) > 16:
+            raise ValueError("facet presentation exceeds 16 panels")
+        columns = min(3, len(panels))
+        fig, axes = plt.subplots(math.ceil(len(panels) / columns), columns, squeeze=False, sharey=True,
+                                 figsize=(6.4 * columns, 4.2 * math.ceil(len(panels) / columns)))
+        for index, axis in enumerate(axes.flat):
+            if index >= len(panels):
+                axis.set_visible(False)
+                continue
+            panel = panels[index]
+            selected = [r for r in rows if canonical({k: r.group[k] for k in spec.facets}) == panel]
+            draw(spec.model_copy(update={"facets": [], "title": spec.title + "\n" + panel}), selected,
+                 ax=axis, x_order=xs, hue_order=hues)
+        fig.tight_layout()
+        return fig
     numeric = all(is_numeric(x) for x in xs) and spec.kind != "bar"
     positions = [float(x) for x in xs] if numeric else list(range(len(xs)))
     if spec.log_x:
@@ -365,7 +388,8 @@ def draw(spec: FigureSpec, rows: list[AggregateRow]):
     else:
         box_width = min((b - a for a, b in zip(positions, positions[1:], strict=False)), default=1.0)
     width = 0.7 * box_width / len(hues)
-    fig, ax = plt.subplots()
+    own_axes = ax is None
+    fig, ax = plt.subplots() if own_axes else (ax.figure, ax)
     for index, hue in enumerate(hues):
         selected = [r for r in rows if not spec.hue or r.group[spec.hue] == hue]
         selected.sort(key=lambda r: xs.index(r.group[spec.x]))
@@ -402,7 +426,8 @@ def draw(spec: FigureSpec, rows: list[AggregateRow]):
     ax.set(xlabel=spec.xlabel, ylabel=spec.ylabel, title=spec.title)
     ax.grid(axis="y", alpha=0.2)
     ax.legend(frameon=False)
-    fig.tight_layout()
+    if own_axes:
+        fig.tight_layout()
     return fig
 
 
