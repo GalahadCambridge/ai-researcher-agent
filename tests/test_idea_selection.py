@@ -160,6 +160,8 @@ def test_unknown_scoring_evidence_is_rejected(air_home):
     refine_step(ctx, state)
     engine.llm.backend.script["idea/score"] = [scores(["invented-card#0"])]
     engine.llm.backend._fixed_prompts.add("idea/score")
+    from airesearcher.engine.stage import Continue
+    assert isinstance(score_step(ctx, state), Continue)
     assert isinstance(score_step(ctx, state), Stop)
     assert not ctx.archive.latest("idea/scores.json")
 
@@ -252,7 +254,8 @@ def test_failed_score_cache_can_be_revalidated_without_another_model_call(air_ho
     engine.llm.backend._fixed_prompts.add("idea/score")
     context = {**selection_context(ctx), "idea": load_json(ctx, "idea/selected.json")}
     out = ctx.llm.complete(
-        role="idea.score", prompt_id="idea/score", tier="strong", response_schema=ScoreOutput, max_retries=0,
+        role="idea.score", prompt_id="idea/score", prompt_version=1, tier="strong",
+        response_schema=ScoreOutput, max_retries=0,
         variables={"schema_json": ScoreOutput.model_json_schema(), "goal": ctx.project.goal,
                    "context_block": ctx.llm.wrap_untrusted(json.dumps(context, ensure_ascii=False),
                                                            source="selection_context"),

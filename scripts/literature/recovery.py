@@ -67,6 +67,7 @@ def recover_cached_score(ctx, state):
     from airesearcher.llm.gateway import UNTRUSTED_NOTICE, extract_json
     from airesearcher.stages.idea.evidence import load_json, material
     from airesearcher.stages.idea.models import ScoreOutput
+    from airesearcher.stages.idea.scoring import decode_score
     from airesearcher.stages.idea.selection import normalize_scores, round_path, selection_context
 
     context = {**selection_context(ctx), "idea": load_json(ctx, "idea/selected.json")}
@@ -78,19 +79,28 @@ def recover_cached_score(ctx, state):
     last = attempts["attempts"][-1]
     if last["status"] != "failed" or not last.get("trace"):
         raise ValueError("Only a completed, traced score reply can be revalidated from cache")
-    prompt = ctx.llm.prompts.load("idea/score", last["trace"]["prompt_version"])
-    system, user = prompt.render({
-        "schema_json": ScoreOutput.model_json_schema(), "goal": ctx.project.goal,
-        "context_block": ctx.llm.wrap_untrusted(json.dumps(context, ensure_ascii=False), source="selection_context"),
-        "validation_errors": [a.get("error", "") for a in attempts["attempts"][:-1]],
-    })
-    candidates = ctx.llm.resolve("idea.score", "idea/score", "strong", prompt.tier)
-    entry = next(m.entry for m in candidates if m.entry.litellm_model == last["trace"]["model"])
-    key = LLMCache.key(entry.litellm_model,
-                       [{"role": "system", "content": system + UNTRUSTED_NOTICE}, {"role": "user", "content": user}],
-                       "ScoreOutput", entry.temperature)
-    cached = LLMCache().get(key)
-    output = ScoreOutput.model_validate_json(extract_json(cached["text"]))
+    if last.get("response_path") and ctx.archive.latest(last["response_path"]):
+        cached = load_json(ctx, last["response_path"])
+        if (cached["input_sha256"] != digest
+                or cached["trace"]["call_id"] != last["trace"]["call_id"]):
+            raise ValueError("Archived score response does not match its input or call trace")
+    else:
+        prompt = ctx.llm.prompts.load("idea/score", last["trace"]["prompt_version"])
+        system, user = prompt.render({
+            "schema_json": ScoreOutput.model_json_schema(), "goal": ctx.project.goal,
+            "context_block": ctx.llm.wrap_untrusted(json.dumps(context, ensure_ascii=False),
+                                                 source="selection_context"),
+            "validation_errors": [a.get("error", "") for a in attempts["attempts"][:-1]],
+        })
+        candidates = ctx.llm.resolve("idea.score", "idea/score", "strong", prompt.tier)
+        entry = next(m.entry for m in candidates if m.entry.litellm_model == last["trace"]["model"])
+        key = LLMCache.key(entry.litellm_model,
+                           [{"role": "system", "content": system + UNTRUSTED_NOTICE},
+                            {"role": "user", "content": user}],
+                           "ScoreOutput", entry.temperature)
+        cached = LLMCache().get(key)
+    output = (decode_score(cached, ScoreOutput) if last.get("response_path")
+              else ScoreOutput.model_validate_json(extract_json(cached["text"])))
     original = output.model_dump(mode="json")
     save_json(ctx, round_path(state, "score_cached_review"), {
         "input_sha256": digest, "original_output": original, "trace": last["trace"],

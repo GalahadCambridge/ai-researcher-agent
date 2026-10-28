@@ -18,6 +18,7 @@ from .evidence import check_evidence, compact_material, load_json, material
 from .goal_scope import goal_contract, validate_goal_scope
 from .models import GapTableOutput, RefinementOutput, ScoreOutput
 from .render import render_gap_table
+from .scoring import decode_score, restore_score_attempt, score_variables
 from .storage import save_json
 
 DIMENSIONS = ("novelty", "feasibility", "impact", "testability", "risk")
@@ -132,6 +133,8 @@ def request_output(ctx, state, name, schema, validate, context):
     if attempts["input_sha256"] != digest:
         raise ValueError("Selection attempt inputs changed; start a new selection round.")
     records = attempts["attempts"]
+    if name == "score" and records:
+        restore_score_attempt(ctx, attempts_path, attempts, schema, validate)
     if records and records[-1]["status"] == "done":
         output = schema.model_validate(records[-1]["raw_output"])
         validate(output)
@@ -141,28 +144,62 @@ def request_output(ctx, state, name, schema, validate, context):
         return receipt
     start = prepare_window(ctx, state, name, attempts_path, attempts)
     while len(attempts["attempts"]) - start < ATTEMPTS_PER_WINDOW:
+        previous = records[-1] if records else {}
         attempt = {"status": "started"}
         attempts["attempts"].append(attempt)
+        if name == "score":
+            attempt["response_path"] = round_path(state, f"score_responses/attempt-{len(records):04d}")
+            if ctx.archive.latest(attempt["response_path"]):
+                raise ValueError("An archived score response must never be overwritten")
         save_json(ctx, attempts_path, attempts)
+        variables = {"schema_json": schema.model_json_schema(), "goal": ctx.project.goal,
+                     "context_block": ctx.llm.wrap_untrusted(json.dumps(context, ensure_ascii=False),
+                                                             source="selection_context"),
+                     "validation_errors": [a.get("error", "") for a in records[:-1]]}
+        raw_score = (name == "score" and ctx.llm.prompts.load(
+            "idea/score", ctx.project.prompt_pins.get("idea/score")).version >= 2)
+        if raw_score:
+            prior = json.dumps(previous.get("raw_output", {}), ensure_ascii=False)
+            if previous.get("response_path") and ctx.archive.latest(previous["response_path"]):
+                prior = load_json(ctx, previous["response_path"]).get("text", "")
+            variables.update(score_variables(schema, context, ctx.llm.wrap_untrusted(
+                prior[:16000], source="previous_invalid_score")))
+            variables["validation_errors"] = [a.get("error", "")[:6000] for a in records[:-1][-2:]]
         try:
             out = ctx.llm.complete(
                 role=f"idea.{name}", prompt_id=f"idea/{name}", tier="strong", max_retries=0,
-                response_schema=schema,
-                variables={"schema_json": schema.model_json_schema(), "goal": ctx.project.goal,
-                           "context_block": ctx.llm.wrap_untrusted(json.dumps(context, ensure_ascii=False),
-                                                                   source="selection_context"),
-                           "validation_errors": [a.get("error", "") for a in attempts["attempts"][:-1]]},
+                response_schema=None if raw_score else schema, variables=variables,
             )
             attempt["trace"] = trace(out)
-            attempt["raw_output"] = out.parsed.model_dump(mode="json")
-            validate(out.parsed)
+            output = out.parsed
+            if raw_score:
+                response = {"text": out.text, "finish_reason": out.finish_reason, "trace": trace(out),
+                            "input_sha256": digest}
+                save_json(ctx, attempt["response_path"], response)
+                output = decode_score(response, schema)
+            attempt["raw_output"] = output.model_dump(mode="json")
+            validate(output)
         except Exception as exc:
             attempt.update(status="failed", error=f"{type(exc).__name__}: {exc}")
             save_json(ctx, attempts_path, attempts)
+            if name == "score":
+                if raw_score and (not attempt.get("trace")
+                                  or not ctx.archive.latest(attempt["response_path"])):
+                    attempt["status"] = "interrupted"
+                    save_json(ctx, attempts_path, attempts)
+                    request_retry(ctx, state, name, attempts_path, attempts,
+                                  "failed without an archived response; prior cost may be uncertain")
+                ctx.events.append("literature.score_failed", "Score validation failed",
+                                  actor="agent:idea", data={"attempt": len(records), "error": attempt["error"][:6000],
+                                                           "call_id": attempt.get("trace", {}).get("call_id")})
+                if len(records) - start >= ATTEMPTS_PER_WINDOW:
+                    request_retry(ctx, state, name, attempts_path, attempts, "exhausted its bounded attempts")
+                return None
             continue
         attempt["status"] = "done"
+        attempt["raw_output"] = output.model_dump(mode="json")
         save_json(ctx, attempts_path, attempts)
-        receipt = {"output": out.parsed.model_dump(mode="json"), "trace": trace(out), "input_sha256": digest}
+        receipt = {"output": output.model_dump(mode="json"), "trace": trace(out), "input_sha256": digest}
         save_json(ctx, path, receipt)
         return receipt
     request_retry(ctx, state, name, attempts_path, attempts, "exhausted its bounded attempts")
@@ -207,6 +244,7 @@ def refine_step(ctx, state):
 def normalize_scores(ctx, output, papers, refs, weak):
     """Keep task-context and circular score references out of the literature evidence list."""
     idea = load_json(ctx, "idea/selected.json")
+    errors = []
     for name in DIMENSIONS:
         dimension = getattr(output, name)
         retained, removed = [], []
@@ -218,11 +256,19 @@ def normalize_scores(ctx, output, papers, refs, weak):
             else:
                 retained.append(ref)
         dimension.evidence = retained
-        dimension.to_verify |= check_evidence(retained, papers, refs, weak)
+        try:
+            dimension.to_verify |= check_evidence(retained, papers, refs, weak)
+        except ValueError as exc:
+            unknown = sorted({ref for ref in retained if ref not in papers and ref not in refs})
+            errors.append(f"{name}: {exc}; all unknown references={unknown}")
         if removed:
             dimension.to_verify = True
             dimension.rationale += (" Context or circular references excluded from literature evidence: "
                                     + ", ".join(removed))
+    if errors:
+        raise ValueError("; ".join(errors) + ". Copy only allowlisted paper/card references. "
+                         "Task, idea, and summary paths are context; use evidence=[] and to_verify=true "
+                         "when the rationale has no supporting literature.")
 
 
 def score_step(ctx, state):
@@ -234,6 +280,8 @@ def score_step(ctx, state):
 
         receipt = request_output(ctx, state, "score", ScoreOutput, validate,
                                  {**selection_context(ctx), "idea": load_json(ctx, "idea/selected.json")})
+        if receipt is None:
+            return Continue("Score response and validation errors saved; one targeted repair remains")
         output = ScoreOutput.model_validate(receipt["output"])
         for name in DIMENSIONS:
             dim = getattr(output, name)

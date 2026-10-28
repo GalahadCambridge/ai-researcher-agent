@@ -18,9 +18,18 @@ def request_retry(ctx, state, name, path, attempts, reason):
     attempts["blocked_reason"] = reason
     ref = save_json(ctx, path, attempts)
     state["selection_retry"] = {"name": name, "path": path}
+    records = attempts["attempts"]
+    window = records[attempts.get("window_start", 0):]
+    errors = [r.get("error", "")[:1800] for r in window[-2:] if r.get("error")]
+    spent = ctx.budget.status().categories["llm_usd"].used
     question = Question(
-        text=(f"The {name} model call {reason}. Inspect the saved attempts and usage before retrying. "
-              "Retrying may incur additional model charges; existing project budget limits still apply."),
+        text=(f"The {name} stage needs a decision after {len(records)} total attempt(s); "
+              f"this window contains {len(window)}/{ATTEMPTS_PER_WINDOW} attempt(s) and {reason}. "
+              f"Recorded project model spend: USD {spent:.6f}. "
+              f"Latest errors: {errors or ['No completed response was recorded.']} "
+              "Retry opens a new bounded window; it does not fix the cause of validation failure. "
+              "Inspect the saved attempts first. Retrying may incur additional model charges; "
+              "existing project budget limits still apply."),
         options=[QuestionOption(id="retry", label="Retry (may incur additional model charges)"),
                  QuestionOption(id="end", label="End this project", default=True)],
         refs=[ref],
