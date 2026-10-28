@@ -29,6 +29,8 @@ method_aliases:
   full fine tuning: full_ft
   full fine-tuning (distilbert): full_ft
   全量微调: full_ft
+  low-rank adaptation (lora): lora
+  lora (low-rank adaptation): lora
   tf-idf + lr: tfidf_lr
   tf-idf+lr: tfidf_lr
   tfidf + lr: tfidf_lr

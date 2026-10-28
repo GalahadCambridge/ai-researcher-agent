@@ -137,6 +137,42 @@ def structural_problems(plan: ExperimentPlan) -> list[str]:
     return problems
 
 
+def planning_budget_context(project, idea, used, budget_fraction=0.9):
+    """Give the planner the same remaining limits enforced by prechecks."""
+    if not math.isfinite(budget_fraction) or not 0 < budget_fraction <= 1:
+        raise ValueError("budget_fraction must be within (0, 1]")
+    categories = {}
+    for name in ("llm_usd", "wall_hours", "gpu_hours"):
+        limit = project.budget.get(name)
+        bounds = [limit.hard] if limit else []
+        if idea.budget.get(name) is not None:
+            bounds.append(float(idea.budget[name]))
+        caps = [float(x) for x in bounds if x is not None]
+        if any(not math.isfinite(x) or x < 0 for x in caps):
+            raise ValueError(f"{name}: hard limits must be finite and nonnegative")
+        already_used = float(used.get(name, 0))
+        if not math.isfinite(already_used) or already_used < 0:
+            raise ValueError(f"{name}: recorded usage must be finite and nonnegative")
+        cap = min(caps) if caps else None
+        categories[name] = {
+            "hard_limit": cap,
+            "used": already_used,
+            "remaining_before_stop_line": max(0, cap * budget_fraction - already_used) if cap is not None else None,
+        }
+    return {
+        "budget_fraction": budget_fraction,
+        "categories": categories,
+        "run_cost_rule": (
+            "For each experiment, grid_size is the Cartesian product of variable-axis lengths (1 if empty). "
+            "Formal runs = grid_size * number_of_seeds. Reserved extra runs = grid_size * "
+            "max_extra_seeds_per_group. Estimated hours = sum((formal + reserved extra runs) * "
+            "est_minutes_per_run) / 60. GPU hours count only experiments using a GPU. "
+            "Fit BOTH remaining wall_hours and gpu_hours. Shrink optional grids/extra seeds or use cheaper "
+            "approved settings, keeping comparison controls matched. Do not raise limits or invent smaller estimates."
+        ),
+    }
+
+
 def run_prechecks(
     plan: ExperimentPlan,
     tasks: list[PlanTask],
@@ -229,13 +265,37 @@ def run_prechecks(
     controlled = {"train_size", "model_name", "epochs", "max_length", "eval_split"}
     method_specific = {"learning_rate", "lora_rank", "lora_alpha", "lora_dropout", "classifier_c", "max_features"}
     for c in plan.comparisons:
+        scoped = [t for t in tasks if t.experiment_id in c.experiments]
+        available_keys = {key for t in scoped for key in t.config}
+        invalid_keys = set(c.filter) - available_keys
+        if "eval_condition" in c.filter:
+            fairness.append(
+                f"{c.id}: eval_condition is experiment metadata, not a configuration filter. "
+                "Select experiments with the same eval_condition and use filter={} or an actual eval_split value."
+            )
+        elif invalid_keys:
+            fairness.append(
+                f"{c.id}: unknown configuration filter keys {sorted(invalid_keys)}; "
+                f"available configuration keys: {sorted(available_keys)}"
+            )
+        if invalid_keys:
+            continue
         groups = [
-            [t for t in tasks if t.experiment_id == exp and all(t.config.get(k) == v for k, v in c.filter.items())]
+            [
+                t for t in scoped
+                if t.experiment_id == exp and all(k in t.config and t.config[k] == v for k, v in c.filter.items())
+            ]
             for exp in c.experiments
         ]
         if any(not group for group in groups):
-            fairness.append(f"{c.id}: filter or experiment references produce an empty group")
+            empty = [exp for exp, group in zip(c.experiments, groups, strict=True) if not group]
+            fairness.append(
+                f"{c.id}: configuration filter {json.dumps(c.filter, sort_keys=True)} matches no tasks for {empty}. "
+                "Use configuration values present in those experiments, or filter={} when no filtering is needed."
+            )
             continue
+        if len({t.eval_condition for group in groups for t in group}) != 1:
+            fairness.append(f"{c.id}: a comparison must not mix explore and final experiments")
         if not c.group_by or any(k not in group[0].config for group in groups for k in c.group_by):
             fairness.append(f"{c.id}: empty group_by or unavailable configuration fields")
         varied = {k for e in plan.experiments if e.id in c.experiments for k in e.variables} - method_specific
@@ -269,22 +329,24 @@ def run_prechecks(
         plan.budget_estimate = estimate_budget(plan, tasks, task)
         if plan.stopping_conditions.max_rounds > project.limits.max_rounds:
             budget_errors.append("Plan rounds exceed project limits.max_rounds")
+        remaining = planning_budget_context(project, idea, used, plan.stopping_conditions.budget_fraction)
         for name in ("wall_hours", "gpu_hours"):
-            bounds = [project.budget[name].hard] if name in project.budget else []
-            if idea.budget.get(name) is not None:
-                bounds.append(float(idea.budget[name]))
-            limits = [float(x) for x in bounds if x is not None]
-            if any(not math.isfinite(x) or x < 0 for x in limits):
-                raise ValueError(f"{name}: invalid budget")
-            if not limits:
+            category = remaining["categories"][name]
+            cap = category["hard_limit"]
+            if cap is None:
                 budget_warnings.append(f"{name}: no hard limit configured")
                 continue
-            cap = min(limits)
             estimate = plan.budget_estimate[name]
-            remaining = cap * plan.stopping_conditions.budget_fraction - used.get(name, 0)
-            if estimate > max(0, remaining) + 1e-12:
+            available = category["remaining_before_stop_line"]
+            if estimate > available + 1e-12:
                 budget_errors.append(
-                    f"{name}: estimated {estimate:.4f}; remaining before the stop line {max(0, remaining):.4f}"
+                    f"{name}: estimated {estimate:.4f}; remaining before the stop line {available:.4f}. "
+                    f"Hard limit={cap:g}, already used={category['used']:g}, "
+                    f"budget_fraction={plan.stopping_conditions.budget_fraction:g}, "
+                    f"formal runs={plan.budget_estimate['runs']}, "
+                    f"reserved extra runs={plan.budget_estimate['extra_runs_reserved']}. "
+                    "Reduce parameter-grid combinations, optional extra seeds or approved training cost; "
+                    "keep comparisons fair. Do not increase budget limits or invent lower per-run estimates."
                 )
             elif estimate + used.get(name, 0) > cap * 0.6:
                 budget_warnings.append(f"{name}: estimated usage exceeds 60% of the budget")

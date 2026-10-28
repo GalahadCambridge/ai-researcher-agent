@@ -4,18 +4,20 @@ from __future__ import annotations
 
 import hashlib
 
+from pydantic import ValidationError
+
 from airesearcher.core.fsutil import dumps
 from airesearcher.core.models.common import VersionRef
 from airesearcher.core.models.idea import parse_selected_md
 from airesearcher.core.models.plan import ExperimentPlan, PrecheckItem, parse_plan_md
 from airesearcher.core.models.question import Question, QuestionOption
 from airesearcher.engine.stage import Continue, Error, NeedsApproval, StageContext, StepResult, Stop, Wait
-from airesearcher.llm.gateway import LLMOutputError
+from airesearcher.llm.gateway import LLMOutputError, extract_json
 from airesearcher.llm.models import MissingAPIKey, UnknownModel
 from airesearcher.runtime.data import ensure_data
 
 from .expand import PlanDraft, expand_tasks, load_task, make_plan
-from .precheck import inspect_inputs, item, run_prechecks, structural_problems
+from .precheck import inspect_inputs, item, planning_budget_context, run_prechecks, structural_problems
 from .render import render_plan
 
 PLAN = "plan/experiment_plan.md"
@@ -64,6 +66,7 @@ class PlanStage:
             "task": task.model_dump(),
             "schema": schema,
             "budget": {k: v.model_dump() for k, v in ctx.project.budget.items()},
+            "constraints": ctx.project.constraints,
             "limits": ctx.project.limits.model_dump(),
             "evidence": evidence,
             "feedback": feedback.model_dump(mode="json") if feedback else None,
@@ -112,6 +115,7 @@ class PlanStage:
                 "task": task.model_dump(),
                 "config_schema": schema,
                 "budget": material["budget"],
+                "constraints": material["constraints"],
                 "limits": material["limits"],
                 "feedback": s["note"],
                 "entry": material["entry"],
@@ -120,6 +124,12 @@ class PlanStage:
                 "precheck": s.get("checks", []),
             }
             try:
+                fraction = s.get("candidate", {}).get("stopping_conditions", {}).get("budget_fraction", 0.9)
+                if not isinstance(fraction, (int, float)) or not 0 < fraction <= 1:
+                    fraction = 0.9
+                prompt_input["budget_context"] = planning_budget_context(
+                    ctx.project, idea, ctx.budget.used(), fraction
+                )
                 skill = ctx.skills.load("experiment-planning")
                 prompt_input["planning_rules"] = skill.instructions
                 response = ctx.llm.complete(
@@ -140,7 +150,21 @@ class PlanStage:
                 return Continue("模型回复已解析；下一步由代码展开与检查")
             except (MissingAPIKey, UnknownModel) as exc:
                 return Error(f"LLM configuration requires correction: {exc}", retryable=False)
-            except (LLMOutputError, ValueError) as exc:
+            except LLMOutputError as exc:
+                # The gateway's human-readable exception includes Chinese prose.
+                # Preserve validation locations/reasons instead of passing it to
+                # item()'s generic English fallback and losing repair guidance.
+                detail = "The model did not return a usable PlanDraft JSON reply."
+                try:
+                    PlanDraft.model_validate_json(extract_json(getattr(exc, "response_text", "")))
+                except ValidationError as validation:
+                    errors = validation.errors(include_input=False, include_context=False, include_url=False)
+                    detail = "; ".join(
+                        f"{'.'.join(str(part) for part in error['loc']) or 'reply'}: {error['msg']}"
+                        for error in errors
+                    )
+                return self._failed(s, [item("draft", [detail], "")])
+            except ValueError as exc:
                 return self._failed(s, [item("draft", [str(exc)], "")])
 
         if phase == "check":

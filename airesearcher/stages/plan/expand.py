@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import quote
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from airesearcher.core.models.common import VersionRef
 from airesearcher.core.models.idea import SelectedIdea
@@ -28,16 +28,44 @@ from airesearcher.core.workspace import repo_root, resolve_task_dir
 from airesearcher.runtime.task import load_task_config, uses_gpu
 
 MAX_TASKS = 256
-_IDENTIFIER = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+IDENTIFIER_PATTERN = r"^[A-Za-z][A-Za-z0-9_]*$"
+_IDENTIFIER = re.compile(IDENTIFIER_PATTERN)
 
+
+
+class DraftExperiment(ExperimentSpec):
+    """Expose the existing executor ID restriction in the model's reply schema."""
+
+    id: str = Field(
+        pattern=IDENTIFIER_PATTERN,
+        description="Start with a letter; use only letters, digits and underscores (e.g. E1). No hyphens or spaces.",
+    )
+
+
+class DraftComparison(Comparison):
+    filter: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Exact matches on task configuration fields only, e.g. eval_split. Not experiment metadata.",
+    )
+
+    @field_validator("filter")
+    @classmethod
+    def configuration_filter(cls, value):
+        if "eval_condition" in value:
+            raise ValueError(
+                "Comparison.filter accepts task configuration fields only. eval_condition is experiment metadata, "
+                "not a configuration field. Select experiments with the same eval_condition; use filter={} or "
+                "filter={\"eval_split\": \"<actual split name>\"} when eval_split is in the task schema."
+            )
+        return value
 
 
 class PlanDraft(BaseModel):
     """模型只起草内容；idea_ref、task_config、预算数字由代码填写。"""
 
     model_config = ConfigDict(extra="forbid")
-    experiments: list[ExperimentSpec] = Field(min_length=1, max_length=32)
-    comparisons: list[Comparison] = Field(min_length=1, max_length=32)
+    experiments: list[DraftExperiment] = Field(min_length=1, max_length=32)
+    comparisons: list[DraftComparison] = Field(min_length=1, max_length=32)
     replication_policy: ReplicationPolicy = Field(
         default_factory=lambda: ReplicationPolicy(max_extra_seeds_per_group=0)
     )
@@ -56,7 +84,7 @@ def load_task(task_path: str) -> tuple[Path, TaskConfig, dict | None]:
         candidates = [raw] if raw.is_absolute() else [repo_root() / raw, directory / raw]
         path = next((p for p in candidates if p.is_file()), None)
         if path is None:
-            raise ValueError(f"找不到 config_schema：{task.config_schema}")
+            raise ValueError(f"Configuration schema not found: {task.config_schema}")
         schema = json.loads(path.read_text(encoding="utf-8"))
     return directory, task, schema
 
@@ -72,7 +100,10 @@ def canonical_method(name: str, task: TaskConfig) -> str:
     value = aliases.get(normalize(name))
     if value in task.methods_available:
         return value
-    raise ValueError(f"方法 {name!r} 未被当前模板支持；可用方法：{task.methods_available}")
+    raise ValueError(
+        f"Method {name!r} is unsupported by this template. Available methods: {task.methods_available}. "
+        "Use a canonical name or an explicit task.method_aliases entry; do not substitute another method."
+    )
 
 
 def selected_methods(idea: SelectedIdea, task: TaskConfig) -> set[str]:
@@ -110,26 +141,29 @@ def expand_tasks(plan: ExperimentPlan, task: TaskConfig, schema: dict | None) ->
     for experiment in plan.experiments:
         e = experiment
         if not _IDENTIFIER.fullmatch(e.id):
-            raise ValueError(f"实验 ID 不合法：{e.id!r}")
+            raise ValueError(
+                f"Experiment ID {e.id!r} must match {IDENTIFIER_PATTERN}: "
+                "start with a letter and use only letters, digits and underscores; no hyphens or spaces."
+            )
         if not e.seeds or len(e.seeds) != len(set(e.seeds)):
-            raise ValueError(f"{e.id} 的 seeds 不能为空或重复")
+            raise ValueError(f"{e.id}: seeds must be nonempty and unique")
         if any(type(seed) is not int or not 0 <= seed <= 4294967295 for seed in e.seeds):
-            raise ValueError(f"{e.id} 的 seed 必须是合法的非负整数")
+            raise ValueError(f"{e.id}: every seed must be an integer in 0..4294967295")
         keys = sorted(e.variables)
         if {"method", "seed"} & (set(e.fixed) | set(keys)) or set(e.fixed) & set(keys):
-            raise ValueError(f"{e.id} 的 fixed/variables 有重名，或试图覆盖 method/seed")
+            raise ValueError(f"{e.id}: fixed/variables overlap or override reserved method/seed fields")
         for key in keys:
             values = e.variables[key]
             if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) or not values:
-                raise ValueError(f"{e.id} 的变量名非法或变量轴为空：{key}")
+                raise ValueError(f"{e.id}: variable {key!r} must have a valid configuration name and a nonempty axis")
             if any(type(v) not in (str, int, float, bool) for v in values):
-                raise ValueError(f"{e.id}.{key} 的变量值必须是 JSON 标量")
+                raise ValueError(f"{e.id}.{key}: variable values must be JSON scalars")
             encoded = [json.dumps(v, allow_nan=False, sort_keys=True) for v in values]
             if len(encoded) != len(set(encoded)):
-                raise ValueError(f"{e.id}.{key} 存在重复取值")
+                raise ValueError(f"{e.id}.{key}: variable values must be unique")
         count = math.prod(len(e.variables[k]) for k in keys) * len(e.seeds)
         if len(tasks) + count > MAX_TASKS:
-            raise ValueError(f"本步最多展开 {MAX_TASKS} 次运行；请缩小矩阵")
+            raise ValueError(f"The matrix exceeds the {MAX_TASKS}-run limit; reduce parameter-grid sizes")
         for values in itertools.product(*(e.variables[k] for k in keys)):
             for seed in e.seeds:
                 config = {
@@ -143,7 +177,7 @@ def expand_tasks(plan: ExperimentPlan, task: TaskConfig, schema: dict | None) ->
                 parts = [f"{k}={quote(str(v), safe='._')}" for k, v in zip(keys, values, strict=True)]
                 key = "-".join([e.id, *parts, f"seed={seed}"])
                 if key in seen:
-                    raise ValueError(f"重复的任务键：{key}")
+                    raise ValueError(f"Duplicate task key: {key}")
                 seen.add(key)
                 tasks.append(
                     PlanTask(
@@ -165,7 +199,7 @@ def estimate_budget(plan: ExperimentPlan, tasks: list[PlanTask], task=None) -> d
     reserved = 0
     for e in plan.experiments:
         if not math.isfinite(e.est_minutes_per_run) or e.est_minutes_per_run <= 0:
-            raise ValueError(f"{e.id} 的 est_minutes_per_run 必须大于 0 且有限")
+            raise ValueError(f"{e.id}: est_minutes_per_run must be finite and positive")
         group = [t for t in tasks if t.experiment_id == e.id]
         combinations = len(group) // len(e.seeds)
         extra = combinations * plan.replication_policy.max_extra_seeds_per_group

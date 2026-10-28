@@ -18,7 +18,7 @@ from airesearcher.engine.engine import ProjectEngine
 from airesearcher.engine.stage import Continue, Error, NeedsApproval
 from airesearcher.llm.gateway import LiteLLMBackend, LLMGateway
 from airesearcher.stages.plan.expand import PlanDraft, canonical_method, expand_tasks, load_task, make_plan
-from airesearcher.stages.plan.precheck import inspect_inputs
+from airesearcher.stages.plan.precheck import inspect_inputs, item, planning_budget_context
 from airesearcher.stages.plan.stage import PLAN, PRECHECK, PROMPT, TASKS, PlanStage
 from airesearcher.testing.fake_executor import FakeExecutor
 from airesearcher.testing.fake_llm import fake_gateway
@@ -244,7 +244,9 @@ def test_method_aliases_are_explicit_and_unknown_methods_fail():
     assert canonical_method("Full fine-tuning", task) == "full_ft"
     assert canonical_method("TF-IDF + LR", task) == "tfidf_lr"
     assert canonical_method("LoRA", task) == "lora"
-    with pytest.raises(ValueError, match="未被当前模板支持"):
+    assert canonical_method("Low-Rank Adaptation (LoRA)", task) == "lora"
+    assert canonical_method("LoRA (Low-Rank Adaptation)", task) == "lora"
+    with pytest.raises(ValueError, match="unsupported by this template"):
         canonical_method("LoRA-RITE", task)
 
 
@@ -426,3 +428,211 @@ def test_text_cls_defaults_and_config_schema(tmp_path, monkeypatch, air_home, in
     assert any(c["check"] == "config_schema" and c["status"] == "fail" for c in inputs[1]["precheck"])
     if invalid_kind == "missing_required":
         assert any("'eval_split' is a required property" in c["detail"] for c in inputs[1]["precheck"])
+
+
+def plan_input(request):
+    user = next(message["content"] for message in request.messages if message["role"] == "user")
+    document = user.split('<untrusted_document source="plan_inputs">\n', 1)[1]
+    return json.loads(document.rsplit("\n</untrusted_document>", 1)[0])
+
+
+def test_invalid_experiment_id_gets_specific_format_feedback_and_fake_repair(air_home):
+    good = preset_draft(fixture_idea("tasks/smoke"), "tasks/smoke")
+    bad = deepcopy(good)
+    old = bad["experiments"][0]["id"]
+    bad["experiments"][0]["id"] = "full-ft-tuning"
+    bad["comparisons"][0]["experiments"][0] = "full-ft-tuning"
+    project, engine, _, _ = seeded(air_home, [bad, good])
+    start_plan(engine, project)
+    [first, repair] = engine.llm.backend.calls
+    assert first.prompt_version >= 6
+    assert "^[A-Za-z][A-Za-z0-9_]*$" in first.messages[1]["content"]
+    assert any("String should match pattern" in message["content"] for message in repair.messages)
+    plan = parse_plan_md(project.archive.read_text(project.archive.latest(PLAN)))
+    assert plan.experiments[0].id == old
+    assert not engine.executor.submitted and project.budget.used().get("llm_usd", 0) == 0
+
+
+def test_legacy_candidate_id_error_keeps_the_actionable_english_reason(air_home):
+    project, _, idea, ref = seeded(air_home)
+    _, task, schema = load_task(project.config.task)
+    draft = PlanDraft.model_validate(preset_draft(idea, project.config.task))
+    plan = make_plan(draft, ref, project.config.task, task, 1)
+    plan.experiments[0].id = "full-ft-tuning"
+    with pytest.raises(ValueError) as error:
+        expand_tasks(plan, task, schema)
+    feedback = item("structure", [str(error.value)], "")
+    assert "full-ft-tuning" in feedback.detail and "no hyphens or spaces" in feedback.detail
+    assert "^[A-Za-z][A-Za-z0-9_]*$" in feedback.detail
+
+
+def test_exhausted_identifier_retries_keep_the_rule_for_explicit_human_retry(air_home):
+    bad = preset_draft(fixture_idea("tasks/smoke"), "tasks/smoke")
+    bad["experiments"][0]["id"] = "full-ft-tuning"
+    project, engine, _, _ = seeded(air_home, [bad])
+    drive(engine, S.IdeaPending)
+    approve_pending(project)
+    drive(engine, S.Paused)
+    assert len(engine.llm.backend.calls) == 6
+    question = project.questions.pending()
+    assert "experiments.0.id" in question.text and "^[A-Za-z][A-Za-z0-9_]*$" in question.text
+    assert "Associated fields/files" not in question.text
+    assert not engine.executor.submitted and project.budget.used().get("llm_usd", 0) == 0
+
+
+@pytest.mark.parametrize("bad_filter", [{"eval_condition": "final"}, {"unknown_key": None}, {"eval_split": "dev"}])
+def test_invalid_comparison_filters_receive_actionable_feedback_and_fake_repair(air_home, bad_filter):
+    good = preset_draft(fixture_idea("tasks/smoke"), "tasks/smoke")
+    good["comparisons"][0]["filter"] = {"eval_split": "test"}
+    bad = deepcopy(good)
+    bad["comparisons"][0]["filter"] = bad_filter
+    project, engine, _, _ = seeded(air_home, [bad, good])
+    start_plan(engine, project)
+    [_, repair] = engine.llm.backend.calls
+    if "eval_condition" in bad_filter:
+        message = "\n".join(m["content"] for m in repair.messages if m["role"] == "user")
+        assert "experiment metadata" in message and "eval_split" in message
+    else:
+        details = "\n".join(c["detail"] for c in plan_input(repair)["precheck"])
+        expected = "unknown configuration filter keys" if "unknown_key" in bad_filter else "matches no tasks"
+        assert expected in details
+    assert checks(project)["fairness"]["status"] == "pass"
+    plan = parse_plan_md(project.archive.read_text(project.archive.latest(PLAN)))
+    assert plan.comparisons[0].filter == {"eval_split": "test"}
+    assert not engine.executor.submitted and project.budget.used().get("llm_usd", 0) == 0
+
+
+def test_remaining_budget_feedback_includes_spent_resources_and_reserved_seeds(air_home):
+    good = preset_draft(fixture_idea("tasks/smoke"), "tasks/smoke")
+    for experiment in good["experiments"]:
+        experiment["est_minutes_per_run"] = 1
+    bad = deepcopy(good)
+    bad["replication_policy"] = {"max_extra_seeds_per_group": 3, "trigger": "std > 0.03"}
+    for experiment in bad["experiments"]:
+        experiment["est_minutes_per_run"] = 5
+    budget = {"llm_usd": {"hard": 2}, "wall_hours": {"hard": 0.5}, "gpu_hours": {"hard": 0.4}}
+    project, engine, idea, _ = seeded(air_home, [bad, good], budget=budget)
+    project.budget.charge("wall_hours", 0.1, "prior-test-usage")
+    project.budget.charge("gpu_hours", 0.05, "prior-test-usage")
+    start_plan(engine, project)
+    [initial, repair] = engine.llm.backend.calls
+    first = plan_input(initial)["budget_context"]
+    assert first["categories"]["wall_hours"]["remaining_before_stop_line"] == pytest.approx(0.35, abs=0.001)
+    assert first["categories"]["gpu_hours"]["remaining_before_stop_line"] == pytest.approx(0.31)
+    assert "Cartesian product" in first["run_cost_rule"] and "Reserved extra runs" in first["run_cost_rule"]
+    details = "\n".join(c["detail"] for c in plan_input(repair)["precheck"] if c["check"] == "budget")
+    assert "formal runs=9" in details and "reserved extra runs=9" in details
+    assert "Reduce parameter-grid" in details and "Do not increase budget limits" in details
+    assert checks(project)["budget"]["status"] == "pass"
+    assert project.config.budget["llm_usd"].hard == 2 and project.config.budget["gpu_hours"].hard == 0.4
+    smaller_idea = idea.model_copy(update={"budget": {"wall_hours": 0.25, "gpu_hours": 0.2}})
+    smaller = planning_budget_context(project.config, smaller_idea, {"wall_hours": 0.1}, 0.9)
+    assert smaller["categories"]["wall_hours"]["remaining_before_stop_line"] == pytest.approx(0.125)
+    assert smaller["categories"]["gpu_hours"]["hard_limit"] == 0.2
+    assert not engine.executor.submitted and project.budget.used().get("llm_usd", 0) == 0
+
+
+def test_approved_literature_lora_name_reaches_pending_plan_without_modifying_input(
+    tmp_path, monkeypatch, air_home
+):
+    local_data(tmp_path, monkeypatch)
+    task_path = "tasks/text_cls_lowres"
+    idea = fixture_idea(task_path)
+    idea.baselines = [idea.baselines[1]]
+    idea.methods[0].name = "Low-Rank Adaptation (LoRA)"
+    project = Project.create(
+        goal=idea.research_question, task=task_path, home=air_home, register=False,
+        models=offline_models(), dev={"stage_impl": {"plan": "real"}},
+    )
+    text = render_front_matter(idea.model_dump(mode="json"), "# Approved test input\n")
+    ref = project.archive.put("idea/selected.md", "idea", text)
+    draft = preset_draft(idea, task_path, train_size=4)
+    gateway = fake_gateway(project, {PROMPT: [draft]})
+    engine = ProjectEngine(
+        project, llm=gateway, executor=FakeExecutor(project), retry_delay=0, stages={"idea": FixtureIdeaStage(ref)}
+    )
+    schema_path = load_task(task_path)[0] / "config_schema.json"
+    schema_hash = sha256_file(schema_path)
+    start_plan(engine, project)
+    assert checks(project)["scope"]["status"] == "pass"
+    assert project.archive.read_text(ref) == text and project.archive.latest("idea/selected.md") == ref
+    assert sha256_file(schema_path) == schema_hash
+    assert len(gateway.backend.calls) == 1 and not engine.executor.submitted
+
+
+def test_short_idea_repairs_then_hands_off_full_fake_experiment_flow(tmp_path, monkeypatch, air_home):
+    from airesearcher.runtime.local import LocalExecutor
+    from airesearcher.services.runs import list_runs
+    from airesearcher.stages.writing.bundle import EvidenceBundle, build_bundle
+    from airesearcher.testing.contracts import check_project
+    from scripts.experiment.demo import analysis_reply, simulated_outcome
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("This regression must not submit local training")
+
+    monkeypatch.setattr(LocalExecutor, "submit", forbidden)
+    local_data(tmp_path, monkeypatch)
+    task_path = "tasks/text_cls_lowres"
+    idea = fixture_idea(task_path)
+    idea.research_question = "Can LoRA reduce training cost while maintaining accuracy on low-resource SST-2?"
+    idea.baselines = [idea.baselines[1]]
+    idea.methods[0].name = "Low-Rank Adaptation (LoRA)"
+    good = preset_draft(idea, task_path, train_size=4)
+    for experiment in good["experiments"]:
+        experiment["fixed"].update(epochs=1, eval_split="test")
+        experiment["eval_condition"] = "final"
+        experiment["est_minutes_per_run"] = 1
+    good["comparisons"][0]["filter"] = {"eval_split": "test"}
+    bad_id = deepcopy(good)
+    bad_id["experiments"][0]["id"] = "full-ft-tuning"
+    bad_id["comparisons"][0]["experiments"][0] = "full-ft-tuning"
+    bad_filter = deepcopy(good)
+    bad_filter["comparisons"][0]["filter"] = {"eval_condition": "final"}
+    expensive = deepcopy(good)
+    expensive["replication_policy"] = {"max_extra_seeds_per_group": 3, "trigger": "std > 0.03"}
+    for experiment in expensive["experiments"]:
+        experiment["est_minutes_per_run"] = 10
+    project = Project.create(
+        goal=idea.research_question, task=task_path, home=air_home, register=False, models=offline_models(),
+        budget={"llm_usd": {"hard": 2}, "wall_hours": {"hard": 0.5}, "gpu_hours": {"hard": 0.5}},
+        dev={"stage_impl": {"plan": "real", "experiment": "real", "writing": "fake"}},
+    )
+    ref = project.archive.put("idea/selected.md", "idea", render_front_matter(idea.model_dump(mode="json"), "# Test\n"))
+    analysis = analysis_reply()
+    analysis["hypothesis_status"] = {"H1": "inconclusive"}
+    gateway = fake_gateway(project, {PROMPT: [bad_id, bad_filter, expensive, good], "experiment/analyze": [analysis]})
+    executor = FakeExecutor(project, outcomes=simulated_outcome)
+    engine = ProjectEngine(
+        project, llm=gateway, executor=executor, retry_delay=0, stages={"idea": FixtureIdeaStage(ref)}
+    )
+    start_plan(engine, project)
+    assert len(gateway.backend.calls) == 4 and not executor.submitted
+    assert all(c["status"] != "fail" for c in checks(project).values())
+    assert project.approvals.pending()[0].kind == "plan"
+    approve_pending(project)
+    drive(engine, S.LogPending)
+    runs = list_runs(project.root)
+    assert len(runs) == 8 and all(r.status.state.value == "succeeded" for r in runs)
+    assert all(r.record.executor == "fake" for r in runs)
+    assert sum(r.record.kind == "trial" for r in runs) == 2
+    assert check_project(project.root, owners=["实验"]).ok
+    assert project.approvals.pending()[0].kind == "log"
+    approve_pending(project)
+    drive(engine, S.Writing)
+    assert project.budget.used().get("llm_usd", 0) == 0
+    assert len(gateway.backend.calls) == 5
+    # Exercise the writing owner's real, read-only consumer at the handoff
+    # boundary; do not run or alter the downstream writing implementation.
+    bundle = build_bundle(project.root, approved=engine.ck.approved, include_runtime=True)
+    captured = EvidenceBundle.model_validate_json(bundle.to_bytes())
+    assert captured.idea_ref == ref and captured.plan_ref == engine.ck.approved["plan"]
+    assert not captured.diagnostics and len(captured.logs) == 1
+    assert captured.logs[0].ref == project.approvals.latest_approved("log").target
+    assert {a.aggregate_id for a in captured.aggregates} == {"C1", "all"}
+    assert all(a.data.plan_ref == captured.plan_ref and all(row.n == 3 for row in a.data.rows)
+               for a in captured.aggregates)
+    formal = {view.record.run_id for view in runs if view.record.kind != "trial"}
+    assert {run["run_id"] for run in captured.runtime.runs} == formal
+    assert all(run["plan_ref"] == captured.plan_ref.model_dump(mode="json") for run in captured.runtime.runs)
+    assert not (project.root / "paper/evidence_bundle.json").exists()
+    assert not (project.root / "paper/main.tex").exists()
