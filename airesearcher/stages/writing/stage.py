@@ -26,13 +26,13 @@ from airesearcher.engine.stage import Continue, Error, NeedsApproval, StageConte
 from airesearcher.llm.gateway import LLMOutputError
 from airesearcher.services import evidence, literature, runs
 
-from . import attempts, recovery
+from . import attempts, figure_planning, recovery
 from . import claims as binding
 from . import review as semantic
 from ._latex import TemplateError, safe_path
 from .bundle import ApprovedSource, EvidenceBundle, _runtime_input, build_bundle, write_bundle
 from .compile import compile_paper
-from .figures import default_spec, generate_figure, prepare_data, validate_artifact
+from .figures import default_spec, generate_figure, prepare_data, presentation_error, validate_artifact, validate_source
 from .template import check_template, inspect_template, resolve_template, write_check
 from .writer import GENERATION_ORDER, PROMPT_ID, SECTIONS, SectionOutput, Writer, _section_bytes
 
@@ -1070,55 +1070,74 @@ class WritingStage:
     def _figures(self, ctx, s, meta, bundle, figure_keys, figure_basis):
         skill = ctx.skills.load("scientific-plotting")
         for item in bundle.aggregates:
+            validate_source(item.data)
             fid = f"fig_{item.aggregate_id.lower()}"
             key = figure_keys[fid]
             receipt = _receipt(ctx, f"figure-{fid}")
-            if receipt.get("key") != key:
+            superseded = None
+            if receipt and receipt.get("key") != key:
+                # Changed renderer/model dependencies must not erase an old raw
+                # proposal, including invalid legacy caches from a previous release.
+                path = f"paper/.writing/figure-{fid}.json"
+                superseded = ctx.archive.put(path, "other", _path(ctx, path),
+                                             producer="agent:writing/figure-planning").model_dump()
+                if receipt.get("status") != "rejected":
+                    try:
+                        figure_planning.validate(item, fid, receipt["spec"])
+                    except ValueError as exc:
+                        # A release can change the renderer key without changing
+                        # evidence. Count the recorded legacy call conservatively;
+                        # upgrading must not turn it into another free first try.
+                        figure_planning.reject(ctx, item, fid, key, receipt, exc, _receipt, _save)
+                        return Continue("Rejected legacy Figure proposal retained; bounded repair pending")
+            if receipt.get("key") != key or receipt.get("status") == "rejected":
                 units = bundle.runtime.task.get("metric_units", {})
                 metric = item.data.comparison.get("metric")
-                if metric in units:
-                    spec = default_spec(item.data, fig_id=fid, ylabel=f"{metric} ({units[metric]})")
+                spec = None
+                default_reason = ""
+                if metric in units and receipt.get("status") != "rejected":
+                    try:
+                        spec = default_spec(item.data, fig_id=fid, ylabel=f"{metric} ({units[metric]})")
+                    except ValueError as exc:
+                        if not presentation_error(exc):
+                            raise ValidationFailed(f"Invalid Aggregate evidence: {exc}") from exc
+                        default_reason = str(exc)
+                if spec is not None:
                     receipt = {"key": key, "spec": spec.model_dump()}
                 else:
-                    response = ctx.llm.complete(
-                        role="writing.figure_spec",
-                        prompt_id=FIGURE_PROMPT,
-                        tier="strong",
-                        response_schema=PlannedFigure,
-                        variables={
-                            "schema": PlannedFigure.model_json_schema(),
-                            "evidence": ctx.llm.wrap_untrusted(
-                                json.dumps(
-                                    {
-                                        "fig_id": fid,
-                                        "aggregate": item.data.model_dump(mode="json"),
-                                        "task": bundle.runtime.task,
-                                    },
-                                    ensure_ascii=False,
-                                ),
-                                "figure-input",
-                            ),
-                        },
-                    )
-                    spec = PlannedFigure.model_validate(response.parsed)
-                    receipt = {
-                        "key": key,
-                        "original_proposal": spec.model_dump(),
-                        "original_response": response.text,
-                        "spec": spec.model_dump(),
-                        "call_id": response.call_id,
-                        "prompt_id": response.prompt_id,
-                        "prompt_version": response.prompt_version,
-                    }
-                # Preserve a completed model call before any semantic validation.
+                    def request(reason, fid=fid, item=item, default_reason=default_reason):
+                        return ctx.llm.complete(
+                            role="writing.figure_spec", prompt_id=FIGURE_PROMPT, tier="strong", max_retries=0,
+                            response_schema=PlannedFigure,
+                            variables={
+                                "schema": PlannedFigure.model_json_schema(),
+                                "evidence": ctx.llm.wrap_untrusted(json.dumps({
+                                    "fig_id": fid, "aggregate": item.data.model_dump(mode="json"),
+                                    "task": bundle.runtime.task, "rejection_reason": reason or default_reason,
+                                    "presentation": "Represent all varying dimensions with x, hue and optional facets; "
+                                                    "at most 16 panels. Never pool configurations.",
+                                }, ensure_ascii=False), "figure-input"),
+                            },
+                        )
+                    receipt = figure_planning.propose(ctx, item, fid, key, _receipt, _save, request)
+                if superseded:
+                    receipt["supersedes"] = superseded
+                # The attempt journal already retained the reply before validation.
                 _save(ctx, f"figure-{fid}", receipt)
+            try:
+                figure_planning.validate(item, fid, receipt["spec"])
+            except ValueError as exc:
+                if receipt.get("ylabel_source") and str(exc) in {
+                    "xlabel and ylabel must be nonempty",
+                    "ylabel must state a unit in parentheses/brackets or be explicitly dimensionless",
+                }:
+                    if receipt.get("clarifications"):
+                        receipt["clarifications"][-1]["validation_error"] = str(exc)
+                        _save(ctx, f"figure-{fid}", receipt)
+                    return self._ask_figure_unit(ctx, meta, item, receipt, str(exc))
+                figure_planning.reject(ctx, item, fid, key, receipt, exc, _receipt, _save)
+                return Continue("Rejected Figure proposal retained; bounded repair pending")
             spec = FigureSpec.model_validate(receipt["spec"])
-            if (
-                spec.fig_id != fid
-                or spec.aggregate_id != item.aggregate_id
-                or spec.metric != item.data.comparison.get("metric")
-            ):
-                raise ValueError("FigureSpec changed the selected comparison identity")
             if not spec.xlabel.strip():
                 rows = [r for r in item.data.rows if r.metric == spec.metric]
                 if not rows or not all(spec.x in r.group for r in rows):
@@ -1138,7 +1157,8 @@ class WritingStage:
                 prepare_data(item.data, spec)
             except ValueError as exc:
                 # Only a rejected user-supplied unit returns to clarification.
-                # Uncertainty, grouping and all other scientific failures still stop.
+                # Presentation failures repair within a persisted budget. Source
+                # integrity errors escape as ValidationFailed and still fail closed.
                 if receipt.get("ylabel_source") and str(exc) in {
                     "xlabel and ylabel must be nonempty",
                     "ylabel must state a unit in parentheses/brackets or be explicitly dimensionless",
@@ -1147,7 +1167,13 @@ class WritingStage:
                         receipt["clarifications"][-1]["validation_error"] = str(exc)
                         _save(ctx, f"figure-{fid}", receipt)
                     return self._ask_figure_unit(ctx, meta, item, receipt, str(exc))
+                if presentation_error(exc):
+                    figure_planning.reject(ctx, item, fid, key, receipt, exc, _receipt, _save)
+                    return Continue("Rejected Figure proposal retained; bounded repair pending")
                 raise
+            if receipt.get("status") == "pending_unit":
+                receipt["status"] = "accepted"
+                _save(ctx, f"figure-{fid}", receipt)
             if receipt.get("ylabel_source"):
                 meta.setdefault("figure_units", {})[unit_key] = {
                     "ylabel": spec.ylabel,

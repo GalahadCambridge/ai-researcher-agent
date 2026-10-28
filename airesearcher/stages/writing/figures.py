@@ -11,8 +11,10 @@ from functools import lru_cache
 from pathlib import Path
 from types import ModuleType
 
+from pydantic import ValidationError
+
 from airesearcher.core.archive import Archive
-from airesearcher.core.errors import AirError
+from airesearcher.core.errors import AirError, ValidationFailed
 from airesearcher.core.events import Events
 from airesearcher.core.fsutil import atomic_write_json, atomic_write_text, now, sha256_file
 from airesearcher.core.models.aggregate import Aggregate
@@ -52,16 +54,24 @@ def default_spec(aggregate: Aggregate, *, fig_id: str | None = None, metric: str
     elif len(fields) <= 2 and not numeric:
         x, hue, kind = fields[0], fields[1] if len(fields) == 2 else None, "bar"
     else:
-        raise ValueError("ambiguous grouping: provide an explicit FigureSpec")
+        varying = [k for k in fields if len({renderer.canonical(r.group[k]) for r in rows}) > 1]
+        x = next((k for k in numeric if k in varying), fields[0])
+        hue = next((k for k in categorical + fields if k != x and k in varying), None)
+        kind = "line" if x in numeric else "bar"
+    facets = [k for k in fields if k not in {x, hue}
+              and len({renderer.canonical(r.group[k]) for r in rows}) > 1]
     counts = ", ".join(f"n={r.n} ({renderer.canonical(r.group)})" for r in rows)
     prefix = "Exploratory: " if aggregate.eval_condition == "explore" else ""
     # An unknown physical unit must be supplied by the caller; never infer dimensionless.
     if ylabel is None:
         raise ValueError("provide ylabel with the metric unit or explicit dimensionless designation")
     spec = FigureSpec(fig_id=fig_id or f"fig_{aggregate.aggregate_id.lower()}", kind="point" if distribution else kind,
-                      aggregate_id=aggregate.aggregate_id, x=x, hue=hue, metric=metric, error="ci95",
+                      aggregate_id=aggregate.aggregate_id, x=x, hue=hue, facets=facets, metric=metric,
+                      error="none" if all(r.n == 1 and r.ci95 is None for r in rows) else "ci95",
                       title=prefix + aggregate.comparison.get("question", aggregate.aggregate_id), xlabel=x,
                       ylabel=ylabel, scale=scale, caption=f"{prefix}{counts}. Error bars: 95% CI.")
+    if spec.error == "none":
+        spec.caption = f"{prefix}{counts}. Single observations; no uncertainty estimate."
     renderer.select_rows(aggregate, spec)
     return spec
 
@@ -70,6 +80,78 @@ def prepare_data(aggregate: Aggregate, spec: FigureSpec) -> str:
     renderer = load_renderer()
     rows = renderer.select_rows(aggregate, spec)
     return renderer.csv_text(rows, spec, aggregate.eval_condition)
+
+
+def presentation_error(exc: ValueError) -> bool:
+    return isinstance(exc, ValidationError) or str(exc).startswith((
+        "fig_id must", "scale must", "xlabel and ylabel", "ylabel must", "x and hue",
+        "unknown grouping field", "duplicate plotted group", "unplotted grouping field",
+        "facets must", "facet presentation", "line plot requires", "log_x requires",
+        "uncertainty required", "requested CI", "requested std", "point/box requires",
+        "caption", "exploratory result", "ambiguous grouping",
+    ))
+
+
+def validate_source(aggregate: Aggregate) -> None:
+    """Check source invariants independently of any proposed projection or units."""
+    renderer = load_renderer()
+    metric = aggregate.comparison.get("metric")
+    rows = [r for r in aggregate.rows if r.metric == metric]
+    if not rows:
+        raise ValidationFailed("Aggregate comparison metric has no rows")
+    keys, groups, runs = set(rows[0].group), set(), set()
+    for row in rows:
+        group = renderer.canonical(row.group)
+        if (not keys or set(row.group) != keys or group in groups
+                or not set(aggregate.comparison.get("group_by") or []) <= keys):
+            raise ValidationFailed("Aggregate grouping metadata or complete groups are inconsistent")
+        if runs.intersection(row.run_ids):
+            raise ValidationFailed("duplicate run provenance")
+        groups.add(group)
+        runs.update(row.run_ids)
+        # A one-row, non-rendered validation probe has no hidden dimensions.
+        # Its label is internal only, never a scientific unit declaration.
+        probe = FigureSpec(fig_id="source_validation", aggregate_id=aggregate.aggregate_id, kind="bar",
+                           x=sorted(keys)[0], metric=metric, hue=None,
+                           error="none" if row.n == 1 else "ci95" if row.ci95 is not None else "std",
+                           title="Exploratory source validation", xlabel="group", ylabel="internal (unitless)",
+                           caption=f"Exploratory n={row.n}; 95% CI / standard deviation.")
+        try:
+            renderer.validate_rows(probe, [row], aggregate.eval_condition)
+        except ValueError as exc:
+            raise ValidationFailed(f"Invalid Aggregate evidence: {exc}") from exc
+
+
+def validate_proposal(aggregate: Aggregate, spec: FigureSpec) -> None:
+    """Reject presentation mistakes, while source-integrity errors fail closed.
+
+    Blank units remain a human clarification, not an invitation to invent units.
+    This preflight neither edits Aggregate rows nor pools configurations.
+    """
+    rows = [row for row in aggregate.rows if row.metric == spec.metric]
+    if not rows:
+        raise ValueError(f"metric {spec.metric!r} has no rows")
+    keys = set(rows[0].group)
+    if any(set(row.group) != keys for row in rows) or not set(aggregate.comparison.get("group_by") or []) <= keys:
+        raise ValidationFailed("Aggregate grouping metadata is inconsistent")
+    represented = {spec.x, *spec.facets} | ({spec.hue} if spec.hue else set())
+    if not represented <= keys:
+        raise ValueError("unknown grouping field in FigureSpec")
+    hidden = sorted(k for k in keys - represented if len({load_renderer().canonical(r.group[k]) for r in rows}) > 1)
+    if hidden:
+        raise ValueError(f"{', '.join(hidden)} varies but is not represented; "
+                         "projection would pool distinct configurations")
+    if not spec.ylabel.strip():
+        return
+    normalized = spec.model_copy(update={"xlabel": spec.xlabel if spec.xlabel.strip() else spec.x})
+    try:
+        prepare_data(aggregate, normalized)
+    except ValueError as exc:
+        # Only renderer diagnostics owned by presentation planning are recoverable.
+        # n/run lineage, invalid source statistics and corrupt group values are not.
+        if presentation_error(exc):
+            raise
+        raise ValidationFailed(f"Invalid Aggregate evidence: {exc}") from exc
 
 
 def validate_artifact(directory: Path, aggregate: Aggregate, aggregate_ref: VersionRef,

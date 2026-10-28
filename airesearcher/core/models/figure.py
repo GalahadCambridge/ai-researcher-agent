@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .common import VersionRef
 
@@ -24,6 +24,7 @@ class FigureSpec(BaseModel):
     scale: float = 1.0
     log_x: bool = False
     caption: str
+    facets: list[str] = Field(default_factory=list, max_length=8)
 
 
 class Figure(BaseModel):
