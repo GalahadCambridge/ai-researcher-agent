@@ -2,7 +2,7 @@
   "paper_ref": {
     "artifact_id": "paper",
     "version": 2,
-    "sha256": "738f6a713d9d6d73a85853ec4bbd2b5475066751ec88bdac358d5765ecbc6875"
+    "sha256": "06549642f7a1cf8111c802494a6a7011bbf690a48220ef76b96aa99678106fea"
   },
   "mode": "full",
   "claims": [
@@ -12,7 +12,8 @@
       "issues": [],
       "recomputed": {
         "C1.main.score.mean": "78.0",
-        "C1.baseline.score.mean": "69.4"
+        "C1.baseline.score.mean": "69.4",
+        "C1.main.score.n": "3"
       }
     },
     {
@@ -20,7 +21,8 @@
       "support": "supported",
       "issues": [],
       "recomputed": {
-        "C1.main-vs-baseline.score.diff_mean": "8.6"
+        "C1.main-vs-baseline.score.diff_mean": "8.6",
+        "C1.main-vs-baseline.score.p_value": "0.0017"
       }
     },
     {
@@ -29,7 +31,8 @@
       "issues": [],
       "recomputed": {
         "C2.main.score.mean": "78.0",
-        "C2.ablation.score.mean": "73.7"
+        "C2.ablation.score.mean": "73.7",
+        "C2.main.score.n": "3"
       }
     },
     {
@@ -37,7 +40,8 @@
       "support": "supported",
       "issues": [],
       "recomputed": {
-        "C2.main-vs-ablation.score.diff_mean": "4.3"
+        "C2.main-vs-ablation.score.diff_mean": "4.3",
+        "C2.main-vs-ablation.score.p_value": "0.0343"
       }
     },
     {
@@ -56,7 +60,7 @@
           "claim_id": "CL6",
           "location": {},
           "sentence": "\\claim{CL6}{The best single run of main reaches \\airval{C1.main.score.max}\\%.}",
-          "detail": "文中 95.0，重算为 78.9（C1.main.score.max）",
+          "detail": "C1.main.score.max: claimed 95.0, recomputed 78.9",
           "suggestion": ""
         }
       ],
@@ -74,12 +78,13 @@
           "claim_id": "CL7",
           "location": {},
           "sentence": "\\claim{CL7}{Overall, main performs worse than baseline.}",
-          "detail": "论断 a<b，但均值差为 +0.0857",
+          "detail": "Assertion a<b contradicts exact difference 0.085667",
           "suggestion": ""
         }
       ],
       "recomputed": {
-        "C1.main-vs-baseline.score.diff_mean": "8.6"
+        "C1.main-vs-baseline.score.diff_mean": "8.6",
+        "C1.main-vs-baseline.score.p_value": "0.0017"
       }
     }
   ],
@@ -93,5 +98,5 @@
     "contradicted": 1
   },
   "compile_ok": true,
-  "created_at": "2026-10-10T11:38:17.849958+08:00"
+  "created_at": "2026-10-28T14:28:18.850472+08:00"
 }

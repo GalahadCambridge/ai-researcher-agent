@@ -31,7 +31,9 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, ValidationError, create_model
 
+from airesearcher.core.errors import BudgetExceeded
 from airesearcher.core.fsutil import append_jsonl, now, rand_hex
+from airesearcher.core.i18n import Msg
 
 from .cache import CacheMiss, LLMCache
 from .models import MissingAPIKey, ModelRegistry, ResolvedModel, get_secret
@@ -360,6 +362,16 @@ class LLMGateway:
     def _usd(self, raw: RawCompletion, m: ResolvedModel) -> float:
         return entry_usd(m.entry, raw)
 
+    def _guard_budget(self) -> None:
+        """发请求前检查：llm_usd / llm_tokens / llm_calls 已达 hard 上限就不再调用（缓存命中不经过这里）。
+        只比较已记账的用量，不做跨调用的预留。"""
+        st = self.project.budget.check()  # 首次达到上限时顺便写 budget.exhausted 事件
+        for name in ("llm_usd", "llm_tokens", "llm_calls"):
+            c = st.categories.get(name)
+            if c is not None and c.level == "exhausted":
+                params = {"category": name, "used": f"{c.used:g}", "hard": f"{c.hard:g}"}
+                raise BudgetExceeded(detail=params, msg=Msg(code="error.budget_exceeded", params=params))
+
     def _guard_network(self, m: ResolvedModel, role: str) -> None:
         """模型接口的网络权限：模型配置里登记过的接口域名视为已授权（配置文件由用户自己维护，
         Agent 无法修改）；其他域名仍按 project.yaml 的 permissions.network.allow 检查。"""
@@ -381,6 +393,7 @@ class LLMGateway:
                     return RawCompletion.model_validate(cache.get(key)), True, m
                 except CacheMiss:
                     raise RuntimeError(f"llm_cache=replay，但缓存中没有这次调用（{req.prompt_id}）") from None
+            self._guard_budget()
             self._guard_network(m, role)
             for i in range(4):  # 1 次 + 指数退避重试 3 次
                 try:

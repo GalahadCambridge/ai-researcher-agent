@@ -1,0 +1,41 @@
+{
+  "checkpoint_id": "ck-000007",
+  "saved_at": "2026-10-28T14:28:10.477924+08:00",
+  "state": "PlanDrafting",
+  "resume_to": null,
+  "pending_approval": null,
+  "pending_question": null,
+  "approved": {
+    "idea": {
+      "artifact_id": "idea/selected.md",
+      "version": 2,
+      "sha256": "da042f112a87fd48fd901fff41188f5cc94dd1e70975bba04e66ac0ebcabef7f"
+    }
+  },
+  "stale": [],
+  "feedback_approval_ids": [],
+  "entry": null,
+  "scratch": {
+    "idea": {
+      "phase": "submit",
+      "handled_feedback": "ap-0001",
+      "notes": [
+        "按用户意见修改（退回修改）：研究问题请写明每类样本数和主要指标"
+      ]
+    },
+    "plan": {
+      "idea_sha": "da042f112a87fd48fd901fff41188f5cc94dd1e70975bba04e66ac0ebcabef7f"
+    },
+    "_label": "计划（假实现）：生成实验计划",
+    "_progress": {
+      "done": 1,
+      "total": 2,
+      "unit": "steps"
+    }
+  },
+  "consecutive_errors": 0,
+  "last_event_seq": 21,
+  "answer": null,
+  "reason": "",
+  "rejected_approval": null
+}

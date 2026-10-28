@@ -1,0 +1,26 @@
+{
+  "checkpoint_id": "ck-000006",
+  "saved_at": "2026-10-28T14:28:10.449411+08:00",
+  "state": "IdeaPending",
+  "resume_to": null,
+  "pending_approval": "ap-0002",
+  "pending_question": null,
+  "approved": {},
+  "stale": [],
+  "feedback_approval_ids": [],
+  "entry": null,
+  "scratch": {
+    "idea": {
+      "phase": "submit",
+      "handled_feedback": "ap-0001",
+      "notes": [
+        "按用户意见修改（退回修改）：研究问题请写明每类样本数和主要指标"
+      ]
+    }
+  },
+  "consecutive_errors": 0,
+  "last_event_seq": 16,
+  "answer": null,
+  "reason": "",
+  "rejected_approval": null
+}

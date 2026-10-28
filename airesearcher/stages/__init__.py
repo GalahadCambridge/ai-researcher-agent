@@ -78,6 +78,12 @@ def load_stage(name: str, config: ProjectConfig | None = None) -> Any:
     try:
         mod = importlib.import_module(module)
     except ModuleNotFoundError as e:
+        if e.name and not (module == e.name or module.startswith(e.name + ".")):
+            # 缺的不是阶段模块本身（或它的父包），而是它 import 的第三方依赖
+            raise RuntimeError(
+                f"阶段 {name} 的依赖包 {e.name} 没有安装，"
+                f'请在仓库目录运行 pip install -e ".[dev]"。'
+            ) from e
         raise RuntimeError(
             f"阶段 {name} 选择了实现 {impl!r}，但找不到模块 {module}。"
             f"可以在 project.yaml 的 dev.stage_impl 中改为 fake。"

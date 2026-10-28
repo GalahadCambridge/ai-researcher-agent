@@ -35,7 +35,8 @@ from .common import feedback_note, new_feedback
 
 PAPER_EXCLUDE = ["build/**", "review/**", ".template_check_default.json"]
 PCT = {"scale": 100, "decimals": 1, "suffix": ""}
-PVAL = {"scale": 1, "decimals": 3, "suffix": ""}
+PVAL = {"scale": 1, "decimals": 4, "suffix": ""}  # 与真实 Writer（writing/claims.py）的 p_value 格式一致
+COUNT = {"scale": 1, "decimals": 0, "suffix": ""}  # 样本量 n
 
 
 # ---------------------------------------------------------------- 小工具
@@ -266,6 +267,9 @@ class FakeWritingStage:
                 vb = ValueRef(key=f"{aid}.{_gkey(c.b)}.{metric}.mean", aggregate_id=aid, aggregate_version=version,
                               group=c.b, metric=metric, stat="mean", fmt=PCT,
                               rendered=evidence.render_value(rb.mean, PCT))
+                vn = ValueRef(key=f"{aid}.{_gkey(c.a)}.{metric}.n", aggregate_id=aid, aggregate_version=version,
+                              group=c.a, metric=metric, stat="n", fmt=COUNT,
+                              rendered=evidence.render_value(ra.n, COUNT))
                 contrast = {"a": c.a, "b": c.b}
                 vd = ValueRef(key=f"{aid}.{_gkey(c.a)}-vs-{_gkey(c.b)}.{metric}.diff_mean", aggregate_id=aid,
                               aggregate_version=version, group={}, metric=metric, stat="diff_mean",
@@ -273,21 +277,27 @@ class FakeWritingStage:
                 ev = [EvidenceLink(type="aggregate", ref=aid, version=version, selector={"metric": metric}),
                       EvidenceLink(type="figure", ref=fig)]
                 n1 = f"CL{len(claims) + 1}"
-                t1 = (f"\\claim{{{n1}}}{{With {ra.n} seeds each, {_tex_escape(_gkey(c.a))} reaches a mean "
+                t1 = (f"\\claim{{{n1}}}{{With \\airval{{{vn.key}}} seeds each, "
+                      f"{_tex_escape(_gkey(c.a))} reaches a mean "
                       f"{_tex_escape(metric)} of \\airval{{{va.key}}}\\% compared with \\airval{{{vb.key}}}\\% "
                       f"for {_tex_escape(_gkey(c.b))}.}}")
                 claims.append(Claim(claim_id=n1, section="results", text=t1, type="numeric",
                                     statement_kind="observation", hedge="none", importance="major",
-                                    hypothesis="H1" if aid == "C1" else None, values=[va, vb], evidence=ev))
+                                    hypothesis="H1" if aid == "C1" else None, values=[va, vb, vn], evidence=ev))
+                vp = None
+                if c.p_value is not None:
+                    vp = ValueRef(key=f"{aid}.{_gkey(c.a)}-vs-{_gkey(c.b)}.{metric}.p_value", aggregate_id=aid,
+                                  aggregate_version=version, group={}, metric=metric, stat="p_value",
+                                  contrast=contrast, fmt=PVAL, rendered=evidence.render_value(c.p_value, PVAL))
+                p_text = f"; Welch p = \\airval{{{vp.key}}}, reported for reference only" if vp else ""
                 n2 = f"CL{len(claims) + 1}"
                 asserted = "a>b" if c.diff_mean > 0 else ("a<b" if c.diff_mean < 0 else "a≈b")
                 word = "higher" if c.diff_mean > 0 else "lower"
                 t2 = (f"\\claim{{{n2}}}{{The mean difference is \\airval{{{vd.key}}} percentage points "
-                      f"({_tex_escape(_gkey(c.a))} {word} than {_tex_escape(_gkey(c.b))}; "
-                      f"Welch p = {c.p_value if c.p_value is not None else 'n/a'}, reported for reference only).}}")
+                      f"({_tex_escape(_gkey(c.a))} {word} than {_tex_escape(_gkey(c.b))}{p_text}).}}")
                 claims.append(Claim(claim_id=n2, section="results", text=t2, type="comparative",
                                     statement_kind="observation", hedge="none", importance="major",
-                                    values=[vd], evidence=ev,
+                                    values=[vd, *([vp] if vp else [])], evidence=ev,
                                     comparison=ClaimComparison(a=c.a, b=c.b, metric=metric, asserted=asserted)))
                 results_tex += [t1, "", t2, ""]
         papers = literature.load_papers(ctx.root)
@@ -317,7 +327,8 @@ class FakeWritingStage:
                         "All numbers are bound to aggregate results through \\texttt{\\textbackslash airval} macros.",
             "introduction": t3,
             "method": "Each experiment from the approved plan was run with three seeds using the task template. "
-                      "Aggregation uses the sample standard deviation and t-based 95\\% confidence intervals.",
+                      "Aggregation uses the sample standard deviation and t-based "
+                      "ninety-five percent confidence intervals.",
             "results": "\n".join(results_tex),
             "conclusion": "These results come from a small number of seeds on a single task and should be read as "
                           "preliminary." + ("\n\nThis version was revised according to reviewer comments.\n"

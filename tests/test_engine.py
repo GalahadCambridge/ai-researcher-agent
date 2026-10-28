@@ -188,6 +188,25 @@ def test_budget_exhausted_transition(project):
     assert eng.state == S.BudgetExhausted and "llm_usd" in eng.ck.reason
 
 
+def test_budget_hit_mid_step_enters_budget_exhausted(project):
+    from airesearcher.core.models.project import Limit
+    from airesearcher.testing.fake_llm import fake_gateway
+
+    project.config.budget["llm_calls"] = Limit(hard=1)
+    llm = fake_gateway(project, {"example/summarize": [{"title": "T", "points": []}]})
+
+    def two_calls(ctx):  # 第一次调用后 llm_calls 已达上限，第二次在发请求前被拒绝
+        for _ in range(2):
+            llm.complete(role="r", prompt_id="example/summarize", variables={"goal": "g", "note": ""})
+        return Continue()
+
+    eng = engine(project, idea=Scripted("idea", [two_calls]))
+    eng.tick()
+    assert eng.state == S.BudgetExhausted and "llm_calls" in eng.ck.reason
+    assert len(llm.backend.calls) == 1
+    assert any(e.type == "budget.exhausted" for e in project.events.all())
+
+
 def test_checkpoint_history_and_atomic(project):
     eng = engine(project, idea=Scripted("idea", [Continue()]))
     for _ in range(25):

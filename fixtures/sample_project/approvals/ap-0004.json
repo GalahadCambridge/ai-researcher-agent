@@ -4,7 +4,7 @@
   "target": {
     "artifact_id": "logs/round_1.md",
     "version": 1,
-    "sha256": "ce3c61acdb3efbdb4997bf1aac24b617adf64630e2fc80e24f0e15b3e3b3ea7e"
+    "sha256": "c19dbfc128e23d135c0dabb7157883a7ad7aad59846f68271a8b52e5e516059f"
   },
   "previous": null,
   "summary": "第 1 轮总结（假实现）：计划内实验全部完成；建议进入论文撰写",
@@ -13,22 +13,22 @@
     {
       "artifact_id": "artifacts/aggregates/C1.json",
       "version": 1,
-      "sha256": "579765f917f1261ed5df6bb60d4f53435dcba11fc0c52443f09d6a94db606fc8"
+      "sha256": "c472c04796dba492c0bd2a657898a8bd5ba440d98a7d258ff82ad7259c2953ad"
     },
     {
       "artifact_id": "artifacts/aggregates/C2.json",
       "version": 1,
-      "sha256": "7bab00803be48cd81d63454d88cc5bf041ba8feb91f43edd34b66d1814c80b5f"
+      "sha256": "af6bc188f458d7c1ebd0a6482b3e9ea7796c1465e97fdc932f320589b803c8a8"
     },
     {
       "artifact_id": "artifacts/aggregates/all.json",
       "version": 1,
-      "sha256": "e53729d7b0e70bc44791d26868b21ec203a96982823b92e02d2d6469687ccf37"
+      "sha256": "1db6181d56dbece9284ba2b53ebae638ceb917b910fed7f826e6c976cd47f5c1"
     }
   ],
   "status": "approved",
-  "created_at": "2026-10-10T11:38:16.261323+08:00",
-  "decided_at": "2026-10-10T11:38:16.262613+08:00",
+  "created_at": "2026-10-28T14:28:17.172654+08:00",
+  "decided_at": "2026-10-28T14:28:17.173987+08:00",
   "decision_comment": "",
   "decided_by": "user",
   "request_ids": [

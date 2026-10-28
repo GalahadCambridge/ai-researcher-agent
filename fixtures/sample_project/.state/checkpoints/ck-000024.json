@@ -1,9 +1,9 @@
 {
   "checkpoint_id": "ck-000024",
-  "saved_at": "2026-10-10T11:38:15.186284+08:00",
-  "state": "Executing",
+  "saved_at": "2026-10-28T14:28:17.173188+08:00",
+  "state": "LogPending",
   "resume_to": null,
-  "pending_approval": null,
+  "pending_approval": "ap-0004",
   "pending_question": null,
   "approved": {
     "idea": {
@@ -28,25 +28,19 @@
         "按用户意见修改（退回修改）：研究问题请写明每类样本数和主要指标"
       ]
     },
-    "_label": "实验（假实现）：第 1 轮执行中（7/9）",
-    "_progress": {
-      "done": 7,
-      "total": 9,
-      "unit": "runs"
-    },
     "plan": {
       "idea_sha": "da042f112a87fd48fd901fff41188f5cc94dd1e70975bba04e66ac0ebcabef7f"
     },
     "experiment": {
       "plan_sha": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2",
       "plan_version": 1,
-      "commit": "f078444692d435d222b936823ca1a88eaa8ec4b8",
+      "commit": "864149dc7e4d952cd6ce56d5f29325052837fac2",
       "round": 1,
       "tasks": {
         "E1-seed=0": {
           "status": "done",
           "runs": [
-            "r-20261010-113808-e173"
+            "r-20261028-142811-f0ac"
           ],
           "experiment_id": "E1",
           "kind": "baseline",
@@ -61,7 +55,7 @@
         "E1-seed=1": {
           "status": "done",
           "runs": [
-            "r-20261010-113808-6128"
+            "r-20261028-142811-6be3"
           ],
           "experiment_id": "E1",
           "kind": "baseline",
@@ -76,7 +70,7 @@
         "E1-seed=2": {
           "status": "done",
           "runs": [
-            "r-20261010-113809-6926"
+            "r-20261028-142812-8631"
           ],
           "experiment_id": "E1",
           "kind": "baseline",
@@ -91,7 +85,7 @@
         "E2-seed=0": {
           "status": "done",
           "runs": [
-            "r-20261010-113809-0426"
+            "r-20261028-142812-d7a6"
           ],
           "experiment_id": "E2",
           "kind": "main",
@@ -106,7 +100,7 @@
         "E2-seed=1": {
           "status": "done",
           "runs": [
-            "r-20261010-113811-02ea"
+            "r-20261028-142813-67dd"
           ],
           "experiment_id": "E2",
           "kind": "main",
@@ -121,8 +115,8 @@
         "E2-seed=2": {
           "status": "done",
           "runs": [
-            "r-20261010-113811-67d8",
-            "r-20261010-113812-86a1"
+            "r-20261028-142813-f994",
+            "r-20261028-142814-92bf"
           ],
           "experiment_id": "E2",
           "kind": "main",
@@ -133,12 +127,12 @@
             "fail_mode": "none"
           },
           "eval_condition": "final",
-          "retry_of": "r-20261010-113811-67d8"
+          "retry_of": "r-20261028-142813-f994"
         },
         "E3-seed=0": {
           "status": "done",
           "runs": [
-            "r-20261010-113813-5303"
+            "r-20261028-142814-52be"
           ],
           "experiment_id": "E3",
           "kind": "ablation",
@@ -151,9 +145,9 @@
           "eval_condition": "final"
         },
         "E3-seed=1": {
-          "status": "running",
+          "status": "done",
           "runs": [
-            "r-20261010-113814-a639"
+            "r-20261028-142815-0c2b"
           ],
           "experiment_id": "E3",
           "kind": "ablation",
@@ -166,9 +160,9 @@
           "eval_condition": "final"
         },
         "E3-seed=2": {
-          "status": "running",
+          "status": "done",
           "runs": [
-            "r-20261010-113814-daa4"
+            "r-20261028-142815-82f4"
           ],
           "experiment_id": "E3",
           "kind": "ablation",
@@ -180,11 +174,20 @@
           },
           "eval_condition": "final"
         }
+      },
+      "analysis": {
+        "aggregated_for": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2",
+        "comparisons": [
+          "C1",
+          "C2",
+          "all"
+        ],
+        "log_done": true
       }
     }
   },
   "consecutive_errors": 0,
-  "last_event_seq": 61,
+  "last_event_seq": 79,
   "answer": null,
   "reason": "",
   "rejected_approval": null

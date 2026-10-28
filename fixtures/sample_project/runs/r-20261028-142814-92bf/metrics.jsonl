@@ -1,0 +1,2 @@
+{"seq": 1, "ts": "2026-10-28T14:28:15.879191+08:00", "name": "score", "value": 0.7725, "split": "test", "step": null}
+{"seq": 2, "ts": "2026-10-28T14:28:15.879385+08:00", "name": "run_seconds", "value": 1.015, "split": null, "step": null}

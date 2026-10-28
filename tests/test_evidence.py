@@ -1,6 +1,7 @@
 """Deterministic checks use exact manuscript and experimental versions."""
 
 import json
+import re
 
 from airesearcher.core.fsutil import atomic_write_json
 from airesearcher.services import evidence, runs
@@ -20,6 +21,11 @@ def test_exact_paper_ref_does_not_read_mutable_source(sample_project):
     after = evidence.check(p.root, paper_ref=ref)
     assert after.claims == before.claims and after.unbound_issues == before.unbound_issues
     assert after.claims
+
+
+def test_sample_project_has_no_unbound_numbers(sample_project):
+    report = evidence.check(sample_project.root)
+    assert not [i for i in report.unbound_issues if i.code == "NUM_UNBOUND"]
 
 
 def test_macro_tampering_is_a_numeric_blocker(sample_project):
@@ -79,7 +85,7 @@ def test_all_remaining_issue_codes(sample_project):
     p = sample_project
 
     def edit(claims):
-        claims[0]["text"] = claims[0]["text"].replace("3 seeds", "8 seeds")
+        claims[0]["text"] = re.sub(r"\\airval\{[^}]*\.n\} seeds", "8 seeds", claims[0]["text"])
         claims[0]["evidence"][0]["selector"]["eval_condition"] = "explore"
         claims[2]["values"][0]["aggregate_version"] = 999
         claims[4]["evidence"][0]["selector"] = {"citation_scope": "experimental_detail"}

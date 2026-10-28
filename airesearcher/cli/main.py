@@ -203,7 +203,18 @@ def serve(port: int = typer.Option(8765, help="端口"), host: str = typer.Optio
 
     console.print(f"[bold green]AI Researcher 后台启动：http://{host}:{port}[/]   接口说明：http://{host}:{port}/docs")
     console.print(f"[dim]项目目录：{air_home()}/projects   按 Ctrl+C 停止[/]")
-    uvicorn.run(create_app(), host=host, port=port, log_level="warning")
+    app_ = create_app()
+    mgr = app_.state.manager
+
+    class Server(uvicorn.Server):
+        def handle_exit(self, sig: int, frame: Any) -> None:
+            if not mgr.closing.is_set():
+                console.print("[yellow]正在停止后台……（先结束网页的实时连接，最多等几秒）[/]")
+            mgr.closing.set()  # 让 SSE 推送循环先结束，连接才能正常关闭
+            super().handle_exit(sig, frame)
+
+    # timeout_graceful_shutdown：兜底，几秒后强制关掉仍未结束的连接
+    Server(uvicorn.Config(app_, host=host, port=port, log_level="warning", timeout_graceful_shutdown=3)).run()
 
 
 @app.command()

@@ -13,7 +13,7 @@
 |---|---|---|---|
 | {"method": "main"} vs {"method": "baseline"} | +0.0857 | 9.1231 | 0.0017 |
 
-排除的运行：2 个（r-20261010-113807-acb2: kind=trial；r-20261010-113811-67d8: failed: nonzero_exit）
+排除的运行：2 个（r-20261028-142810-7783: kind=trial；r-20261028-142813-f994: failed: nonzero_exit）
 
 
 ### C2：消融：ablation 与 main 的差别
@@ -27,7 +27,7 @@
 |---|---|---|---|
 | {"method": "main"} vs {"method": "ablation"} | +0.0428 | 3.7752 | 0.0343 |
 
-排除的运行：1 个（r-20261010-113811-67d8: failed: nonzero_exit）
+排除的运行：1 个（r-20261028-142813-f994: failed: nonzero_exit）
 
 
 ### all：全部实验
@@ -43,7 +43,7 @@
 | {"experiment_id": "E2", "method": "main"} vs {"experiment_id": "E1", "method": "baseline"} | +0.0857 | 9.1231 | 0.0017 |
 | {"experiment_id": "E3", "method": "ablation"} vs {"experiment_id": "E1", "method": "baseline"} | +0.0429 | 3.3181 | 0.032 |
 
-排除的运行：2 个（r-20261010-113807-acb2: kind=trial；r-20261010-113811-67d8: failed: nonzero_exit）
+排除的运行：2 个（r-20261028-142810-7783: kind=trial；r-20261028-142813-f994: failed: nonzero_exit）
 
 
 ## 解释

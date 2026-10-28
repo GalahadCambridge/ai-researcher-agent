@@ -1,0 +1,37 @@
+{
+  "run_id": "r-20261028-142811-f0ac",
+  "task_key": "E1-seed=0",
+  "experiment_id": "E1",
+  "kind": "baseline",
+  "plan_ref": {
+    "artifact_id": "plan/experiment_plan.md",
+    "version": 1,
+    "sha256": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2"
+  },
+  "idea_ref": {
+    "artifact_id": "idea/selected.md",
+    "version": 2,
+    "sha256": "da042f112a87fd48fd901fff41188f5cc94dd1e70975bba04e66ac0ebcabef7f"
+  },
+  "code_commit": "864149dc7e4d952cd6ce56d5f29325052837fac2",
+  "config_sha256": "51928a0fee1c3f1bdf2cab277e3c4657a5fdf04946d3f79e25a67fd533ac7977",
+  "inputs": [],
+  "eval_condition": "final",
+  "seed": 0,
+  "executor": "local",
+  "command": [
+    "python",
+    "run.py",
+    "--config",
+    "../config.yaml",
+    "--out",
+    "../outputs"
+  ],
+  "timeout_s": 600,
+  "retry_of": null,
+  "repair_attempt": 0,
+  "required_metrics": [
+    "score"
+  ],
+  "created_at": "2026-10-28T14:28:11.240109+08:00"
+}

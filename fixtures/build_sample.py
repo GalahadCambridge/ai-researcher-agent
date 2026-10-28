@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import platform
+import re
 import shutil
 import sys
 import tempfile
@@ -141,7 +143,35 @@ def inject_wrong_claims(p: Project, eng: ProjectEngine) -> None:
     print(f"  注入错误论断后核验：{check.counts}；新的手稿审批 {aid}")
 
 
+def sample_capture(root: Path, python: str, *, guard) -> dict:
+    """样例项目用的环境记录：不执行 pip freeze，也不写解释器的绝对路径（它们是生成者本机的信息）。"""
+    return {"python": platform.python_version(), "executable": python, "frameworks": {}, "lock_path": None,
+            "lock_sha256": None, "gpu": None,
+            "unknown": ["样例项目不记录包清单和本机解释器路径（避免带入生成者本机的信息）"]}
+
+
+# 样例里不应出现的本机绝对路径（POSIX 家目录、临时目录、Windows 盘符）
+ABS_PATH = re.compile(r"/Users/|/home/|/private/|/var/folders/|/tmp/|[A-Za-z]:\\")
+
+
+def find_abs_paths(root: Path) -> list[str]:
+    """返回样例目录里含本机绝对路径的文件（文本文件）。"""
+    bad = []
+    for f in sorted(root.rglob("*")):
+        if f.is_file():
+            try:
+                text = f.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                continue
+            if ABS_PATH.search(text):
+                bad.append(f.relative_to(root).as_posix())
+    return bad
+
+
 def build(out: Path = OUT) -> Path:
+    import airesearcher.runtime.local as local_runtime
+
+    local_runtime.capture = sample_capture  # 只影响本脚本进程，不改变真实项目的行为
     tmp = Path(tempfile.mkdtemp(prefix="air-sample-"))
     try:
         p = Project.create(goal=GOAL, task="tasks/smoke", title="小样本分类：基线、主方法与消融的比较（样例项目）",
@@ -180,6 +210,9 @@ def build(out: Path = OUT) -> Path:
                                                                   "*.fdb_latexmk"))
         # 覆盖仓库根目录 .gitignore 中的 *.log、build/ 等规则：样例里的所有文件都要提交
         (out / ".gitignore").write_text("!*\n!*/\n", encoding="utf-8")
+        bad = find_abs_paths(out)
+        if bad:
+            raise SystemExit(f"样例项目含本机绝对路径：{bad}")
         print(f"已写入 {out}")
         return out
     finally:

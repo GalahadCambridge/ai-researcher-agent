@@ -77,6 +77,10 @@ MESSAGES: dict[str, dict[str, str]] = {
         "zh": "预算 {category} 应为 {{soft, hard}} 数字：{detail}",
         "en": "Budget {category} must be {{soft, hard}} numbers: {detail}",
     },
+    "error.budget_exceeded": {
+        "zh": "预算 {category} 已用 {used}，达到上限 {hard}，不再发起新的模型调用",
+        "en": "Budget {category} used {used} has reached its limit {hard}; no further model calls",
+    },
     "error.local_exec_needs_real": {
         "zh": "allow_local_execution 只能和 mode=real 一起使用（假实现不会真的训练）",
         "en": "allow_local_execution requires mode=real (fake stages never train for real)",

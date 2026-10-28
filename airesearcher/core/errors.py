@@ -57,3 +57,10 @@ class ValidationFailed(AirError):
 class ProjectLocked(AirError):
     code = "INVALID_STATE"
     http_status = 409
+
+
+class BudgetExceeded(AirError):
+    """调用付费资源前发现预算已达 hard 上限。引擎收到后进入 BudgetExhausted 状态。"""
+
+    code = "INVALID_STATE"
+    http_status = 409

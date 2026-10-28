@@ -150,7 +150,7 @@ async def stream(pid: str, request: Request, from_now: bool = False,
     ps = ProjectStream(m, pid, last_seq)
 
     async def gen() -> AsyncIterator[str]:
-        while not await request.is_disconnected():
+        while not m.closing.is_set() and not await request.is_disconnected():
             for msg in ps.poll():
                 yield msg
             await asyncio.sleep(POLL_SECONDS)

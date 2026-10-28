@@ -8,5 +8,5 @@
 - CL3：supported
 - CL4：supported
 - CL5：supported
-- CL6：unsupported；NUM_MISMATCH（文中 95.0，重算为 78.9（C1.main.score.max））
-- CL7：contradicted；CONTRADICTED（论断 a<b，但均值差为 +0.0857）
+- CL6：unsupported；NUM_MISMATCH（C1.main.score.max: claimed 95.0, recomputed 78.9）
+- CL7：contradicted；CONTRADICTED（Assertion a<b contradicts exact difference 0.085667）

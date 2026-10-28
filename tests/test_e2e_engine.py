@@ -69,6 +69,8 @@ def test_full_flow_to_completed(air_home):
     assert "\\airval" in (p.root / "paper/sections/results.tex").read_text(encoding="utf-8")
     review = CheckReport.model_validate_json((p.root / "paper/review/review_v1.json").read_text(encoding="utf-8"))
     assert review.counts["blocker"] == 0
+    assert not [i for i in review.unbound_issues if i.code == "NUM_UNBOUND"]  # n 与 p 值都经 \\airval 绑定
+    assert {v.stat for c in claims for v in c.values} >= {"n", "p_value"}
     paper_v = p.archive.latest_version("paper")
     assert paper_v.exclude == ["build/**", "review/**", ".template_check_default.json"]
     assert p.archive.latest("paper/build/main.pdf") is not None

@@ -53,7 +53,7 @@ async def stream_logs(pid: str, run_id: str, request: Request, stream: str = "st
     ls = RunLogStream(ex, run_id, stream, offset)
 
     async def gen() -> AsyncIterator[str]:
-        while not await request.is_disconnected():
+        while not m.closing.is_set() and not await request.is_disconnected():
             messages, done = ls.poll()
             for msg in messages:
                 yield msg

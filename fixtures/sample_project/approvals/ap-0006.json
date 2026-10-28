@@ -4,7 +4,7 @@
   "target": {
     "artifact_id": "paper",
     "version": 2,
-    "sha256": "738f6a713d9d6d73a85853ec4bbd2b5475066751ec88bdac358d5765ecbc6875"
+    "sha256": "06549642f7a1cf8111c802494a6a7011bbf690a48220ef76b96aa99678106fea"
   },
   "previous": null,
   "summary": "论文草稿 v2：7 条论断，2 个 blocker（样例：故意加入的错误论断）",
@@ -13,26 +13,26 @@
     {
       "artifact_id": "paper/review/review_v2.json",
       "version": 1,
-      "sha256": "df3c4203fdae505942b5e7ac899023e52551400c60992b9e3d4cc65bb305c185"
+      "sha256": "1aab3f1e594fefad067fa6f9779f51dcabf66c44938ecc6f599cbba96641272b"
     },
     {
       "artifact_id": "paper/build/compile_report.json",
       "version": 2,
-      "sha256": "c53b40f8884eced817304e1912dde0d60ba509d5f333947a680361b70a000fec"
+      "sha256": "bf245eaab4a2491de6a7b3fc80c148be111161616de7d647d9949675185ac1b8"
     },
     {
       "artifact_id": "paper/claims.jsonl",
       "version": 2,
-      "sha256": "e98fb5aeceb957f1a7059b2450f29cbebad9c7fce68c7284c067dc058143b455"
+      "sha256": "08a9206447140d33a4465200acf6547cf69c13cd00af2a3f610ce381bcd9ac56"
     },
     {
       "artifact_id": "paper/build/main.pdf",
       "version": 2,
-      "sha256": "86e2d83013f33bd528980155b7b92a599152d44d20d600c9b9144b6d79efbb8f"
+      "sha256": "fe1233b4f7712a90a6628ae828d2dea480a140d138684319b9e70804544bed66"
     }
   ],
   "status": "pending",
-  "created_at": "2026-10-10T11:38:17.851054+08:00",
+  "created_at": "2026-10-28T14:28:18.851954+08:00",
   "decided_at": null,
   "decision_comment": "",
   "decided_by": null,

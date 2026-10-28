@@ -1,0 +1,22 @@
+{
+  "checkpoint_id": "ck-000004",
+  "saved_at": "2026-10-28T14:28:10.405130+08:00",
+  "state": "IdeaPending",
+  "resume_to": null,
+  "pending_approval": "ap-0001",
+  "pending_question": null,
+  "approved": {},
+  "stale": [],
+  "feedback_approval_ids": [],
+  "entry": null,
+  "scratch": {
+    "idea": {
+      "phase": "submit"
+    }
+  },
+  "consecutive_errors": 0,
+  "last_event_seq": 11,
+  "answer": null,
+  "reason": "",
+  "rejected_approval": null
+}

@@ -1,0 +1,36 @@
+{
+  "os": "Darwin 25.6.0 arm64",
+  "python": "3.14.6",
+  "packages_lock": null,
+  "hardware": {
+    "cpu": "arm",
+    "cores": 10,
+    "memory_gb": 24.0,
+    "gpu": null,
+    "cuda": null
+  },
+  "frameworks": {},
+  "env_vars": {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONHASHSEED": "0"
+  },
+  "workdir": "runs/r-20261028-142814-52be/code",
+  "command": [
+    "python",
+    "run.py",
+    "--config",
+    "../config.yaml",
+    "--out",
+    "../outputs"
+  ],
+  "inputs": [],
+  "unknown": [
+    "样例项目不记录包清单和本机解释器路径（避免带入生成者本机的信息）",
+    "Exact CUDA kernel utilization is not measured.",
+    "CUDA toolkit runtime version"
+  ],
+  "python_executable": "python",
+  "packages_lock_sha256": null,
+  "env_hash": "dd27fd15903a",
+  "gpu_requested": false
+}

@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from airesearcher.core.errors import InvalidState, NotFound, ValidationFailed
+from airesearcher.core.errors import BudgetExceeded, InvalidState, NotFound, ValidationFailed
 from airesearcher.core.fsutil import now
 from airesearcher.core.i18n import DEFAULT_LANG, Msg, render
 from airesearcher.core.locks import ProjectLock
@@ -343,8 +343,13 @@ class ProjectEngine:
         self._commit_workspace("human-edited", "用户手工修改（引擎在下一步之前自动提交）")
         ctx = self.build_context()
         delivered_answer = ctx.answer is not None
+        budget_hit: BudgetExceeded | None = None
         try:
             result = stage.step(ctx)
+        except BudgetExceeded as e:  # 网关在调用前发现预算已满：和 tick 开头的检查走同一条路径
+            self._stage_log(f"[{stage.name}] 预算已满，停止调用: {e}")
+            budget_hit = e
+            result = Continue("预算已满")
         except Exception as e:
             self._stage_log(f"[{stage.name}] step 抛出异常:\n" + traceback.format_exc())
             result = Error(f"{type(e).__name__}: {e}", retryable=True)
@@ -355,7 +360,11 @@ class ProjectEngine:
         if delivered_answer:
             self.ck.answer = None
         with self.state_lock:
-            seconds = self._apply(result, stage.name)
+            if budget_hit is not None:
+                self._to_waiting(S.BudgetExhausted, f"预算已用尽：{budget_hit}", actor=f"agent:{stage.name}")
+                seconds = 0.0
+            else:
+                seconds = self._apply(result, stage.name)
         self._account_wall()
         self._save()
         return Tick("step", seconds, result)

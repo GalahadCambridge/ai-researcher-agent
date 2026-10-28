@@ -95,6 +95,7 @@ class ProjectManager:
         self.engines: dict[str, ProjectEngine] = {}
         self.requests = RequestLog(self.home / "requests.jsonl")
         self._lock = threading.RLock()
+        self.closing = threading.Event()  # 后台正在关闭：SSE 推送循环看到后主动结束，连接才能正常关闭
         self.startup_report: dict[str, list] = {}
 
     # ---------------------------------------------------------------- 生命周期
@@ -118,6 +119,7 @@ class ProjectManager:
         return engine
 
     def shutdown(self) -> None:
+        self.closing.set()
         for eng in list(self.engines.values()):
             try:
                 eng.stop()

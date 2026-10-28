@@ -1,0 +1,4 @@
+smoke: method=baseline seed=0 seconds=0.5 fail_mode=none
+step 1/1
+@@AIR_METRIC {"name": "score", "value": 0.7101, "split": "test", "step": null}
+@@AIR_METRIC {"name": "run_seconds", "value": 0.513, "split": null, "step": null}

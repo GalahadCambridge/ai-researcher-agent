@@ -8,6 +8,7 @@ from collections import Counter
 
 import pytest
 
+from airesearcher.core.errors import BudgetExceeded
 from airesearcher.core.fsutil import sha256_file
 from airesearcher.core.models.common import ProjectState as S
 from airesearcher.core.models.run import RunState
@@ -581,7 +582,7 @@ def test_api_coder_checks_budget_between_tool_turns_and_rolls_back(air_home, mon
     gateway, fake, _ = api_fixture(project, monkeypatch, {"experiment/coder": [first, coder_reply()]}, usd=6)
     ctx.llm = gateway
     before = sha256_file(project.root / "src/run.py")
-    with pytest.raises(ValueError, match="Budget exhausted"):
+    with pytest.raises(BudgetExceeded):  # 网关在第二次请求发出前就拒绝（回滚照常）
         run_coder(ctx, approved, approved.plan.experiments[0], ctx.scratch["experiment"]["entries"],
                   lambda _: pytest.fail("No training allowed"))
     assert len(fake.calls) == 1

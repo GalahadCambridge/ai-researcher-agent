@@ -2,41 +2,45 @@
   "question": {
     "question_id": "q-0001",
     "stage": "experiment",
-    "text": "运行 **E2-seed=2**（r-20261010-113811-67d8）失败：nonzero_exit。\n\nstderr 末尾：\n```\n模拟错误：RuntimeError('smoke failure')\n```\n请选择处理方式：",
+    "text": "运行 **E2-seed=2**（r-20261028-142813-f994）失败：nonzero_exit。\n\nstderr 末尾：\n```\n模拟错误：RuntimeError('smoke failure')\n```\n请选择处理方式：",
+    "msg": null,
     "options": [
       {
         "id": "skip",
         "label": "跳过这个组合，继续其他运行",
-        "default": true
+        "default": true,
+        "msg": null
       },
       {
         "id": "retry",
         "label": "我已手动修改代码，重试（假实现会去掉故障设置）",
-        "default": false
+        "default": false,
+        "msg": null
       },
       {
         "id": "end",
         "label": "结束项目",
-        "default": false
+        "default": false,
+        "msg": null
       }
     ],
     "allow_text": false,
     "refs": [
       {
-        "artifact_id": "runs/r-20261010-113811-67d8",
+        "artifact_id": "runs/r-20261028-142813-f994",
         "version": 1,
-        "sha256": "180d080f627ace35689559463e1ce56ce295815dc22c40f6407e42daa094bf53"
+        "sha256": "1c74af58f9e4e4c92a952b274f235e7058bfa68af0006e3358df0abf7ff9b115"
       }
     ],
     "status": "answered",
-    "created_at": "2026-10-10T11:38:12.473618+08:00"
+    "created_at": "2026-10-28T14:28:14.738980+08:00"
   },
   "answer": {
     "question_id": "q-0001",
     "choice": "retry",
     "text": "已检查代码，重试一次",
     "answered_by": "user",
-    "answered_at": "2026-10-10T11:38:12.475964+08:00",
+    "answered_at": "2026-10-28T14:28:14.740846+08:00",
     "request_ids": [
       "sample-retry"
     ]
