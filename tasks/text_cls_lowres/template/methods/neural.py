@@ -31,7 +31,8 @@ def run_neural(train, evaluation, config, out_dir, use_lora):
     set_seed(config["seed"])
     device = torch.device(config["device"])
     if device.type == "cuda" and not torch.cuda.is_available():
-        raise RuntimeError("配置要求 CUDA，但当前 Python 的 torch.cuda.is_available() 为 False。")
+        device = torch.device("cpu")
+        print("CUDA is unavailable; falling back to CPU.", flush=True)
     local, manifest = model_directory(config)
     tokenizer = AutoTokenizer.from_pretrained(local, local_files_only=True)
     model = AutoModelForSequenceClassification.from_pretrained(
