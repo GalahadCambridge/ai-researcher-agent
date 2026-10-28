@@ -275,3 +275,23 @@ def test_effective_proposal_change_rejects_pending_answer(sample):
     assert "stale" in e.ck.reason.lower()
     assert receipt(p, "figure-fig_c1") == saved
     assert len(calls(e)) == 1
+
+
+@pytest.mark.parametrize("boundary", ["proposal", "prepare"])
+def test_unit_recovery_uses_type_not_diagnostic_text(sample, monkeypatch, boundary):
+    from airesearcher.core.figure_errors import UnitLabelError
+    from airesearcher.stages.writing import figures
+
+    p, e = sample
+    ask(p, e)
+    e = answer(p, e, "score (dimensionless)")
+
+    def revised_diagnostic(*args):
+        raise UnitLabelError("Declare an explicit measurement unit")
+
+    monkeypatch.setattr(figures if boundary == "proposal" else module, "prepare_data", revised_diagnostic)
+    result = e.tick().result
+    assert isinstance(result, Stop) and p.questions.pending().allow_text
+    saved = receipt(p, "figure-fig_c1")
+    assert saved["clarifications"][-1]["validation_error"] == "Declare an explicit measurement unit"
+    assert len(calls(e)) == 1 and not (p.root / "artifacts/figures/fig_c1").exists()

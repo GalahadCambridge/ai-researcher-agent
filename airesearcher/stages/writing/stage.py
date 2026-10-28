@@ -16,6 +16,7 @@ from pydantic import ConfigDict
 
 from airesearcher.core.archive import dir_manifest, manifest_bytes
 from airesearcher.core.errors import AirError, ValidationFailed
+from airesearcher.core.figure_errors import UnitLabelError
 from airesearcher.core.fsutil import atomic_write_bytes, atomic_write_json, atomic_write_text, sha256_bytes, sha256_file
 from airesearcher.core.models.claim import CheckReport, Claim, CompileReport, Issue
 from airesearcher.core.models.common import VersionRef
@@ -1127,10 +1128,7 @@ class WritingStage:
             try:
                 figure_planning.validate(item, fid, receipt["spec"])
             except ValueError as exc:
-                if receipt.get("ylabel_source") and str(exc) in {
-                    "xlabel and ylabel must be nonempty",
-                    "ylabel must state a unit in parentheses/brackets or be explicitly dimensionless",
-                }:
+                if receipt.get("ylabel_source") and isinstance(exc, UnitLabelError):
                     if receipt.get("clarifications"):
                         receipt["clarifications"][-1]["validation_error"] = str(exc)
                         _save(ctx, f"figure-{fid}", receipt)
@@ -1159,10 +1157,7 @@ class WritingStage:
                 # Only a rejected user-supplied unit returns to clarification.
                 # Presentation failures repair within a persisted budget. Source
                 # integrity errors escape as ValidationFailed and still fail closed.
-                if receipt.get("ylabel_source") and str(exc) in {
-                    "xlabel and ylabel must be nonempty",
-                    "ylabel must state a unit in parentheses/brackets or be explicitly dimensionless",
-                }:
+                if receipt.get("ylabel_source") and isinstance(exc, UnitLabelError):
                     if receipt.get("clarifications"):
                         receipt["clarifications"][-1]["validation_error"] = str(exc)
                         _save(ctx, f"figure-{fid}", receipt)

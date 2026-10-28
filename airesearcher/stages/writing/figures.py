@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from airesearcher.core.archive import Archive
 from airesearcher.core.errors import AirError, ValidationFailed
 from airesearcher.core.events import Events
+from airesearcher.core.figure_errors import PresentationError, UnitLabelError
 from airesearcher.core.fsutil import atomic_write_json, atomic_write_text, now, sha256_file
 from airesearcher.core.models.aggregate import Aggregate
 from airesearcher.core.models.common import VersionRef
@@ -64,7 +65,7 @@ def default_spec(aggregate: Aggregate, *, fig_id: str | None = None, metric: str
     prefix = "Exploratory: " if aggregate.eval_condition == "explore" else ""
     # An unknown physical unit must be supplied by the caller; never infer dimensionless.
     if ylabel is None:
-        raise ValueError("provide ylabel with the metric unit or explicit dimensionless designation")
+        raise UnitLabelError("provide ylabel with the metric unit or explicit dimensionless designation")
     spec = FigureSpec(fig_id=fig_id or f"fig_{aggregate.aggregate_id.lower()}", kind="point" if distribution else kind,
                       aggregate_id=aggregate.aggregate_id, x=x, hue=hue, facets=facets, metric=metric,
                       error="none" if all(r.n == 1 and r.ci95 is None for r in rows) else "ci95",
@@ -83,13 +84,7 @@ def prepare_data(aggregate: Aggregate, spec: FigureSpec) -> str:
 
 
 def presentation_error(exc: ValueError) -> bool:
-    return isinstance(exc, ValidationError) or str(exc).startswith((
-        "fig_id must", "scale must", "xlabel and ylabel", "ylabel must", "x and hue",
-        "unknown grouping field", "duplicate plotted group", "unplotted grouping field",
-        "facets must", "facet presentation", "line plot requires", "log_x requires",
-        "uncertainty required", "requested CI", "requested std", "point/box requires",
-        "caption", "exploratory result", "ambiguous grouping",
-    ))
+    return isinstance(exc, (ValidationError, PresentationError))
 
 
 def validate_source(aggregate: Aggregate) -> None:
@@ -136,10 +131,10 @@ def validate_proposal(aggregate: Aggregate, spec: FigureSpec) -> None:
         raise ValidationFailed("Aggregate grouping metadata is inconsistent")
     represented = {spec.x, *spec.facets} | ({spec.hue} if spec.hue else set())
     if not represented <= keys:
-        raise ValueError("unknown grouping field in FigureSpec")
+        raise PresentationError("unknown grouping field in FigureSpec")
     hidden = sorted(k for k in keys - represented if len({load_renderer().canonical(r.group[k]) for r in rows}) > 1)
     if hidden:
-        raise ValueError(f"{', '.join(hidden)} varies but is not represented; "
+        raise PresentationError(f"{', '.join(hidden)} varies but is not represented; "
                          "projection would pool distinct configurations")
     if not spec.ylabel.strip():
         return
@@ -155,7 +150,7 @@ def validate_proposal(aggregate: Aggregate, spec: FigureSpec) -> None:
 
 
 def validate_artifact(directory: Path, aggregate: Aggregate, aggregate_ref: VersionRef,
-                      *, script_path: Path | None = None, skill_ref: str = "scientific-plotting@0.1.0") -> list[str]:
+                      *, script_path: Path | None = None, skill_ref: str = "scientific-plotting@0.2.0") -> list[str]:
     """Validate against independent source data. Never execute an artifact's script."""
     directory = Path(directory)
     try:

@@ -295,8 +295,9 @@ def test_repaired_proposal_unit_clarification_has_no_extra_model_call(project):
     assert receipt(p, "figure-fig_c1")["status"] == "accepted"
 
 
-@pytest.mark.parametrize("recoverable", [True, False])
+@pytest.mark.parametrize("recoverable", [True, False, "misleading_text"])
 def test_late_prepare_error_classification(project, monkeypatch, recoverable):
+    from airesearcher.core.figure_errors import PresentationError
     from airesearcher.engine.stage import Continue, Error
 
     p, e, seen, replies = project
@@ -308,19 +309,22 @@ def test_late_prepare_error_classification(project, monkeypatch, recoverable):
         nonlocal fired
         if not fired:
             fired = True
-            raise ValueError("duplicate plotted group; refusing to pool hidden dimensions" if recoverable
-                             else "source integrity check failed")
+            if recoverable is True:
+                raise PresentationError("Updated presentation diagnostic, independent of wording")
+            raise ValueError("duplicate plotted group; refusing to pool hidden dimensions"
+                             if recoverable == "misleading_text" else "source integrity check failed")
         return original(*args)
 
     monkeypatch.setattr(module, "prepare_data", late_error)
     result = e.tick().result
-    if recoverable:
+    if recoverable is True:
         assert isinstance(result, Continue) and journals(p)[0]["status"] == "rejected"
         e = restart(p, e)
         to_phase(e, "template")
         assert len(seen) == 2 and [a["status"] for a in journals(p)] == ["rejected", "accepted"]
     else:
-        assert isinstance(result, Error) and "source integrity" in result.message
+        assert isinstance(result, Error)
+        assert ("duplicate plotted group" if recoverable == "misleading_text" else "source integrity") in result.message
         assert len(seen) == 1 and not p.questions.pending()
 
 
@@ -350,3 +354,24 @@ def test_legacy_rejection_crash_is_not_a_new_attempt(project, monkeypatch):
     assert not seen and len(journals(p)) == 1
     to_phase(e, "template")
     assert len(seen) == 1 and [a["status"] for a in journals(p)] == ["rejected", "accepted"]
+
+
+def test_error_type_survives_copied_renderer(tmp_path, multidim):
+    from airesearcher.core.figure_errors import PresentationError, UnitLabelError
+
+    source = repo_root() / "skills/scientific-plotting/scripts/plot.py"
+    copied = tmp_path / "plot.py"
+    copied.write_bytes(source.read_bytes())
+    renderer = figures.load_renderer(copied)
+    assert renderer.PresentationError is figures.load_renderer().PresentationError is PresentationError
+    assert figures.presentation_error(renderer.PresentationError("Different presentation wording"))
+    assert not figures.presentation_error(ValueError("caption must define standard deviation error bars"))
+    with pytest.raises(PresentationError, match="duplicate plotted group"):
+        renderer.select_rows(multidim, proposal(multidim))
+    with pytest.raises(UnitLabelError):
+        renderer.select_rows(multidim, proposal(multidim, ylabel="unknown"))
+    bad_source = multidim.model_copy(deep=True)
+    bad_source.rows[0].n = 2
+    with pytest.raises(ValueError) as failure:
+        renderer.select_rows(bad_source, proposal(bad_source, x="learning_rate", hue="lora_rank"))
+    assert not isinstance(failure.value, PresentationError)

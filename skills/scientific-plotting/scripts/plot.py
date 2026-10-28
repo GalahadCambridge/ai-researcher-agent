@@ -20,6 +20,7 @@ matplotlib.use("Agg")
 from matplotlib import font_manager  # noqa: E402
 from matplotlib import pyplot as plt  # noqa: E402
 
+from airesearcher.core.figure_errors import PresentationError, UnitLabelError  # noqa: E402
 from airesearcher.core.models.aggregate import Aggregate, AggregateRow  # noqa: E402
 from airesearcher.core.models.figure import FigureSpec  # noqa: E402
 
@@ -123,14 +124,14 @@ def _caption_group(caption: str, match: re.Match, expected: dict[str, int],
             try:
                 group, end = json.JSONDecoder().raw_decode(label)
             except ValueError as exc:
-                raise ValueError("invalid caption group label") from exc
+                raise PresentationError("invalid caption group label") from exc
             if not label[end:].lstrip().startswith(")"):
-                raise ValueError("unclosed caption group label")
+                raise PresentationError("unclosed caption group label")
             candidates = {canonical(group)} & expected.keys()
         elif ")" in label:
             candidates = aliases.get(label.split(")", 1)[0].strip(), set())
         if len(candidates) != 1:
-            raise ValueError("caption group label is unknown or ambiguous")
+            raise PresentationError("caption group label is unknown or ambiguous")
     else:
         # Also accept A: n=3 / A (n=3), with a unique short group label.
         before = caption[:match.start()]
@@ -138,7 +139,7 @@ def _caption_group(caption: str, match: re.Match, expected: dict[str, int],
             if re.search(r"(?<!\w)" + re.escape(label) + r"\s*[:,]?\s*\(?\s*$", before):
                 candidates.update(groups)
     if len(candidates) > 1:
-        raise ValueError("caption group label is ambiguous")
+        raise PresentationError("caption group label is ambiguous")
     return candidates
 
 
@@ -175,46 +176,46 @@ def validate_caption_counts(caption: str, rows: list[AggregateRow]) -> None:
         if role in {"explicit", "group", "common"}:
             samples.append((int(match["n"] or match["count"]), candidates))
     if {count for count, _ in samples} != {r.n for r in rows}:
-        raise ValueError("caption must state the actual n for every group")
+        raise PresentationError("caption must state the actual n for every group")
     bound = set()
     for count, candidates in samples:
         if candidates:
             key = next(iter(candidates))
             if count != expected[key]:
-                raise ValueError("caption n does not match its group")
+                raise PresentationError("caption n does not match its group")
             bound.add(key)
         elif len(set(expected.values())) > 1:
-            raise ValueError("heterogeneous caption counts require group-specific n")
+            raise PresentationError("heterogeneous caption counts require group-specific n")
     if bound and bound != expected.keys():
-        raise ValueError("caption must state the actual n for every group; group omitted")
+        raise PresentationError("caption must state the actual n for every group; group omitted")
 
 
 def validate_rows(spec: FigureSpec, rows: list[AggregateRow], condition: str) -> None:
     """Check plot semantics without estimating or repairing experimental statistics."""
     if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", spec.fig_id):
-        raise ValueError("fig_id must be a safe filename identifier")
+        raise PresentationError("fig_id must be a safe filename identifier")
     if not math.isfinite(spec.scale) or spec.scale <= 0:
-        raise ValueError("scale must be positive and finite")
+        raise PresentationError("scale must be positive and finite")
     if not spec.xlabel.strip() or not spec.ylabel.strip():
-        raise ValueError("xlabel and ylabel must be nonempty")
+        raise UnitLabelError("xlabel and ylabel must be nonempty")
     units = re.findall(r"[\[(]([^\])]+)[\])]", spec.ylabel)
     has_unit = any(u.strip().lower() not in {"", "?", "unit", "units", "unknown", "n/a", "none", "单位"}
                    for u in units)
     if not (has_unit or re.search(r"%|dimensionless|unitless|无量纲", spec.ylabel, re.I)):
-        raise ValueError("ylabel must state a unit in parentheses/brackets or be explicitly dimensionless")
+        raise UnitLabelError("ylabel must state a unit in parentheses/brackets or be explicitly dimensionless")
     if not rows:
-        raise ValueError(f"metric {spec.metric!r} has no rows")
+        raise PresentationError(f"metric {spec.metric!r} has no rows")
     if spec.hue == spec.x:
-        raise ValueError("x and hue must be distinct grouping fields")
+        raise PresentationError("x and hue must be distinct grouping fields")
     keys = set(rows[0].group)
     axes = {spec.x} | ({spec.hue} if spec.hue else set())
     if len(set(spec.facets)) != len(spec.facets) or axes.intersection(spec.facets):
-        raise ValueError("facets must be distinct grouping fields, separate from x/hue")
+        raise PresentationError("facets must be distinct grouping fields, separate from x/hue")
     axes.update(spec.facets)
     if not axes <= keys:
-        raise ValueError("unknown grouping field in x/hue")
+        raise PresentationError("unknown grouping field in x/hue")
     if len({canonical({k: r.group[k] for k in spec.facets}) for r in rows}) > 16:
-        raise ValueError("facet presentation exceeds 16 panels")
+        raise PresentationError("facet presentation exceeds 16 panels")
     coords, runs = set(), set()
     for row in rows:
         if set(row.group) != keys or row.metric != spec.metric:
@@ -226,7 +227,7 @@ def validate_rows(spec: FigureSpec, rows: list[AggregateRow], condition: str) ->
                 raise ValueError("group values must be nonempty strings or finite numbers")
         coordinate = canonical({k: row.group[k] for k in sorted(axes)})
         if coordinate in coords:
-            raise ValueError("duplicate plotted group; refusing to pool hidden dimensions")
+            raise PresentationError("duplicate plotted group; refusing to pool hidden dimensions")
         coords.add(coordinate)
         if row.n < 1 or len(row.run_ids) != row.n or any(not r.strip() for r in row.run_ids):
             raise ValueError("n and run provenance must agree")
@@ -236,7 +237,7 @@ def validate_rows(spec: FigureSpec, rows: list[AggregateRow], condition: str) ->
         if row.values and len(row.values) != row.n:
             raise ValueError("n and raw values must agree")
         if spec.kind in ("point", "box") and len(row.values) != row.n:
-            raise ValueError("point/box requires actual per-run values")
+            raise PresentationError("point/box requires actual per-run values")
         numbers = [row.mean, row.min, row.max, *row.values]
         if row.std is not None:
             if row.std < 0:
@@ -253,35 +254,35 @@ def validate_rows(spec: FigureSpec, rows: list[AggregateRow], condition: str) ->
         if not row.min <= row.mean <= row.max or any(not row.min <= v <= row.max for v in row.values):
             raise ValueError("values/mean outside source min/max")
         if row.n >= 2 and spec.error == "none":
-            raise ValueError("uncertainty required for n >= 2")
+            raise PresentationError("uncertainty required for n >= 2")
         if spec.error == "ci95" and row.ci95 is None:
-            raise ValueError("requested CI is unavailable")
+            raise PresentationError("requested CI is unavailable")
         if spec.error == "std" and row.std is None:
-            raise ValueError("requested std is unavailable")
+            raise PresentationError("requested std is unavailable")
         if spec.error == "ci95" and not all(math.isfinite(abs(v - row.mean) * spec.scale) for v in row.ci95):
             raise ValueError("non-finite scaled CI error length")
     for key in keys - axes:
         if len({canonical(r.group[key]) for r in rows}) > 1:
-            raise ValueError(f"unplotted grouping field varies: {key}")
+            raise PresentationError(f"unplotted grouping field varies: {key}")
     numeric_x = all(is_numeric(r.group[spec.x]) for r in rows)
     if spec.kind == "line" and not numeric_x:
-        raise ValueError("line plot requires numeric x")
+        raise PresentationError("line plot requires numeric x")
     if spec.log_x and (not numeric_x or spec.kind == "bar" or any(r.group[spec.x] <= 0 for r in rows)):
-        raise ValueError("log_x requires positive numeric x on line/point/box")
+        raise PresentationError("log_x requires positive numeric x on line/point/box")
     validate_caption_counts(spec.caption, rows)
     if spec.error == "ci95" and not re.search(r"ci95|95\s*%\s*(?:CI|confidence|置信)", spec.caption, re.I):
-        raise ValueError("caption must define 95% CI error bars")
+        raise PresentationError("caption must define 95% CI error bars")
     if spec.error == "std" and not re.search(r"\bstd\b|\bSD\b|standard deviation|标准差", spec.caption, re.I):
-        raise ValueError("caption must define standard deviation error bars")
+        raise PresentationError("caption must define standard deviation error bars")
     if condition not in ("final", "explore"):
         raise ValueError("unknown eval_condition")
     if condition == "explore" and not re.search(r"exploratory|探索性", spec.title + " " + spec.caption, re.I):
-        raise ValueError("exploratory result must be labelled")
+        raise PresentationError("exploratory result must be labelled")
 
 
 def select_rows(aggregate: Aggregate, spec: FigureSpec) -> list[AggregateRow]:
     if spec.aggregate_id != aggregate.aggregate_id:
-        raise ValueError("spec aggregate_id does not match source Aggregate")
+        raise PresentationError("spec aggregate_id does not match source Aggregate")
     rows = [r for r in aggregate.rows if r.metric == spec.metric]
     validate_rows(spec, rows, aggregate.eval_condition)
     xs = ordered([r.group[spec.x] for r in rows])
@@ -366,7 +367,7 @@ def draw(spec: FigureSpec, rows: list[AggregateRow], *, ax=None, x_order=None, h
     if spec.facets:
         panels = sorted({canonical({k: r.group[k] for k in spec.facets}) for r in rows})
         if len(panels) > 16:
-            raise ValueError("facet presentation exceeds 16 panels")
+            raise PresentationError("facet presentation exceeds 16 panels")
         columns = min(3, len(panels))
         fig, axes = plt.subplots(math.ceil(len(panels) / columns), columns, squeeze=False, sharey=True,
                                  figsize=(6.4 * columns, 4.2 * math.ceil(len(panels) / columns)))

@@ -1,5 +1,5 @@
 name: scientific-plotting
-version: 0.1.0
+version: 0.2.0
 description: Deterministic, traceable scientific figures from archived Aggregate data
 owner: 论文
 inputs: {aggregate: Aggregate, spec: FigureSpec}
