@@ -276,3 +276,37 @@ def test_failed_score_cache_can_be_revalidated_without_another_model_call(air_ho
     assert receipt["output"]["novelty"]["evidence"] == [cards[0].card_id + "#0"]
     assert receipt["output"]["novelty"]["to_verify"]
     assert receipt["original_output"]["novelty"]["evidence"] == reply["novelty"]["evidence"]
+
+
+@pytest.mark.parametrize("title", ["A" * 121, " ".join(["Word"] * 16)])
+def test_long_title_is_rejected_and_repaired_with_bounded_attempts(air_home, title):
+    _, engine, ctx, _ = ready(air_home)
+    invalid = simulated_selection(selection_context(ctx))
+    invalid["idea"]["title"] = title
+    valid = simulated_selection(selection_context(ctx))
+    engine.llm.backend.script["idea/refine"] = [invalid, valid]
+    engine.llm.backend._fixed_prompts.add("idea/refine")
+    state = engine.ck.scratch["idea"]
+    refine_step(ctx, state)
+    calls = [c for c in engine.llm.backend.calls if c.prompt_id == "idea/refine"]
+    assert len(calls) == 2 and state["phase"] == "score"
+    assert calls[0].prompt_version == 3
+    assert "shorter title" in calls[1].messages[1]["content"]
+    assert load_json(ctx, "idea/selected.json")["title"] == valid["idea"]["title"]
+    attempts = load_json(ctx, "idea/selection_rounds/initial/refine_attempts.json")["attempts"]
+    assert [a["status"] for a in attempts] == ["failed", "done"]
+
+
+def test_repeated_long_titles_pause_without_further_generation(air_home):
+    _, engine, ctx, _ = ready(air_home)
+    invalid = simulated_selection(selection_context(ctx))
+    invalid["idea"]["title"] = "T" * 121
+    engine.llm.backend.script["idea/refine"] = [invalid]
+    engine.llm.backend._fixed_prompts.add("idea/refine")
+    state = engine.ck.scratch["idea"]
+    result = refine_step(ctx, state)
+    assert isinstance(result, Stop) and result.question
+    assert "shorter title" in result.question.text
+    before = len(engine.llm.backend.calls)
+    assert isinstance(refine_step(ctx, state), Stop)
+    assert len(engine.llm.backend.calls) == before

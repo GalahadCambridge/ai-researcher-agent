@@ -6,6 +6,7 @@ import hashlib
 import json
 
 from airesearcher.core.models.literature import PaperRecord
+from airesearcher.core.models.project import MAX_LITERATURE_PAPERS
 from airesearcher.engine.stage import Continue, Error, StageContext, StepResult, Stop, Wait
 from airesearcher.services.literature import load_papers
 
@@ -121,12 +122,22 @@ class IdeaStage:
                               state.setdefault("source_retries", {}), ctx.events)
 
     def _search(self, ctx: StageContext, state: dict) -> StepResult:
-        source = self._source(ctx, state)
         plan = QueryPlan.model_validate_json((ctx.root / "idea/queries.json").read_text(encoding="utf-8"))
         queries = plan.queries()
         limit = ctx.project.limits.search_papers
-        if limit <= 0:
-            return Error("limits.search_papers must be greater than 0", retryable=False)
+        if type(limit) is not int or not 1 <= limit <= MAX_LITERATURE_PAPERS:
+            return Error("limits.search_papers must be an integer between 1 and 20", retryable=False)
+        excluded = [PaperIdentity.model_validate(p) for p in state.get("exclude_papers", [])]
+        retain_limit = min(limit, MAX_LITERATURE_PAPERS - len({p.paper_id for p in excluded}))
+        if retain_limit <= 0:
+            return Error("The cumulative 20-paper literature limit has been reached", retryable=False)
+        registered = load_papers(ctx.root)
+        if len(registered) > MAX_LITERATURE_PAPERS:
+            return Error("Existing literature exceeds the cumulative 20-paper limit", retryable=False)
+        if len(registered) == MAX_LITERATURE_PAPERS:
+            state.update(phase="screen", paper_count=len(registered))
+            return Continue("20 papers already retained; additional retrieval skipped before screening")
+        source = self._source(ctx, state)
         receipts = []
         for query in queries:
             # Saved receipts are the recovery boundary, independent of scratch/checkpoint timing.
@@ -156,10 +167,17 @@ class IdeaStage:
             _save(ctx, f"idea/search_snapshots/{sid}.json", snap, "search_snapshot")
             papers.extend(PaperRecord.model_validate(p) for p in receipt["papers"])
         candidates = deduplicate(papers)
-        excluded = [PaperIdentity.model_validate(p) for p in state.get("exclude_papers", [])]
         candidates = [p for p in candidates if not any(same_paper(p, old) for old in excluded)]
-        unique = candidates[:limit]
         existing = load_papers(ctx.root)
+        known = set(existing) | {p.paper_id for p in excluded}
+        slots = MAX_LITERATURE_PAPERS - len(known)
+        unique = []
+        for paper in candidates[:retain_limit]:
+            if paper.paper_id in existing:
+                unique.append(paper)
+            elif slots > 0:
+                unique.append(paper)
+                slots -= 1
         unique = unique_citation_keys(unique, existing)
         # Re-finalizing search must preserve later screening/full-text annotations.
         for paper in unique:

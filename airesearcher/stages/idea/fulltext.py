@@ -8,7 +8,8 @@ import re
 from urllib.parse import urljoin, urlsplit
 
 from airesearcher.core.fsutil import now, sha256_bytes
-from airesearcher.engine.stage import Continue, Wait
+from airesearcher.core.models.project import MAX_LITERATURE_PAPERS
+from airesearcher.engine.stage import Continue, Error, Wait
 from airesearcher.services.literature import load_papers
 
 from .pdf_text import EXTRACTION_VERSION, MAX_PDF_BYTES, extract_pdf
@@ -26,7 +27,10 @@ def _paths(paper):
 
 
 def fulltext_step(ctx, state, *, download=True, http=None):
-    papers = [p for p in load_papers(ctx.root).values() if p.selected_for_reading]
+    registered = load_papers(ctx.root)
+    if len(registered) > MAX_LITERATURE_PAPERS:
+        return Error("Existing literature exceeds the cumulative 20-paper limit", retryable=False)
+    papers = [p for p in registered.values() if p.selected_for_reading]
     network = http or GuardedHTTP(ctx.permissions.guard, state.setdefault("network", {}))
     completed = []
     for paper in papers:

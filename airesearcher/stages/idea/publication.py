@@ -118,6 +118,18 @@ def write_step(ctx, state):
     return Continue("English selected.md saved and validated; human approval comes next")
 
 
+def approval_summary(idea, pending_scores, conflicts):
+    """Keep the GUI heading bounded; full uncertainty remains in the approved artifact."""
+    suffix = (f": {len(idea.hypotheses)} hypotheses, {len(idea.citations)} registered references; "
+              f"{len(pending_scores)} scores to verify; {len(idea.open_questions)} open questions; "
+              f"{len(conflicts)} unresolved conflicts")
+    title = " ".join(idea.title.split())
+    room = 200 - len(suffix)
+    if len(title) > room:
+        title = title[:room - 1] + "…"
+    return title + suffix
+
+
 def submit_step(ctx, state):
     try:
         idea = validate_selected(ctx)
@@ -135,14 +147,10 @@ def submit_step(ctx, state):
         summary, _, _, _ = material(ctx)
         scores = IdeaScores.model_validate(load_json(ctx, "idea/scores.json"))
         pending_scores = [name for name in DIMENSIONS if getattr(scores, name).to_verify]
-        notes = [f"{idea.title}: {len(idea.hypotheses)} hypotheses, {len(idea.citations)} registered references.",
-                 "Scores requiring verification: " + (", ".join(pending_scores) or "none recorded"),
-                 "Unresolved conflicts: " + (", ".join(summary.unresolved_conflicts) or "none recorded")]
-        notes += ["Open question: " + q for q in idea.open_questions]
         extras = [ctx.archive.latest(path) for path in DEPENDENCIES if path != "idea/selected.json"]
         extras += [ctx.archive.latest("idea/validation_report.json")]
         return NeedsApproval(
-            target=ref, kind="idea", summary="\n".join(notes),
+            target=ref, kind="idea", summary=approval_summary(idea, pending_scores, summary.unresolved_conflicts),
             impact=("The approved experiment plan must be reassessed after this idea changes."
                     if "plan" in ctx.approved else "Initial idea approval; execution needs an approved plan."),
             extra_refs=[r for r in extras if r],

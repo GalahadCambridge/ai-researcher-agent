@@ -7,6 +7,8 @@ from dataclasses import replace
 
 from airesearcher.core.fsutil import sha256_bytes
 from airesearcher.core.models.idea import parse_selected_md
+from airesearcher.core.models.project import MAX_LITERATURE_PAPERS
+from airesearcher.core.models.question import Question, QuestionOption
 from airesearcher.engine.stage import Continue, Error, Stop
 from airesearcher.services.literature import load_papers
 
@@ -152,6 +154,33 @@ def publish_combined_input(scoped):
     save_json(scoped, "idea/reading_status.json", combined["reading_status"])
 
 
+def literature_limit_decision(ctx, state):
+    """Require a user decision before replacing requested new evidence with existing material."""
+    answer = ctx.answer
+    if (state.get("literature_cap_waiting") and answer and answer.answered_by == "user"
+            and answer.question_id == state.get("asked") and answer.choice == "use_existing"):
+        idea = load_json(ctx, "idea/selected.json")
+        note = ("Additional literature requested during revision was not retrieved because the cumulative "
+                "20-paper limit was reached; the user chose existing evidence. This request remains unverified.")
+        idea["open_questions"] = list(dict.fromkeys([*idea["open_questions"], note]))
+        save_json(ctx, "idea/selected.json", idea)
+        save_json(ctx, f"idea/literature_limit_decisions/{state['selection_round']}.json",
+                  {"limit": MAX_LITERATURE_PAPERS, "answer": answer.model_dump(mode="json"), "note": note})
+        state.pop("literature_cap_waiting", None)
+        state.pop("asked", None)
+        state["phase"] = "score"
+        return Continue("The user accepted existing evidence; unmet literature requests remain open questions")
+    state["literature_cap_waiting"] = True
+    ref = ctx.archive.latest("idea/literature.jsonl")
+    return Stop("The cumulative 20-paper literature limit requires a decision", question=Question(
+        text=("This project already retains 20 distinct papers. Additional retrieval is blocked. "
+              "Use the existing evidence and keep the new literature request unverified, or end this project."),
+        options=[QuestionOption(id="use_existing", label="Use existing evidence; retain the limitation"),
+                 QuestionOption(id="end", label="End this project", default=True)],
+        refs=[ref] if ref else [],
+    ))
+
+
 def incremental_step(ctx, state, stage):
     from .fulltext import fulltext_step
     from .merge import merge_step
@@ -164,6 +193,8 @@ def incremental_step(ctx, state, stage):
     if ctx.answer is not None and ctx.answer.question_id == state.get("asked"):
         child["asked"] = ctx.answer.question_id
     try:
+        if child["phase"] == "search" and len(load_papers(ctx.root)) >= MAX_LITERATURE_PAPERS:
+            return literature_limit_decision(ctx, state)
         prepare_incremental(ctx, scoped, state)
         phase = child["phase"]
         if phase == "search":

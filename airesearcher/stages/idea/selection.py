@@ -64,6 +64,9 @@ def normalize_idea(ctx, idea, task, fit="unknown"):
         raise ValueError("Metrics must be distinct and match the selected task's names and directions")
     if not {m.name for m in task.metrics if m.required} <= set(names):
         raise ValueError("All required task metrics must be included")
+    if len(idea.title) > 120 or len(idea.title.split()) > 15:
+        raise ValueError("Title must be at most 120 characters and 15 words; move experimental conditions "
+                         "to research_question and return a shorter title")
     questions = list(idea.open_questions)
     cited = list(idea.citations)
     for item in [*idea.baselines, *idea.methods]:

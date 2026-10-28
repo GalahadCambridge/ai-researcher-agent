@@ -6,6 +6,7 @@ import hashlib
 import json
 
 from airesearcher.core.models.literature import PaperRecord
+from airesearcher.core.models.project import MAX_LITERATURE_PAPERS
 from airesearcher.engine.stage import Continue, Error
 from airesearcher.services.literature import load_papers
 
@@ -50,8 +51,10 @@ def select_reading(papers, scores: dict, plan: dict, limit: int):
 
 def screen_step(ctx, state):
     limit = ctx.project.limits.read_papers
-    if limit < 0:
-        return Error("limits.read_papers must not be negative", retryable=False)
+    if type(limit) is not int or not 0 <= limit <= MAX_LITERATURE_PAPERS:
+        return Error("limits.read_papers must be an integer between 0 and 20", retryable=False)
+    if len(load_papers(ctx.root)) > MAX_LITERATURE_PAPERS:
+        return Error("Existing literature exceeds the cumulative 20-paper limit", retryable=False)
     manifest_path = "idea/screen_input.json"
     if not ctx.archive.latest(manifest_path):
         data = {
@@ -63,6 +66,8 @@ def screen_step(ctx, state):
     text = (ctx.root / manifest_path).read_text(encoding="utf-8")
     data = json.loads(text)
     papers = [PaperRecord.model_validate(p) for p in data["papers"]]
+    if len(papers) > MAX_LITERATURE_PAPERS:
+        return Error("Frozen screening input exceeds the 20-paper limit", retryable=False)
     run_id = hashlib.sha256(text.encode()).hexdigest()[:20]
     scores = {}
     for start in range(0, len(papers), BATCH_SIZE):

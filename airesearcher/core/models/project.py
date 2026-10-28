@@ -27,10 +27,13 @@ def _default_budget() -> dict[str, Limit]:
     }
 
 
+MAX_LITERATURE_PAPERS = 20
+
+
 class Limits(BaseModel):
     model_config = ConfigDict(extra="allow")
-    search_papers: int = 20
-    read_papers: int = 8
+    search_papers: int = Field(default=20, ge=1, le=MAX_LITERATURE_PAPERS, strict=True)
+    read_papers: int = Field(default=8, ge=0, le=MAX_LITERATURE_PAPERS, strict=True)
     reader_concurrency: int = 2
     max_rounds: int = 3
     max_repair_retries: int = 2

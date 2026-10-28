@@ -145,8 +145,11 @@ def test_empty_screen_does_not_call_model(air_home):
 
 
 def test_negative_read_limit_fails_without_model_call(air_home):
-    _, engine = seed(air_home, records(2), limit=-1)
-    result = engine.tick().result
+    _, engine = seed(air_home, records(2), limit=0)
+    from airesearcher.stages.idea.screening import screen_step
+    ctx = engine.build_context()
+    ctx.project.limits.read_papers = -1  # Simulate an in-memory bypass of validated configuration.
+    result = screen_step(ctx, engine.ck.scratch["idea"])
     assert isinstance(result, Error) and not result.retryable
     assert engine.llm.backend.calls == []
 

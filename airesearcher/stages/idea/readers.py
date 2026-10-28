@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from airesearcher.core.fsutil import now, sha256_bytes
 from airesearcher.core.models.literature import ReadingCard
+from airesearcher.core.models.project import MAX_LITERATURE_PAPERS
 from airesearcher.engine.stage import Continue, Error, Stop
 from airesearcher.llm.gateway import extract_json
 from airesearcher.services.literature import load_papers
@@ -227,7 +228,11 @@ def _read_step(ctx, state):
     concurrency = ctx.project.limits.reader_concurrency
     if concurrency < 1:
         return Error("reader_concurrency must be greater than 0", retryable=False)
+    if len(load_papers(ctx.root)) > MAX_LITERATURE_PAPERS:
+        return Error("Existing literature exceeds the cumulative 20-paper limit", retryable=False)
     manifest = _manifest(ctx)
+    if len(manifest["papers"]) > MAX_LITERATURE_PAPERS:
+        return Error("Frozen reading input exceeds the 20-paper limit", retryable=False)
     sources = {p["paper_id"]: p for p in manifest["papers"]}
     roles = ["single"] if manifest["reading_mode"] == "single" else ["methods", "feasibility"]
     tasks = state.setdefault("read_tasks", [

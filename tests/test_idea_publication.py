@@ -37,7 +37,9 @@ def test_english_handoff_roundtrips_and_waits_for_human_approval(air_home):
     assert "TASK FIT TO VERIFY" in text
     [approval] = project.approvals.pending()
     assert approval.target == project.archive.latest("idea/selected.md")
-    assert "TASK FIT" in approval.summary and "feasibility" in approval.summary
+    assert "\n" not in approval.summary and "\r" not in approval.summary
+    assert len(approval.summary) <= 200
+    assert "scores to verify" in approval.summary and "open questions" in approval.summary
     assert {r.artifact_id for r in approval.extra_refs} >= {
         "idea/scores.json", "idea/gap_table.md", "idea/reading_summary.json", "idea/conflicts.json",
     }
@@ -184,3 +186,20 @@ def test_cached_recovery_reuses_paid_reading_without_calling_backend(air_home):
     assert not load_json(engine.build_context(), "idea/reading_status.json")["failed"]
     finish_replay(target)
     assert target.config.llm_cache == "record" and not target.config.prompt_pins
+
+
+def test_approval_summary_is_bounded_without_losing_full_uncertainty(air_home):
+    from airesearcher.stages.idea.publication import approval_summary
+
+    project, engine, _ = pending(air_home)
+    text = (project.root / "idea/selected.md").read_text(encoding="utf-8")
+    idea = parse_selected_md(text)
+    idea.title = "Legacy long title with line breaks\n" * 20
+    idea.open_questions = [f"Unresolved question {i}" for i in range(24)]
+    summary = approval_summary(idea, ["novelty"] * 5, ["C1"])
+    assert len(summary) == 200 and "…" in summary
+    assert "\n" not in summary and "\r" not in summary
+    assert "5 scores to verify; 24 open questions; 1 unresolved conflicts" in summary
+    assert "TASK FIT TO VERIFY" in text
+    [approval] = project.approvals.pending()
+    assert approval.target == project.archive.latest("idea/selected.md")
